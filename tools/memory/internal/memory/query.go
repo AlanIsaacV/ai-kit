@@ -17,6 +17,7 @@ const DefaultThreshold = 25
 
 // Filter narrows a query. Zero values mean "no constraint".
 type Filter struct {
+	Plan        string   // exact origin.plan
 	About       []string // match if the entry carries any of these tags (prefix match on path-like tags)
 	Kinds       []Kind   // match if the entry is any of these kinds
 	Slug        string   // exact slug
@@ -92,6 +93,9 @@ func Query(entries []*Entry, edges []*Edge, f Filter) Result {
 		if f.CurrentOnly && settled[e.ID] {
 			continue
 		}
+		if f.Plan != "" && planOf(e) != f.Plan {
+			continue
+		}
 		if len(kinds) > 0 && !kinds[e.Kind] {
 			continue
 		}
@@ -135,6 +139,20 @@ func Query(entries []*Entry, edges []*Edge, f Filter) Result {
 	}
 	res.Returned = len(res.Records)
 	return res
+}
+
+// planOf is the plan a record says it came from, or "" when it says nothing.
+//
+// A record with no `origin.plan` matches no plan filter at all — not even the
+// empty one, since an empty Filter.Plan means the filter is off. That is the
+// point: one log holds every plan's records, so a record that cannot name its
+// plan is invisible to every bounded query, which is why `add` refuses to write
+// one. See ErrNoPlan.
+func planOf(e *Entry) string {
+	if e.Origin == nil {
+		return ""
+	}
+	return e.Origin.Plan
 }
 
 // matchesAbout is an OR over the wanted tags. A wanted tag ending in "/" is

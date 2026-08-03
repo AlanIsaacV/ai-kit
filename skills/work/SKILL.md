@@ -268,9 +268,10 @@ lo último que cerró fue `<unit name>`; lo que sigue es <one line>.
 ```
 
 If the objective's success criteria are all met, say so plainly and offer the
-promotion pass: which decisions, ADRs and postmortems are worth lifting from
-the plan's log to the repo level (`$MEMORY promote --ids ... --to repo`). That
-choice is the user's — suggest candidates, do not promote on your own.
+promotion pass: which decisions, ADRs and postmortems are worth lifting out of
+this repo's log to the user level, where they outlive it
+(`$MEMORY promote --ids ... --to user`). That choice is the user's — suggest
+candidates, do not promote on your own.
 
 ## Key principles
 

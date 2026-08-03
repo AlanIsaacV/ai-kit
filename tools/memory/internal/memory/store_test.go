@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,9 +9,11 @@ import (
 	"time"
 )
 
+// tempStore is a log at the path a repo's log actually lives at, one directory
+// deep, so the "append creates its parent" case is still exercised.
 func tempStore(t *testing.T) *Store {
 	t.Helper()
-	return Open(filepath.Join(t.TempDir(), "plans", "demo", "memory.jsonl"))
+	return Open(filepath.Join(t.TempDir(), ".ai-kit", "memory.jsonl"))
 }
 
 // The load-bearing invariant of this whole design: once a line is on disk,
@@ -126,6 +129,30 @@ func TestRoundTrip(t *testing.T) {
 	raw, _ := os.ReadFile(s.Path)
 	if !strings.Contains(string(raw), "<tag>") {
 		t.Errorf("body was HTML-escaped on the way to disk: %s", raw)
+	}
+}
+
+// The stamp has to be visible in the bytes, not just in the struct. A version
+// nobody can see when they cat the log is a version nobody checks — which is
+// also why it is written without omitempty and lands first on the line.
+func TestWrittenLinesCarryTheSchemaVersionFirst(t *testing.T) {
+	s := tempStore(t)
+	e := newTestEntry(t, nil)
+	if err := s.Append(e, newTestEdge(t, EdgeRelatesTo, e.ID, e.ID)); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(s.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Built from the constant rather than written out, so the assertion follows
+	// the tool through a version bump instead of having to be remembered.
+	want := fmt.Sprintf(`{"version":%d,`, CurrentSchemaVersion)
+	for i, line := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
+		if !strings.HasPrefix(line, want) {
+			t.Errorf("line %d should open with %s got %s", i+1, want, line)
+		}
 	}
 }
 

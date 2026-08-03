@@ -32,9 +32,9 @@ func deriveTestSlug(s string) string {
 	return strings.Trim(out, "-")
 }
 
-func supersedes(newer, older *Entry) *Edge {
-	return &Edge{Kind: KindEdge, Type: EdgeSupersedes, From: newer.ID, To: older.ID,
-		At: time.Now().UTC().Format(time.RFC3339)}
+func supersedes(t *testing.T, newer, older *Entry) *Edge {
+	t.Helper()
+	return newTestEdge(t, EdgeSupersedes, newer.ID, older.ID)
 }
 
 func TestQueryFiltersByAboutAndKind(t *testing.T) {
@@ -54,6 +54,67 @@ func TestQueryFiltersByAboutAndKind(t *testing.T) {
 	}
 }
 
+// --plan is what replaced one file per plan. It bounds a query to the records of
+// one objective out of a log that holds every objective's, which is the whole
+// reason the scopes could collapse without a broad question turning into a
+// context dump.
+func TestQueryFiltersByOriginPlan(t *testing.T) {
+	mine := entry(t, KindDecision, "RS256 over HS256", "auth")
+	mine.Origin = &Origin{Plan: "jwt-migration"}
+	theirs := entry(t, KindDecision, "Cancel is async", "orders")
+	theirs.Origin = &Origin{Plan: "order-cancellation"}
+	// No origin at all: what a record written before `add` insisted on a plan
+	// looks like. It is unreachable by any bounded query, which is exactly why
+	// writing one is refused.
+	orphan := entry(t, KindDecision, "Nobody knows where this came from", "auth")
+	all := []*Entry{mine, theirs, orphan}
+
+	res := Query(all, nil, Filter{Plan: "jwt-migration"})
+	if res.Count != 1 || res.Records[0].ID != mine.ID {
+		t.Fatalf("plan=jwt-migration should return only its own record, got %+v", res.Records)
+	}
+
+	res = Query(all, nil, Filter{Plan: "jwt-migration", About: []string{"orders"}})
+	if res.Count != 0 {
+		t.Fatalf("the plan bound and the tag bound both apply, got %d", res.Count)
+	}
+
+	if got := Query(all, nil, Filter{}).Count; got != 3 {
+		t.Fatalf("no plan named means no plan filter, got %d", got)
+	}
+	if got := Query(all, nil, Filter{Plan: "order-cancellation"}).Count; got != 1 {
+		t.Fatalf("the other plan's record is reachable by its own slug, got %d", got)
+	}
+}
+
+// The count-before-dump guard bounds by plan now, not by file, and it has to
+// still bound: a plan whose own matches are over the threshold gets the count
+// and the hint, not a partial slice of one objective's history.
+func TestQueryWithholdsOverTheThresholdWithinOnePlan(t *testing.T) {
+	var all []*Entry
+	for i := 0; i < DefaultThreshold+5; i++ {
+		e := entry(t, KindDecision, "decision", "auth")
+		e.Origin = &Origin{Plan: "busy"}
+		all = append(all, e)
+	}
+	quiet := entry(t, KindDecision, "decision", "auth")
+	quiet.Origin = &Origin{Plan: "quiet"}
+	all = append(all, quiet)
+
+	res := Query(all, nil, Filter{Plan: "busy"})
+	if res.Count != DefaultThreshold+5 {
+		t.Fatalf("the count must cover only the named plan, got %d", res.Count)
+	}
+	if res.Returned != 0 || !res.Truncated || res.Hint == "" {
+		t.Fatalf("over the threshold the records are withheld: returned=%d truncated=%v", res.Returned, res.Truncated)
+	}
+
+	res = Query(all, nil, Filter{Plan: "quiet"})
+	if res.Count != 1 || res.Truncated {
+		t.Fatalf("the quiet plan is unaffected by the busy one, got count=%d truncated=%v", res.Count, res.Truncated)
+	}
+}
+
 // A path-shaped tag should catch the files under it, or every query would have
 // to know the exact file that was tagged.
 func TestQueryAboutMatchesPathPrefix(t *testing.T) {
@@ -69,7 +130,7 @@ func TestQueryAboutMatchesPathPrefix(t *testing.T) {
 func TestQueryCurrentDropsSupersededEntries(t *testing.T) {
 	old := entry(t, KindDecision, "Use HS256", "auth")
 	fresh := entry(t, KindDecision, "Use RS256", "auth")
-	edges := []*Edge{supersedes(fresh, old)}
+	edges := []*Edge{supersedes(t, fresh, old)}
 	all := []*Entry{old, fresh}
 
 	if got := Query(all, edges, Filter{}).Count; got != 2 {
@@ -237,7 +298,7 @@ func TestRenderNumbersChronologically(t *testing.T) {
 func TestRenderMarksSuperseded(t *testing.T) {
 	old := entry(t, KindADR, "Old record", "auth")
 	fresh := entry(t, KindADR, "New record", "auth")
-	out := Render([]*Entry{old, fresh}, []*Edge{supersedes(fresh, old)}, KindADR, ScopeRepo)
+	out := Render([]*Entry{old, fresh}, []*Edge{supersedes(t, fresh, old)}, KindADR, ScopeRepo)
 	if !strings.Contains(out, "status: superseded") {
 		t.Fatalf("a superseded record must say so:\n%s", out)
 	}

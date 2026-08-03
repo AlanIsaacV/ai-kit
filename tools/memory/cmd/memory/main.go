@@ -25,21 +25,27 @@ import (
 const usage = `memory — append-only knowledge log
 
 Usage:
-  memory init      [--scope plan|repo|user] [--plan SLUG]
-  memory add       --kind KIND --title TEXT --about TAG[,TAG...] [--body TEXT] [--slug SLUG]
+  memory init      [--scope repo|user]
+  memory add       --plan SLUG --kind KIND --title TEXT --about TAG[,TAG...] [--body TEXT] [--slug SLUG]
   memory link      --type TYPE --from ID --to ID
-  memory query     [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--current] [--limit N]
-  memory search    TEXT [--current] [--limit N]
+  memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--current] [--limit N]
+  memory search    TEXT [--plan SLUG] [--current] [--limit N]
   memory graph     --from ID [--depth N]
   memory render    --as KIND
-  memory promote   --ids ID[,ID...] --to repo|user
+  memory promote   --ids ID[,ID...] --to user
   memory validate  [--all]
   memory kinds
 
 Common flags:
-  --scope plan|repo|user   which log to act on (default: plan)
-  --plan SLUG              which plan's log, when --scope=plan
+  --scope repo|user        which log to act on (default: repo)
+  --plan SLUG              which plan a record belongs to: stamped by 'add',
+                           bounds 'query' and 'search'. Defaults to AI_KIT_PLAN.
+                           Other commands accept it and read the whole log.
   --dir PATH               start directory for repo discovery (default: cwd)
+
+There is one log per repo, at <repo>/.ai-kit/memory.jsonl. The plan a record
+belongs to lives in the record, as origin.plan, so any two records can be linked
+whatever plan produced them.
 
 Every command prints JSON on stdout, on success and on failure alike, except
 'render' which prints markdown. Exit 0 means the command ran; exit 1 means it
@@ -125,21 +131,46 @@ type common struct {
 	dir   string
 }
 
+// --plan is bound on every command, not only the three that use it. It is a
+// filter on 'query' and 'search' and a stamp on 'add'; elsewhere it is accepted
+// and ignored, because a caller that has a plan slug in hand will pass it, and
+// refusing the flag would break every invocation that names one out of habit.
 func (c *common) bind(fs *flag.FlagSet) {
-	fs.StringVar(&c.scope, "scope", "plan", "plan|repo|user")
-	fs.StringVar(&c.plan, "plan", "", "plan slug, when --scope=plan")
+	fs.StringVar(&c.scope, "scope", "repo", "repo|user")
+	fs.StringVar(&c.plan, "plan", "", "plan slug: stamped by add, bounds query and search")
 	fs.StringVar(&c.dir, "dir", "", "start directory for repo discovery")
 }
 
 func (c *common) resolve() (memory.Location, error) {
-	loc, err := memory.Resolve(memory.Scope(c.scope), c.plan, c.dir)
+	loc, err := memory.Resolve(memory.Scope(c.scope), c.dir)
 	if err != nil {
-		if errors.Is(err, memory.ErrNoPlan) {
-			return loc, fail("no_plan", "%s", err.Error())
-		}
 		return loc, fail("bad_scope", "%s", err.Error())
 	}
 	return loc, nil
+}
+
+// planFilter is the plan a read command bounds itself to, empty when none was
+// named — an unbounded read over one repo's whole log, which the count-before-dump
+// threshold still guards.
+func (c *common) planFilter() (string, error) {
+	slug, err := memory.PlanSlug(c.plan)
+	if err != nil {
+		return "", fail("bad_plan", "%s", err.Error())
+	}
+	return slug, nil
+}
+
+// planStamp is the plan a write records itself under. Unlike planFilter it
+// refuses to be empty: see memory.ErrNoPlan.
+func (c *common) planStamp() (string, error) {
+	slug, err := memory.RequirePlan(c.plan)
+	if err != nil {
+		if errors.Is(err, memory.ErrNoPlan) {
+			return "", fail("no_plan", "%s", err.Error())
+		}
+		return "", fail("bad_plan", "%s", err.Error())
+	}
+	return slug, nil
 }
 
 func (c *common) load() (memory.Location, []memory.Line, error) {
@@ -171,7 +202,7 @@ func cmdInit(args []string) error {
 	if err != nil {
 		return fail("init_failed", "%s", err.Error())
 	}
-	emit(map[string]any{"path": loc.Path, "scope": loc.Scope, "plan": loc.Plan, "created": created})
+	emit(map[string]any{"path": loc.Path, "scope": loc.Scope, "created": created})
 	return nil
 }
 
@@ -195,6 +226,13 @@ func cmdAdd(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Before the id, before anything: a record whose plan cannot be named is a
+	// record no bounded query will ever return, and the log is append-only, so
+	// there is no taking it back afterwards.
+	plan, err := c.planStamp()
+	if err != nil {
+		return err
+	}
 
 	id, err := memory.NewULID(time.Now())
 	if err != nil {
@@ -208,24 +246,26 @@ func cmdAdd(args []string) error {
 
 	origin := &memory.Origin{
 		Repo:   firstNonEmpty(*repo, filepath.Base(loc.Repo)),
-		Plan:   loc.Plan,
+		Plan:   plan,
 		Author: firstNonEmpty(*author, os.Getenv("AI_KIT_AUTHOR"), gitUserName(loc.Repo)),
 		Unit:   *unit,
 	}
-	if *origin == (memory.Origin{}) {
-		origin = nil
-	}
 
+	// The schema version is stamped, never passed in. The tool knows which
+	// schema it writes; a caller that could choose would eventually choose
+	// wrong, and a record that lies about its version is worse than one with
+	// no version at all.
 	e := &memory.Entry{
-		ID:     id,
-		Kind:   memory.Kind(*kind),
-		Slug:   s,
-		Scope:  memory.Scope(c.scope),
-		At:     time.Now().UTC().Format(time.RFC3339),
-		About:  splitList(*about),
-		Title:  strings.TrimSpace(*title),
-		Body:   strings.TrimSpace(*body),
-		Origin: origin,
+		Version: memory.CurrentSchemaVersion,
+		ID:      id,
+		Kind:    memory.Kind(*kind),
+		Slug:    s,
+		Scope:   memory.Scope(c.scope),
+		At:      time.Now().UTC().Format(time.RFC3339),
+		About:   splitList(*about),
+		Title:   strings.TrimSpace(*title),
+		Body:    strings.TrimSpace(*body),
+		Origin:  origin,
 	}
 
 	// Validate before writing. The log is append-only, so a bad record cannot
@@ -259,11 +299,12 @@ func cmdLink(args []string) error {
 	}
 
 	edge := &memory.Edge{
-		Kind: memory.KindEdge,
-		Type: memory.EdgeType(*typ),
-		From: *from,
-		To:   *to,
-		At:   time.Now().UTC().Format(time.RFC3339),
+		Version: memory.CurrentSchemaVersion,
+		Kind:    memory.KindEdge,
+		Type:    memory.EdgeType(*typ),
+		From:    *from,
+		To:      *to,
+		At:      time.Now().UTC().Format(time.RFC3339),
 	}
 	if ps := memory.ValidateEdge(edge); len(ps) > 0 {
 		emit(map[string]any{"error": "edge rejected", "code": "invalid_edge", "problems": ps})
@@ -309,7 +350,12 @@ func cmdQuery(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	plan, err := c.planFilter()
+	if err != nil {
+		return err
+	}
 	return runQuery(&c, memory.Filter{
+		Plan:        plan,
 		About:       splitList(*about),
 		Kinds:       toKinds(splitList(*kinds)),
 		Slug:        *slug,
@@ -334,8 +380,12 @@ func cmdSearch(args []string) error {
 	if strings.TrimSpace(text) == "" {
 		return fail("missing_text", "search needs text: memory search \"key rotation\"")
 	}
+	plan, err := c.planFilter()
+	if err != nil {
+		return err
+	}
 	return runQuery(&c, memory.Filter{
-		Text: text, CurrentOnly: *current, Limit: *limit, Threshold: *threshold,
+		Plan: plan, Text: text, CurrentOnly: *current, Limit: *limit, Threshold: *threshold,
 	})
 }
 
@@ -346,7 +396,7 @@ func runQuery(c *common, f memory.Filter) error {
 	}
 	res := memory.Query(memory.Entries(lines), memory.Edges(lines), f)
 	out := map[string]any{
-		"path": loc.Path, "scope": loc.Scope, "plan": loc.Plan,
+		"path": loc.Path, "scope": loc.Scope, "plan": f.Plan,
 		"count": res.Count, "returned": res.Returned, "truncated": res.Truncated,
 		"records": res.Records,
 	}
@@ -405,7 +455,7 @@ func cmdPromote(args []string) error {
 	var c common
 	c.bind(fs)
 	ids := fs.String("ids", "", "comma-separated entry ids to promote")
-	to := fs.String("to", "", "target scope: repo|user")
+	to := fs.String("to", "", "target scope: user")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -414,15 +464,24 @@ func cmdPromote(args []string) error {
 		return fail("missing_ids", "promote needs --ids <id>[,<id>...]")
 	}
 	target := memory.Scope(*to)
-	if target != memory.ScopeRepo && target != memory.ScopeUser {
-		return fail("bad_target", "--to must be repo or user")
+	switch target {
+	case memory.ScopeUser:
+	case memory.ScopeRepo:
+		// Promotion is a copy across files, and repo → repo is not a move at
+		// all: since schema version 2 the repo log is where a plan's records are
+		// written in the first place, so there is nothing below it to lift them
+		// out of. Only repo → user still crosses a file boundary.
+		return fail("target_removed", "promote --to repo was removed: a plan's records are already in "+
+			"the repo log, so there is nothing to promote them from; only --to user crosses logs")
+	default:
+		return fail("bad_target", "--to must be user")
 	}
 
 	srcLoc, lines, err := c.load()
 	if err != nil {
 		return err
 	}
-	dstLoc, err := memory.Resolve(target, "", c.dir)
+	dstLoc, err := memory.Resolve(target, c.dir)
 	if err != nil {
 		return fail("bad_scope", "%s", err.Error())
 	}
@@ -438,7 +497,7 @@ func cmdPromote(args []string) error {
 	plan := memory.PlanPromotion(
 		memory.Entries(lines), memory.Edges(lines),
 		memory.Entries(dstLines), memory.Edges(dstLines),
-		want, target, srcLoc.Plan,
+		want, target,
 	)
 
 	if len(plan.Records) > 0 {
@@ -473,8 +532,13 @@ func cmdValidate(args []string) error {
 
 	var locs []memory.Location
 	if *all {
-		for _, s := range []memory.Scope{memory.ScopePlan, memory.ScopeRepo, memory.ScopeUser} {
-			l, err := memory.Resolve(s, c.plan, c.dir)
+		// Every scope there is. It used to include the plan scope, and that made
+		// --all a sweep that swept nothing: resolving it needed a single plan
+		// directory to pick, a repo with several had none, and the loop skipped
+		// the failure and reported ok over an empty set. With one log per repo
+		// there is nothing left to guess.
+		for _, s := range []memory.Scope{memory.ScopeRepo, memory.ScopeUser} {
+			l, err := memory.Resolve(s, c.dir)
 			if err != nil {
 				continue // a scope that cannot be resolved simply has no log
 			}
@@ -490,6 +554,7 @@ func cmdValidate(args []string) error {
 
 	reports := make([]memory.Report, 0, len(locs))
 	ok := true
+	unjudged := 0
 	for _, l := range locs {
 		lines, err := memory.Open(l.Path).Read()
 		if err != nil {
@@ -498,9 +563,19 @@ func cmdValidate(args []string) error {
 		r := memory.ValidateLog(l.Path, lines)
 		reports = append(reports, r)
 		ok = ok && r.OK
+		unjudged += len(r.Unjudged)
 	}
 
-	emit(map[string]any{"ok": ok, "reports": reports})
+	// The unjudged count is surfaced at the top level next to ok, because it
+	// is the one number a caller must not miss: ok=true with unjudged>0 means
+	// "nothing is wrong with what I could read", which is a different claim
+	// from "nothing is wrong". Records this binary is too old to judge are not
+	// a failure, so they never flip ok or the exit code.
+	out := map[string]any{"ok": ok, "reports": reports}
+	if unjudged > 0 {
+		out["unjudged"] = unjudged
+	}
+	emit(out)
 	if !ok {
 		os.Exit(1)
 	}
@@ -515,7 +590,7 @@ func cmdKinds(args []string) error {
 	emit(map[string]any{
 		"entry_kinds": memory.EntryKinds(),
 		"edge_types":  memory.EdgeTypes(),
-		"scopes":      []memory.Scope{memory.ScopePlan, memory.ScopeRepo, memory.ScopeUser},
+		"scopes":      memory.Scopes(),
 		"threshold":   memory.DefaultThreshold,
 	})
 	return nil

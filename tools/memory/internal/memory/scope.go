@@ -5,32 +5,52 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 )
 
 // Location resolves to one memory log on disk.
 type Location struct {
 	Scope Scope
-	Plan  string // only meaningful for ScopePlan
 	Repo  string // absolute repo root, empty for ScopeUser
 	Path  string
 }
 
-// ErrNoPlan is returned when a plan-scoped operation cannot tell which plan it
-// belongs to. Guessing would attach records to the wrong plan, which is worse
-// than stopping.
-var ErrNoPlan = errors.New("no plan selected: pass --plan <slug> or set AI_KIT_PLAN")
+// ErrNoPlan is returned when a write cannot tell which plan the record belongs
+// to.
+//
+// One repo has one log, so `origin.plan` is the only thing a bounded query has
+// left to bound by: a record written without one is unreachable by every query
+// that names a plan, and unreachable is how a memory quietly becomes worthless.
+// Guessing would be worse than stopping — it would file the record under someone
+// else's objective, where the mistake is invisible.
+var ErrNoPlan = errors.New("no plan: pass --plan <slug> or set AI_KIT_PLAN")
+
+// ErrPlanScopeRemoved is returned for `--scope plan`.
+//
+// It is a named refusal rather than a generic "unknown scope" because the value
+// was legal until schema version 2, and the scripts, habits and older binaries
+// that still pass it are all real. "Unknown" would read as a typo when the truth
+// is that the scope was removed and its records now live in the repo log.
+var ErrPlanScopeRemoved = errors.New(`the "plan" scope was removed in schema version 2: ` +
+	`there is one log per repo at <repo>/.ai-kit/memory.jsonl, and --plan is now a filter ` +
+	`over origin.plan rather than a choice of file`)
 
 // Resolve locates the log for a scope.
 //
-//	plan → <repo>/plans/<slug>/memory.jsonl   the working noise of one objective
-//	repo → <repo>/.ai-kit/memory.jsonl        distilled, promoted deliberately
-//	user → ~/.ai-kit/memory.jsonl             distilled further, across repos
+//	repo → <repo>/.ai-kit/memory.jsonl   everything this repo's work has produced
+//	user → ~/.ai-kit/memory.jsonl        distilled across repos, promoted deliberately
 //
-// All three are gitignored: these are files the assistant writes for itself,
-// and they have no business adding noise to a pull request.
-func Resolve(scope Scope, plan, startDir string) (Location, error) {
-	loc := Location{Scope: scope, Plan: plan}
+// Both are gitignored: these are files the assistant writes for itself, and they
+// have no business adding noise to a pull request.
+//
+// There used to be a third — `plan → <repo>/plans/<slug>/memory.jsonl` — and
+// removing it is what schema version 2 is. One file per plan was not a tidier
+// arrangement of the same graph, it was a smaller graph: an edge needs both of
+// its endpoints in the file it is written to, so nothing in one plan's log could
+// ever point at anything in another's. The plan a record belongs to moved out of
+// the filesystem and into `origin.plan`, where it bounds a query instead of
+// walling off a file.
+func Resolve(scope Scope, startDir string) (Location, error) {
+	loc := Location{Scope: scope}
 
 	if scope == ScopeUser {
 		home, err := os.UserHomeDir()
@@ -51,50 +71,44 @@ func Resolve(scope Scope, plan, startDir string) (Location, error) {
 	case ScopeRepo:
 		loc.Path = filepath.Join(root, ".ai-kit", "memory.jsonl")
 	case ScopePlan:
-		if plan == "" {
-			plan = os.Getenv("AI_KIT_PLAN")
-		}
-		if plan == "" {
-			only, err := onlyPlan(root)
-			if err != nil {
-				return loc, err
-			}
-			plan = only
-		}
-		if !slugRE.MatchString(plan) {
-			return loc, fmt.Errorf("plan %q must be kebab-case", plan)
-		}
-		loc.Plan = plan
-		loc.Path = filepath.Join(root, "plans", plan, "memory.jsonl")
+		return loc, ErrPlanScopeRemoved
 	default:
-		return loc, fmt.Errorf("unknown scope %q; valid: plan, repo, user", scope)
+		return loc, fmt.Errorf("unknown scope %q; valid: %s", scope, joinScopes(Scopes()))
 	}
 	return loc, nil
 }
 
-// onlyPlan returns the single plan under plans/, if there is exactly one.
-// With none or several the caller must say which — picking one would silently
-// write to the wrong objective's log.
-func onlyPlan(root string) (string, error) {
-	entries, err := os.ReadDir(filepath.Join(root, "plans"))
+// PlanSlug is the plan a command names: the flag when it carries something,
+// otherwise AI_KIT_PLAN.
+//
+// An empty result means no plan was named at all. A read treats that as "do not
+// filter by plan", which is how a query reaches across every objective in the
+// log; a write treats it as a refusal, because there is no such thing as a
+// record that belongs to no plan. See RequirePlan.
+func PlanSlug(plan string) (string, error) {
+	if plan == "" {
+		plan = os.Getenv("AI_KIT_PLAN")
+	}
+	if plan == "" {
+		return "", nil
+	}
+	if !slugRE.MatchString(plan) {
+		return "", fmt.Errorf("plan %q must be kebab-case: lowercase letters, digits and hyphens", plan)
+	}
+	return plan, nil
+}
+
+// RequirePlan is PlanSlug for the write path, where an unnamed plan is a
+// refusal rather than an absent filter.
+func RequirePlan(plan string) (string, error) {
+	slug, err := PlanSlug(plan)
 	if err != nil {
+		return "", err
+	}
+	if slug == "" {
 		return "", ErrNoPlan
 	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-	switch len(names) {
-	case 1:
-		return names[0], nil
-	case 0:
-		return "", ErrNoPlan
-	default:
-		return "", fmt.Errorf("%w (found %d: %v)", ErrNoPlan, len(names), names)
-	}
+	return slug, nil
 }
 
 // RepoRoot walks up from dir looking for a .git entry.

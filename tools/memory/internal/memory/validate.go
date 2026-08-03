@@ -28,114 +28,397 @@ func (p Problem) String() string {
 	return fmt.Sprintf("line %d: %s", p.Line, p.Message)
 }
 
-// ValidateEntry checks one entry in isolation. This is the gate every write
-// goes through, so garbage never reaches the log in the first place — the
-// alternative is discovering three months later that half the records have an
-// invented kind and an empty about, at which point the memory is worthless.
-func ValidateEntry(e *Entry) []Problem {
-	var ps []Problem
-	add := func(field, msg string) { ps = append(ps, Problem{Field: field, Message: msg}) }
+// ---------------------------------------------------------------- checks ---
 
-	if e.ID == "" {
-		add("id", "required")
-	} else if !ValidULID(e.ID) {
-		add("id", fmt.Sprintf("%q is not a ULID (26 Crockford base32 chars)", e.ID))
-	}
+// checks accumulates problems while one version's rule set runs.
+//
+// Every rule body lives here and is written exactly once. A version's
+// validator is the *list* of rules it names, not a copy of their bodies — so
+// when a later version narrows the scope set, version 1 goes on calling this
+// same scope rule with the set it was written against, and "is this a ULID"
+// never has two implementations that can drift apart.
+type checks struct{ ps []Problem }
 
-	if e.Kind == "" {
-		add("kind", "required")
-	} else if !entryKinds[e.Kind] {
-		add("kind", fmt.Sprintf("%q is not a known kind; valid: %s", e.Kind, joinKinds(EntryKinds())))
-	}
+func (c *checks) add(field, format string, args ...any) {
+	c.ps = append(c.ps, Problem{Field: field, Message: fmt.Sprintf(format, args...)})
+}
 
-	if e.Slug == "" {
-		add("slug", "required")
-	} else if !slugRE.MatchString(e.Slug) {
-		add("slug", fmt.Sprintf("%q must be kebab-case: lowercase letters, digits and hyphens", e.Slug))
+// version requires the record to declare the version whose rules are running,
+// or nothing at all. It is what makes a rule set complete rather than a set of
+// field checks that happen to be reached from the right place.
+func (c *checks) version(field string, got, want int) {
+	if resolveVersion(got) != want {
+		c.add(field, "record declares schema version %d but is being judged as version %d", got, want)
 	}
+}
 
-	if e.Scope == "" {
-		add("scope", "required")
-	} else if !scopes[e.Scope] {
-		add("scope", fmt.Sprintf("%q is not a known scope; valid: plan, repo, user", e.Scope))
+func (c *checks) ulid(field, v string) {
+	if v == "" {
+		c.add(field, "required")
+		return
 	}
+	if !ValidULID(v) {
+		c.add(field, "%q is not a ULID (26 Crockford base32 chars)", v)
+	}
+}
 
-	if e.At == "" {
-		add("at", "required")
-	} else if _, err := time.Parse(time.RFC3339, e.At); err != nil {
-		add("at", fmt.Sprintf("%q is not RFC3339", e.At))
+func (c *checks) entryKind(field string, k Kind, valid map[Kind]bool) {
+	if k == "" {
+		c.add(field, "required")
+		return
 	}
+	if !valid[k] {
+		c.add(field, "%q is not a known kind; valid: %s", k, joinKinds(sortedKinds(valid)))
+	}
+}
 
-	// `about` is what makes retrieval by area possible at all. An entry with
-	// no `about` can only ever be found by a full scan, which is the failure
-	// mode this whole store exists to avoid — so it is required, not optional.
-	if len(e.About) == 0 {
-		add("about", "at least one tag is required; without it the entry is unreachable by any filtered query")
+// literalKind pins a field to one value, which is how an edge announces that
+// it is an edge.
+func (c *checks) literalKind(field string, got, want Kind) {
+	if got != want {
+		c.add(field, "must be %q", want)
 	}
-	for i, a := range e.About {
-		if strings.TrimSpace(a) == "" {
-			add(fmt.Sprintf("about[%d]", i), "must not be blank")
+}
+
+func (c *checks) edgeType(field string, t EdgeType, valid map[EdgeType]bool) {
+	if t == "" {
+		c.add(field, "required")
+		return
+	}
+	if !valid[t] {
+		c.add(field, "%q is not a known edge type; valid: %s", t, joinEdgeTypes(sortedEdgeTypes(valid)))
+	}
+}
+
+func (c *checks) scope(field string, s Scope, valid map[Scope]bool) {
+	if s == "" {
+		c.add(field, "required")
+		return
+	}
+	if !valid[s] {
+		c.add(field, "%q is not a known scope; valid: %s", s, joinScopes(sortedScopes(valid)))
+	}
+}
+
+func (c *checks) slug(field, v string) {
+	if v == "" {
+		c.add(field, "required")
+		return
+	}
+	if !slugRE.MatchString(v) {
+		c.add(field, "%q must be kebab-case: lowercase letters, digits and hyphens", v)
+	}
+}
+
+func (c *checks) timestamp(field, v string) {
+	if v == "" {
+		c.add(field, "required")
+		return
+	}
+	if _, err := time.Parse(time.RFC3339, v); err != nil {
+		c.add(field, "%q is not RFC3339", v)
+	}
+}
+
+// text requires a field to carry something other than whitespace.
+func (c *checks) text(field, v string) {
+	if strings.TrimSpace(v) == "" {
+		c.add(field, "required")
+	}
+}
+
+// tags requires at least one non-blank tag.
+//
+// `about` is what makes retrieval by area possible at all. An entry with no
+// `about` can only ever be found by a full scan, which is the failure mode
+// this whole store exists to avoid — so it is required, not optional.
+func (c *checks) tags(field string, v []string) {
+	if len(v) == 0 {
+		c.add(field, "at least one tag is required; without it the entry is unreachable by any filtered query")
+	}
+	for i, tag := range v {
+		if strings.TrimSpace(tag) == "" {
+			c.add(fmt.Sprintf("%s[%d]", field, i), "must not be blank")
 		}
 	}
-
-	if strings.TrimSpace(e.Title) == "" {
-		add("title", "required")
-	}
-
-	return ps
 }
 
-// ValidateEdge checks one edge in isolation. Whether its endpoints exist is a
-// separate, log-wide question — see ValidateLog.
-func ValidateEdge(e *Edge) []Problem {
-	var ps []Problem
-	add := func(field, msg string) { ps = append(ps, Problem{Field: field, Message: msg}) }
-
-	if e.Kind != KindEdge {
-		add("kind", fmt.Sprintf("must be %q", KindEdge))
+// distinct refuses a relation that points at its own source.
+func (c *checks) distinct(field, from, to string) {
+	if from != "" && from == to {
+		c.add(field, "an edge must not point at its own source")
 	}
-	if e.Type == "" {
-		add("type", "required")
-	} else if !edgeTypes[e.Type] {
-		add("type", fmt.Sprintf("%q is not a known edge type; valid: %s", e.Type, joinEdgeTypes(EdgeTypes())))
-	}
-	if e.From == "" {
-		add("from", "required")
-	} else if !ValidULID(e.From) {
-		add("from", fmt.Sprintf("%q is not a ULID", e.From))
-	}
-	if e.To == "" {
-		add("to", "required")
-	} else if !ValidULID(e.To) {
-		add("to", fmt.Sprintf("%q is not a ULID", e.To))
-	}
-	if e.From != "" && e.From == e.To {
-		add("to", "an edge must not point at its own source")
-	}
-	if e.At == "" {
-		add("at", "required")
-	} else if _, err := time.Parse(time.RFC3339, e.At); err != nil {
-		add("at", fmt.Sprintf("%q is not RFC3339", e.At))
-	}
-
-	return ps
 }
 
-// Report is the outcome of validating a whole log.
+// ------------------------------------------------------- version 1 rules ---
+
+// validateEntryV1 is the complete rule set for an entry written under schema
+// version 1. Not a diff against some other version and not a table of
+// exceptions: the whole list, stated here, so that reading this function tells
+// you everything a v1 entry had to satisfy without holding another version in
+// your head.
+//
+// This function is frozen. When the schema moves on, a validateEntryV2 appears
+// beside it and this one keeps judging the records that were written while it
+// was current. Deleting it would condemn every v1 record on disk.
+func validateEntryV1(e *Entry) []Problem {
+	var c checks
+	c.version("version", e.Version, SchemaVersion1)
+	c.ulid("id", e.ID)
+	c.entryKind("kind", e.Kind, entryKindsV1)
+	c.slug("slug", e.Slug)
+	c.scope("scope", e.Scope, scopesV1)
+	c.timestamp("at", e.At)
+	c.tags("about", e.About)
+	c.text("title", e.Title)
+	return c.ps
+}
+
+// validateEdgeV1 is the complete rule set for an edge written under schema
+// version 1. Whether its endpoints exist is a separate, log-wide question —
+// see ValidateLog.
+func validateEdgeV1(e *Edge) []Problem {
+	var c checks
+	c.version("version", e.Version, SchemaVersion1)
+	c.literalKind("kind", e.Kind, KindEdge)
+	c.edgeType("type", e.Type, edgeTypesV1)
+	c.ulid("from", e.From)
+	c.ulid("to", e.To)
+	c.distinct("to", e.From, e.To)
+	c.timestamp("at", e.At)
+	return c.ps
+}
+
+// ------------------------------------------------------- version 2 rules ---
+
+// validateEntryV2 is the complete rule set for an entry written under schema
+// version 2. Like validateEntryV1, the whole list and not a diff: version 2
+// differs from version 1 in exactly one rule, and you should not have to know
+// which one to read this.
+//
+// The difference is scopesV2, which no longer holds `plan`. Every other rule is
+// the same rule — the same helper, with the same closed set — because version 2
+// narrowed where a log lives, not what a record says. Naming entryKindsV1 here
+// is deliberate: what a version owes the reader is its rules stated in full, not
+// a private copy of every value they close over.
+func validateEntryV2(e *Entry) []Problem {
+	var c checks
+	c.version("version", e.Version, SchemaVersion2)
+	c.ulid("id", e.ID)
+	c.entryKind("kind", e.Kind, entryKindsV1)
+	c.slug("slug", e.Slug)
+	c.scope("scope", e.Scope, scopesV2)
+	c.timestamp("at", e.At)
+	c.tags("about", e.About)
+	c.text("title", e.Title)
+	return c.ps
+}
+
+// validateEdgeV2 is the complete rule set for an edge written under schema
+// version 2. Rule for rule it is validateEdgeV1 — version 2 changed nothing
+// about what a relation may say.
+//
+// It is written out rather than delegating to validateEdgeV1, and that is not
+// ceremony. The first rule any version states is which version the record
+// declares, and v1's says 1: an edge stamped 2 judged by v1's rules would be
+// refused for the stamp the tool itself put on it, and since the write gate is
+// the current version's rules, `link` would refuse every edge it tried to
+// write. A rule set is a whole rule set, and the version rule is one of them.
+func validateEdgeV2(e *Edge) []Problem {
+	var c checks
+	c.version("version", e.Version, SchemaVersion2)
+	c.literalKind("kind", e.Kind, KindEdge)
+	c.edgeType("type", e.Type, edgeTypesV1)
+	c.ulid("from", e.From)
+	c.ulid("to", e.To)
+	c.distinct("to", e.From, e.To)
+	c.timestamp("at", e.At)
+	return c.ps
+}
+
+// ---------------------------------------------------------------- schema ---
+
+// RuleSet is the complete validation rule set for one schema version: how an
+// entry written under it is judged, and how an edge written under it is
+// judged.
+type RuleSet struct {
+	Entry func(*Entry) []Problem
+	Edge  func(*Edge) []Problem
+}
+
+var ruleSetV1 = RuleSet{Entry: validateEntryV1, Edge: validateEdgeV1}
+var ruleSetV2 = RuleSet{Entry: validateEntryV2, Edge: validateEdgeV2}
+
+// currentRules is the rule set for CurrentSchemaVersion, and the write gate
+// uses it directly instead of dispatching.
+//
+// That asymmetry is the point of the split. Whatever the read sweep tolerates
+// on disk, `add` and `link` refuse anything the *current* schema disallows —
+// a record cannot buy itself lenience by declaring an older version on the way
+// in.
+//
+// It is read out of the same table the read sweep dispatches through rather
+// than named a second time, so "the version this binary writes" and "the rules
+// this binary writes it against" cannot drift apart. Stated twice, a bump that
+// repointed one and forgot the other would produce a log in which every new
+// record is reported unjudged and `ok` stays true — a validate that passes
+// because it checked nothing, which is the exact silence this design exists to
+// break.
+var currentRules = mustRules(CurrentSchemaVersion)
+
+// mustRules fetches a version's rules and refuses to start without them.
+//
+// Loud at init, in the manner of regexp.MustCompile, because the only way to
+// reach it is a programming error: a version was stamped onto records without
+// being registered, or registered with half a rule set. Neither can be
+// diagnosed from the log it would produce.
+func mustRules(v int) RuleSet {
+	rs, ok := CurrentSchema()[v]
+	if !ok {
+		panic(fmt.Sprintf("memory: schema version %d is what this binary writes, but CurrentSchema has no rules for it", v))
+	}
+	if rs.Entry == nil || rs.Edge == nil {
+		panic(fmt.Sprintf("memory: schema version %d is registered with an incomplete rule set", v))
+	}
+	return rs
+}
+
+// Schema maps a declared schema version to the complete rule set for it. It is
+// a plain map so that the mapping is a value rather than a switch statement:
+// a caller can hold one, copy it, and extend it.
+type Schema map[int]RuleSet
+
+// CurrentSchema returns the version→rules table this binary knows. This is the
+// one place a new version is registered, and the write gate reads its own rules
+// back out of it, so registering is not a step that can be skipped.
+//
+// A fresh map every call, deliberately. The only caller that needs its own
+// copy is a test proving the dispatch really dispatches — which it does by
+// registering a version with different rules via With, and which would be
+// impossible if the mapping were a switch. No test should be able to change
+// what another test, or the CLI, validates against.
+func CurrentSchema() Schema {
+	return Schema{
+		SchemaVersion1: ruleSetV1,
+		SchemaVersion2: ruleSetV2,
+	}
+}
+
+// With returns a copy of s that also knows version v.
+//
+// Nothing in the tool calls this. It exists so the dispatch can be exercised
+// against a version whose rules genuinely differ, without a version this tool
+// does not actually write having to ship inside it.
+func (s Schema) With(v int, rs RuleSet) Schema {
+	out := make(Schema, len(s)+1)
+	for k, r := range s {
+		out[k] = r
+	}
+	out[v] = rs
+	return out
+}
+
+// JudgeEntry validates an entry against the rules of the version it declares,
+// rather than against the rules in force today. judged is false when this
+// binary has no rule set for that version — the caller reports that as
+// unjudged, not as a failure.
+func (s Schema) JudgeEntry(e *Entry) (ps []Problem, judged bool) {
+	rs, ok := s[e.SchemaVersion()]
+	if !ok || rs.Entry == nil {
+		return nil, false
+	}
+	return rs.Entry(e), true
+}
+
+// JudgeEdge is JudgeEntry for edges. Edges travel the same dispatch: they are
+// records, they carry a version, and the rules for what a relation may say can
+// change without the rules for entries changing.
+func (s Schema) JudgeEdge(e *Edge) (ps []Problem, judged bool) {
+	rs, ok := s[e.SchemaVersion()]
+	if !ok || rs.Edge == nil {
+		return nil, false
+	}
+	return rs.Edge(e), true
+}
+
+// ------------------------------------------------------------ write gate ---
+
+// ValidateEntry checks one entry against the *current* schema. This is the
+// gate every write goes through, so garbage never reaches the log in the first
+// place — the alternative is discovering three months later that half the
+// records have an invented kind and an empty about, at which point the memory
+// is worthless.
+//
+// It does not dispatch on the entry's declared version, and that is not an
+// oversight: the read sweep is lenient about the past, the write path is not.
+// See Schema.JudgeEntry for the reading side.
+func ValidateEntry(e *Entry) []Problem { return currentRules.Entry(e) }
+
+// ValidateEdge checks one edge against the current schema, at write time.
+// Whether its endpoints exist is a separate, log-wide question — see
+// ValidateLog.
+func ValidateEdge(e *Edge) []Problem { return currentRules.Edge(e) }
+
+// ---------------------------------------------------------------- report ---
+
+// Unjudged is a record this binary declined to check because it declares a
+// schema version this binary has no rules for.
+//
+// It is reported apart from Problems on purpose: "not checked" must never read
+// as "checked and fine". It is not a failure either — an older binary meeting
+// a record written by a newer one is a normal state of an evolving schema, not
+// a corrupt log — so it leaves Report.OK alone.
+type Unjudged struct {
+	Line    int    `json:"line"`
+	Version int    `json:"version"`
+	ID      string `json:"id,omitempty"`
+	Message string `json:"message"`
+}
+
+func (u Unjudged) String() string {
+	return fmt.Sprintf("line %d: %s", u.Line, u.Message)
+}
+
+func unjudged(num, version int, id string) Unjudged {
+	return Unjudged{
+		Line: num, Version: version, ID: id,
+		Message: fmt.Sprintf("schema version %d is not known to this binary; the record's own fields were not checked", version),
+	}
+}
+
+// Report is the outcome of validating a whole log. Every record is counted in
+// Entries or Edges whether or not it could be judged; Unjudged then says which
+// of them went unchecked and why.
 type Report struct {
-	Path     string    `json:"path"`
-	Entries  int       `json:"entries"`
-	Edges    int       `json:"edges"`
-	Problems []Problem `json:"problems"`
-	OK       bool      `json:"ok"`
+	Path     string     `json:"path"`
+	Entries  int        `json:"entries"`
+	Edges    int        `json:"edges"`
+	Problems []Problem  `json:"problems"`
+	Unjudged []Unjudged `json:"unjudged"`
+	OK       bool       `json:"ok"`
 }
 
-// ValidateLog checks every line plus the graph-wide invariants: unique ids and
-// no dangling edges. A dangling edge is worth catching because it is silent —
-// a graph walk simply returns less than it should, and nothing announces that
-// the answer was incomplete.
+// ValidateLog checks a log against the versions this binary knows. See
+// Schema.ValidateLog.
 func ValidateLog(path string, lines []Line) Report {
-	rep := Report{Path: path, Problems: []Problem{}}
+	return CurrentSchema().ValidateLog(path, lines)
+}
+
+// ValidateLog checks every line against the rules of the version that line
+// declares, plus the graph-wide invariants: unique ids and no dangling edges.
+// A dangling edge is worth catching because it is silent — a graph walk simply
+// returns less than it should, and nothing announces that the answer was
+// incomplete.
+//
+// The graph-wide invariants are applied to every line, including one whose
+// version is unknown. They are properties of the log rather than of a record's
+// shape, and they only lean on `id`, `from` and `to` — three keys the
+// compatibility rule forbids any version from renaming or repurposing. The
+// alternative would be worse: one unrecognised record would make the edges
+// pointing at it look dangling, so an unknown version elsewhere in the file
+// would manufacture problems on lines that are perfectly fine.
+func (s Schema) ValidateLog(path string, lines []Line) Report {
+	rep := Report{Path: path, Problems: []Problem{}, Unjudged: []Unjudged{}}
 
 	ids := map[string]int{} // id -> first line it appeared on
 
@@ -145,9 +428,13 @@ func ValidateLog(path string, lines []Line) Report {
 			rep.Problems = append(rep.Problems, Problem{Line: l.Num, Message: l.Err.Error(), Raw: truncate(l.Raw, 120)})
 		case l.Entry != nil:
 			rep.Entries++
-			for _, p := range ValidateEntry(l.Entry) {
-				p.Line = l.Num
-				rep.Problems = append(rep.Problems, p)
+			if ps, judged := s.JudgeEntry(l.Entry); judged {
+				for _, p := range ps {
+					p.Line = l.Num
+					rep.Problems = append(rep.Problems, p)
+				}
+			} else {
+				rep.Unjudged = append(rep.Unjudged, unjudged(l.Num, l.Entry.SchemaVersion(), l.Entry.ID))
 			}
 			if l.Entry.ID != "" {
 				if prev, dup := ids[l.Entry.ID]; dup {
@@ -161,9 +448,13 @@ func ValidateLog(path string, lines []Line) Report {
 			}
 		case l.Edge != nil:
 			rep.Edges++
-			for _, p := range ValidateEdge(l.Edge) {
-				p.Line = l.Num
-				rep.Problems = append(rep.Problems, p)
+			if ps, judged := s.JudgeEdge(l.Edge); judged {
+				for _, p := range ps {
+					p.Line = l.Num
+					rep.Problems = append(rep.Problems, p)
+				}
+			} else {
+				rep.Unjudged = append(rep.Unjudged, unjudged(l.Num, l.Edge.SchemaVersion(), ""))
 			}
 		}
 	}
@@ -190,6 +481,7 @@ func ValidateLog(path string, lines []Line) Report {
 	}
 
 	sort.SliceStable(rep.Problems, func(i, j int) bool { return rep.Problems[i].Line < rep.Problems[j].Line })
+	sort.SliceStable(rep.Unjudged, func(i, j int) bool { return rep.Unjudged[i].Line < rep.Unjudged[j].Line })
 	rep.OK = len(rep.Problems) == 0
 	return rep
 }
@@ -206,6 +498,14 @@ func joinEdgeTypes(ts []EdgeType) string {
 	s := make([]string, len(ts))
 	for i, t := range ts {
 		s[i] = string(t)
+	}
+	return strings.Join(s, ", ")
+}
+
+func joinScopes(ss []Scope) string {
+	s := make([]string, len(ss))
+	for i, sc := range ss {
+		s[i] = string(sc)
 	}
 	return strings.Join(s, ", ")
 }

@@ -7,6 +7,48 @@ import (
 	"sort"
 )
 
+// SchemaVersion1 is the record shape this tool has written since it existed:
+// the fields on Entry and Edge below, with `kind` drawn from entryKindsV1,
+// `type` from edgeTypesV1 and `scope` from scopesV1.
+//
+// A version is a whole rule set, not a diff. Once records carrying a version
+// are on disk, that version's rules are frozen — see validateEntryV1 — because
+// the only thing that makes a stamp worth writing is that it still means the
+// same thing years later.
+const SchemaVersion1 = 1
+
+// SchemaVersion2 narrows the scope set to {repo, user}. `plan` is gone, because
+// there is no longer a per-plan log for a record to live in: one repo has one
+// log, and the plan a record belongs to is `origin.plan` rather than a
+// directory. That was forced by a property of the log itself — an edge needs
+// both of its endpoints in the file it is written to, so one file per plan made
+// "this objective derives from that one" inexpressible across plans.
+//
+// Nothing else about the shape of a record changed. The kinds, the edge types
+// and every field are version 1's, which is why validateEntryV2 names
+// entryKindsV1 rather than declaring a set of its own.
+//
+// The records already on disk declare version 1, most of them carrying
+// `"scope": "plan"`, and they go on being judged by version 1's rules, where
+// that value is valid. Not one byte of them was rewritten to get here.
+const SchemaVersion2 = 2
+
+// CurrentSchemaVersion is what every record written from now on is stamped
+// with. There is no flag for it: a version the caller can choose is a version
+// the caller can get wrong, and the tool always knows which schema it writes.
+const CurrentSchemaVersion = SchemaVersion2
+
+// resolveVersion turns a declared version into the version a record is judged
+// at. Zero means the `version` key was absent, which reads as version 1: the
+// stamp was introduced after those records were written and nothing on disk is
+// ever rewritten to add it. An unstamped record is not a broken record.
+func resolveVersion(v int) int {
+	if v == 0 {
+		return SchemaVersion1
+	}
+	return v
+}
+
 // Kind is the discriminator of a line in the log. Every line is either an
 // entry (a thing that happened or was decided) or an edge (a relation between
 // two entries).
@@ -39,17 +81,35 @@ const (
 	KindEdge Kind = "edge"
 )
 
-var entryKinds = map[Kind]bool{
+// entryKindsV1 is the closed set of entry kinds as schema version 1 defines
+// it. It is frozen: a later version that adds or removes a kind declares its
+// own set and leaves this one alone, because the records already on disk still
+// have to be judged by the set they were written against.
+var entryKindsV1 = map[Kind]bool{
 	KindObjective: true, KindUnit: true, KindDecision: true, KindDeviation: true,
 	KindAssumption: true, KindOpenQuestion: true, KindWontFix: true, KindDeadEnd: true,
 	KindADR: true, KindPostmortem: true, KindReviewFinding: true,
 }
 
-// EntryKinds returns every valid entry kind, sorted. Used by the CLI's help
-// and error messages so the closed set is stated in exactly one place.
-func EntryKinds() []Kind {
-	out := make([]Kind, 0, len(entryKinds))
-	for k := range entryKinds {
+// entryKinds is the current schema's set: what `memory kinds` prints and what
+// the write gate enforces. Whoever adds a version repoints this at the new
+// version's set — that is one of the three obligations the README names.
+//
+// Version 2 did not touch the kinds, so it is still version 1's set and this
+// still points at it. A second map with the same keys would be one more thing
+// to keep in step, and — since a map is a reference — an `entryKindsV2 =
+// entryKindsV1` alias would be a trap: two names for one map, either of which
+// looks safe to narrow.
+var entryKinds = entryKindsV1
+
+// EntryKinds returns every entry kind the current schema accepts, sorted. Used
+// by the CLI's help and error messages so the closed set is stated in exactly
+// one place.
+func EntryKinds() []Kind { return sortedKinds(entryKinds) }
+
+func sortedKinds(set map[Kind]bool) []Kind {
+	out := make([]Kind, 0, len(set))
+	for k := range set {
 		out = append(out, k)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
@@ -79,15 +139,23 @@ const (
 	EdgeRelatesTo EdgeType = "relates_to"
 )
 
-var edgeTypes = map[EdgeType]bool{
+// edgeTypesV1 is the closed set of edge types as schema version 1 defines it,
+// frozen for the same reason entryKindsV1 is.
+var edgeTypesV1 = map[EdgeType]bool{
 	EdgeImplements: true, EdgeDerivesFrom: true, EdgeSupersedes: true,
 	EdgeAnswers: true, EdgeCausedBy: true, EdgeRelatesTo: true,
 }
 
-// EdgeTypes returns every valid edge type, sorted.
-func EdgeTypes() []EdgeType {
-	out := make([]EdgeType, 0, len(edgeTypes))
-	for t := range edgeTypes {
+// edgeTypes is the current schema's set. Version 2 changed nothing about what
+// a relation may say, so it is still version 1's set; see entryKinds.
+var edgeTypes = edgeTypesV1
+
+// EdgeTypes returns every edge type the current schema accepts, sorted.
+func EdgeTypes() []EdgeType { return sortedEdgeTypes(edgeTypes) }
+
+func sortedEdgeTypes(set map[EdgeType]bool) []EdgeType {
+	out := make([]EdgeType, 0, len(set))
+	for t := range set {
 		out = append(out, t)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
@@ -99,15 +167,53 @@ func EdgeTypes() []EdgeType {
 type Scope string
 
 const (
+	// ScopePlan is version 1 vocabulary. Version 2 removed it — there is no
+	// per-plan log any more — but the constant stays, because scopesV1 names it,
+	// version 1's rules are frozen, and the records carrying it are still read
+	// every day. What went away is `plan` as a place Resolve can find and as a
+	// value the CLI accepts, not the word itself.
 	ScopePlan Scope = "plan"
 	ScopeRepo Scope = "repo"
 	ScopeUser Scope = "user"
 )
 
-var scopes = map[Scope]bool{ScopePlan: true, ScopeRepo: true, ScopeUser: true}
+// scopesV1 is the closed set of scopes as schema version 1 defines it. If a
+// later version drops one of these, it does so by declaring its own set — not
+// by editing this line, and not by rewriting the records that used the value.
+var scopesV1 = map[Scope]bool{ScopePlan: true, ScopeRepo: true, ScopeUser: true}
+
+// scopesV2 is the closed set of scopes as schema version 2 defines it: `plan`
+// is absent. This is the whole of what version 2 changed, and it is exactly the
+// case the versioning machinery was built for — a value that was legal
+// yesterday is illegal today, and no record written yesterday becomes invalid.
+var scopesV2 = map[Scope]bool{ScopeRepo: true, ScopeUser: true}
+
+// scopes is the current schema's set.
+var scopes = scopesV2
+
+// Scopes returns every scope the current schema accepts, sorted. Like
+// EntryKinds and EdgeTypes, it exists so the closed set is stated in exactly
+// one place: when a version narrows it, `memory kinds` narrows with it instead
+// of going on advertising a value the write gate now refuses.
+func Scopes() []Scope { return sortedScopes(scopes) }
+
+func sortedScopes(set map[Scope]bool) []Scope {
+	out := make([]Scope, 0, len(set))
+	for s := range set {
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
 
 // Origin records where a record came from. It survives promotion, which is
 // what lets a user-level store say which repo and which plan produced an entry.
+//
+// Plan carries more weight than the rest of it. Since version 2 there is one
+// log per repo, so `origin.plan` is the only thing a bounded query has left to
+// bound by — a record written without one is not untidy, it is unreachable by
+// every query that names a plan. That is why the write path refuses to guess it;
+// see ErrNoPlan.
 type Origin struct {
 	Repo   string `json:"repo,omitempty"`
 	Plan   string `json:"plan,omitempty"`
@@ -117,25 +223,77 @@ type Origin struct {
 
 // Entry is one recorded thing. Written once, never modified: a correction is a
 // new entry with a supersedes edge pointing at this one.
+//
+// Version comes first on the line, and without omitempty, on purpose. It is
+// the field that says how to read every field after it, so a reader — human or
+// program — should not have to scan past the body to find it, and a version
+// nobody can see is a version nobody checks. It is per-entry rather than
+// per-file because a record survives promotion into another log, where it
+// keeps the rules it was written under.
 type Entry struct {
-	ID     string   `json:"id"`
-	Kind   Kind     `json:"kind"`
-	Slug   string   `json:"slug"`
-	Scope  Scope    `json:"scope"`
-	At     string   `json:"at"`
-	About  []string `json:"about"`
-	Title  string   `json:"title"`
-	Body   string   `json:"body,omitempty"`
-	Origin *Origin  `json:"origin,omitempty"`
+	Version int      `json:"version"`
+	ID      string   `json:"id"`
+	Kind    Kind     `json:"kind"`
+	Slug    string   `json:"slug"`
+	Scope   Scope    `json:"scope"`
+	At      string   `json:"at"`
+	About   []string `json:"about"`
+	Title   string   `json:"title"`
+	Body    string   `json:"body,omitempty"`
+	Origin  *Origin  `json:"origin,omitempty"`
 }
 
-// Edge is one relation. Also append-only.
+// SchemaVersion is the version of the record schema this entry is judged
+// against. An absent `version` key reads as 1; see resolveVersion.
+func (e *Entry) SchemaVersion() int { return resolveVersion(e.Version) }
+
+// entryJSON is Entry stripped of Entry's marshaller, so MarshalJSON can encode
+// the struct without calling itself. Same fields in the same order — the
+// version stays the first key on the line.
+type entryJSON Entry
+
+// MarshalJSON writes the version the record is judged at rather than the raw
+// field, so a record written before the stamp existed renders as version 1 and
+// not as version 0 — a number that is on no line and names no schema that ever
+// existed. A reader who saw it would go looking for version 0's rules.
+//
+// Only the rendering is resolved, never the parse: ParseLine leaves Version at
+// zero for a line with no `version` key, because zero is what the line says,
+// and SchemaVersion is where the two are reconciled.
+//
+// This changes no bytes that get written. Every writer stamps, so the resolved
+// value is the field it replaces; and a writer that forgot cannot reach disk
+// once the current version is anything but 1, because the write gate judges an
+// unstamped record as version 1 and refuses it.
+func (e Entry) MarshalJSON() ([]byte, error) {
+	out := entryJSON(e)
+	out.Version = resolveVersion(e.Version)
+	return marshalCompact(out)
+}
+
+// Edge is one relation. Also append-only, and stamped with its own version:
+// an edge is a record like any other, and the rules for what a relation may
+// say can change independently of what an entry may say.
 type Edge struct {
-	Kind Kind     `json:"kind"` // always KindEdge
-	Type EdgeType `json:"type"`
-	From string   `json:"from"`
-	To   string   `json:"to"`
-	At   string   `json:"at"`
+	Version int      `json:"version"`
+	Kind    Kind     `json:"kind"` // always KindEdge
+	Type    EdgeType `json:"type"`
+	From    string   `json:"from"`
+	To      string   `json:"to"`
+	At      string   `json:"at"`
+}
+
+// SchemaVersion is the version of the record schema this edge is judged
+// against. An absent `version` key reads as 1.
+func (e *Edge) SchemaVersion() int { return resolveVersion(e.Version) }
+
+type edgeJSON Edge
+
+// MarshalJSON resolves the rendered version for the same reason Entry's does.
+func (e Edge) MarshalJSON() ([]byte, error) {
+	out := edgeJSON(e)
+	out.Version = resolveVersion(e.Version)
+	return marshalCompact(out)
 }
 
 // Line is one parsed line of the log: exactly one of Entry or Edge is set,
@@ -151,7 +309,16 @@ type Line struct {
 
 // MarshalLine renders a record as the single JSON line that gets appended.
 // Keys are emitted in a stable order so a hand-read log stays scannable.
-func MarshalLine(v any) ([]byte, error) {
+func MarshalLine(v any) ([]byte, error) { return marshalCompact(v) }
+
+// marshalCompact encodes one value as a single line with HTML escaping off.
+//
+// Off, because Go escapes <, > and & by default, which turns a body mentioning
+// a tag or a URL into unicode escapes and makes the log unpleasant to read by
+// hand. It is a separate helper because the MarshalJSON methods above need the
+// same setting: json.Marshal inside a marshaller would re-escape, and the outer
+// encoder cannot undo that.
+func marshalCompact(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
@@ -162,9 +329,17 @@ func MarshalLine(v any) ([]byte, error) {
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
-// ParseLine turns one line of the log into a Line. It rejects unknown fields
-// so a typo in a key surfaces as a validation error instead of silently
-// vanishing into an ignored field.
+// ParseLine turns one line of the log into a Line.
+//
+// It accepts keys it does not know. That is the read path's half of the
+// compatibility bargain: a field some later version adds is exactly what an
+// older binary will meet on disk, and calling that line malformed would turn
+// every forward-compatible record into a validation failure. The unknown key
+// is ignored and the fields this binary does know are parsed as normal.
+//
+// Typo protection did not disappear, it moved to where typos originate: the
+// CLI parses `--titel` as an unknown flag and refuses the write, so a mistyped
+// key never reaches the log to be read back.
 func ParseLine(num int, raw string) Line {
 	l := Line{Num: num, Raw: raw}
 
@@ -178,7 +353,6 @@ func ParseLine(num int, raw string) Line {
 
 	decode := func(dst any) error {
 		dec := json.NewDecoder(bytes.NewReader([]byte(raw)))
-		dec.DisallowUnknownFields()
 		return dec.Decode(dst)
 	}
 

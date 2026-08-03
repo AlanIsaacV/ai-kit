@@ -22,7 +22,13 @@ type PromotionPlan struct {
 // Edges come along when both of their endpoints are present at the target,
 // otherwise the promoted records would arrive as orphans and the graph the
 // user curated would be lost in the move.
-func PlanPromotion(src []*Entry, srcEdges []*Edge, dst []*Entry, dstEdges []*Edge, ids []string, target Scope, fallbackPlan string) PromotionPlan {
+//
+// There is no fallback plan slug any more. There used to be one, filled in from
+// the source log's directory when a record's `origin.plan` was empty; since one
+// repo has one log there is no directory to read it from, and `add` refuses to
+// write a record that cannot name its plan. A promoted copy carries whatever the
+// source carried, which for every record on disk is the plan that produced it.
+func PlanPromotion(src []*Entry, srcEdges []*Edge, dst []*Entry, dstEdges []*Edge, ids []string, target Scope) PromotionPlan {
 	var p PromotionPlan
 
 	byID := map[string]*Entry{}
@@ -48,14 +54,20 @@ func PlanPromotion(src []*Entry, srcEdges []*Edge, dst []*Entry, dstEdges []*Edg
 		}
 		cp := *s
 		cp.Scope = target
-		if cp.Origin == nil {
-			cp.Origin = &Origin{}
-		} else {
+		// The copy is judged by the rules its content was written against, not
+		// by whatever is current at the moment it is promoted — the fields did
+		// not change on the way up. Stamping the *resolved* version matters
+		// because a source that predates the stamp reads as version 1, and
+		// writing a literal 0 to the target log would put a version on disk
+		// that never existed.
+		cp.Version = s.SchemaVersion()
+		// Origin is deep-copied rather than shared, so the copy and its source
+		// can never be two names for one struct: nothing here mutates it today,
+		// and a promotion that started to would otherwise reach back into the
+		// log it was reading.
+		if cp.Origin != nil {
 			o := *cp.Origin
 			cp.Origin = &o
-		}
-		if cp.Origin.Plan == "" {
-			cp.Origin.Plan = fallbackPlan
 		}
 		p.Records = append(p.Records, &cp)
 		p.Promoted = append(p.Promoted, id)
@@ -74,6 +86,7 @@ func PlanPromotion(src []*Entry, srcEdges []*Edge, dst []*Entry, dstEdges []*Edg
 			continue
 		}
 		cp := *e
+		cp.Version = e.SchemaVersion()
 		p.Records = append(p.Records, &cp)
 		have[edgeKey(e)] = true
 		p.EdgesCopied++
