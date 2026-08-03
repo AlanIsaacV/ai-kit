@@ -12,9 +12,17 @@ import (
 // `type` from edgeTypesV1 and `scope` from scopesV1.
 //
 // A version is a whole rule set, not a diff. Once records carrying a version
-// are on disk, that version's rules are frozen — see validateEntryV1 — because
-// the only thing that makes a stamp worth writing is that it still means the
-// same thing years later.
+// are on disk, that version's rules are frozen *against narrowing* — see
+// validateEntryV1 — because the only thing that makes a stamp worth writing is
+// that a record it accepted yesterday is a record it accepts today.
+//
+// Frozen in that direction only. A closed set may still gain a value in place,
+// since widening makes no record already written illegal and so takes nothing
+// back from anyone; the edge types did exactly that after eight version 2 edges
+// were on disk. What it costs is a reader built before the widening, which sees
+// the new value as a problem rather than as an honest unjudged. See
+// SchemaVersion2 and edgeTypesV2, and the README's compatibility rule for when
+// to take the bump anyway.
 const SchemaVersion1 = 1
 
 // SchemaVersion2 narrows the scope set to {repo, user}. `plan` is gone, because
@@ -24,9 +32,13 @@ const SchemaVersion1 = 1
 // both of its endpoints in the file it is written to, so one file per plan made
 // "this objective derives from that one" inexpressible across plans.
 //
-// Nothing else about the shape of a record changed. The kinds, the edge types
-// and every field are version 1's, which is why validateEntryV2 names
+// The kinds and every field are version 1's, which is why validateEntryV2 names
 // entryKindsV1 rather than declaring a set of its own.
+//
+// The edge types are not. Version 2 later gained five more of them — the state
+// edges — and gaining them did not need a version 3, because widening a closed
+// set makes no record already written illegal. Only narrowing does, and
+// narrowing is what a bump is for. See edgeTypesV2.
 //
 // The records already on disk declare version 1, most of them carrying
 // `"scope": "plan"`, and they go on being judged by version 1's rules, where
@@ -137,6 +149,31 @@ const (
 	EdgeCausedBy EdgeType = "caused_by"
 	// EdgeRelatesTo is the untyped fallback. Prefer a specific type.
 	EdgeRelatesTo EdgeType = "relates_to"
+
+	// The state edges, added by schema version 2.
+	//
+	// What state a record is in is a relation, not a field. A field would have
+	// to be rewritten to change, and nothing in this log is ever rewritten — so
+	// the state is an edge, the absence of every state edge is a state too, and
+	// leaving that default state costs one appended line and takes nothing
+	// back.
+	//
+	// Each of them points at the record that justifies the transition, and the
+	// write path refuses one that does not; see CheckJustification. Which is
+	// also why there is no reflexive form: an edge from a record to itself would
+	// be a state claimed with nothing behind it.
+
+	// EdgeApprovedForExecution points a record at the decision that approved it.
+	EdgeApprovedForExecution EdgeType = "approved_for_execution"
+	// EdgeMet points a record at what establishes that it was satisfied.
+	EdgeMet EdgeType = "met"
+	// EdgeCancelled points a record at the decision that dropped it.
+	EdgeCancelled EdgeType = "cancelled"
+	// EdgeSeparated points a record at the decision that lifted it out from
+	// under whatever it sat below. The work goes on; it goes on elsewhere.
+	EdgeSeparated EdgeType = "separated"
+	// EdgeBlocked points a record at what is holding it up.
+	EdgeBlocked EdgeType = "blocked"
 )
 
 // edgeTypesV1 is the closed set of edge types as schema version 1 defines it,
@@ -146,9 +183,34 @@ var edgeTypesV1 = map[EdgeType]bool{
 	EdgeAnswers: true, EdgeCausedBy: true, EdgeRelatesTo: true,
 }
 
-// edgeTypes is the current schema's set. Version 2 changed nothing about what
-// a relation may say, so it is still version 1's set; see entryKinds.
-var edgeTypes = edgeTypesV1
+// edgeTypesV2 is the closed set of edge types as schema version 2 defines it:
+// version 1's six, plus the five that say what state a record is in.
+//
+// The widening happened inside version 2 rather than in a version 3, because
+// adding a value to a closed set is additive — it makes no record on disk
+// illegal and forces no frozen rule set to change. That was chosen with its
+// cost known and it is stated here rather than left to be discovered: a binary
+// built before the widening has rules for version 2, so meeting a `met` edge
+// stamped 2 it reports `type: unknown` — a false problem — where for a version
+// it did not know at all it would have reported an honest `unjudged`. Narrowing
+// is the direction that still costs a bump; see the README's compatibility rule.
+//
+// Every member is spelled out rather than copied from edgeTypesV1, and that is
+// the trap entryKinds names above: a Go map is a reference, so
+// `edgeTypesV2 = edgeTypesV1` would be two names for one map, either of which
+// looks safe to narrow — and narrowing either would silently narrow version 1's
+// frozen set, which is the one thing the versioning exists to prevent.
+var edgeTypesV2 = map[EdgeType]bool{
+	EdgeImplements: true, EdgeDerivesFrom: true, EdgeSupersedes: true,
+	EdgeAnswers: true, EdgeCausedBy: true, EdgeRelatesTo: true,
+	EdgeApprovedForExecution: true, EdgeMet: true, EdgeCancelled: true,
+	EdgeSeparated: true, EdgeBlocked: true,
+}
+
+// edgeTypes is the current schema's set: version 2's, which is version 1's six
+// widened by the five state types. See entryKinds for what repointing this is
+// for.
+var edgeTypes = edgeTypesV2
 
 // EdgeTypes returns every edge type the current schema accepts, sorted.
 func EdgeTypes() []EdgeType { return sortedEdgeTypes(edgeTypes) }

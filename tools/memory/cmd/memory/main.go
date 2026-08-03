@@ -314,19 +314,33 @@ func cmdLink(args []string) error {
 	// Refuse a dangling edge at write time. A dangling edge fails silently
 	// later — a graph walk just returns less than it should, with nothing
 	// announcing the answer was incomplete.
-	known := map[string]bool{}
+	//
+	// The map carries each entry's kind rather than a bare bool, because the
+	// justification rule below needs the target's kind and this is the pass that
+	// already reads every entry to find it.
+	known := map[string]memory.Kind{}
 	for _, e := range memory.Entries(lines) {
-		known[e.ID] = true
+		known[e.ID] = e.Kind
 	}
 	var missing []string
-	if !known[edge.From] {
+	if _, ok := known[edge.From]; !ok {
 		missing = append(missing, "from="+edge.From)
 	}
-	if !known[edge.To] {
+	if _, ok := known[edge.To]; !ok {
 		missing = append(missing, "to="+edge.To)
 	}
 	if len(missing) > 0 {
 		return fail("dangling_edge", "no entry in %s for %s", loc.Path, strings.Join(missing, ", "))
+	}
+
+	// A state edge has to point at the record that justifies the transition.
+	// The rule lives on the write path and nowhere else: the version rule sets
+	// judge one record in isolation and cannot see the target's kind, and the
+	// read sweep stays tolerant so that an edge already on disk is never
+	// condemned by a requirement that arrived after it. Refusing here is the one
+	// moment it can be caught, since the log is append-only.
+	if err := memory.CheckJustification(edge.Type, known[edge.To]); err != nil {
+		return fail("unjustified_state", "%s", err.Error())
 	}
 
 	if err := memory.Open(loc.Path).Append(edge); err != nil {
@@ -587,11 +601,22 @@ func cmdKinds(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// The justification allowlist is published beside the closed sets, and for
+	// the same reason they are: a rule the tool enforces but does not advertise
+	// is a rule a caller only meets as a refusal. Only the types that carry one
+	// appear here — an absent key means the type has no rule, which is not the
+	// same claim as an empty list.
+	justifications := map[string][]memory.Kind{}
+	for _, t := range memory.JustifiedEdgeTypes() {
+		justifications[string(t)] = memory.Justifications(t)
+	}
+
 	emit(map[string]any{
-		"entry_kinds": memory.EntryKinds(),
-		"edge_types":  memory.EdgeTypes(),
-		"scopes":      memory.Scopes(),
-		"threshold":   memory.DefaultThreshold,
+		"entry_kinds":    memory.EntryKinds(),
+		"edge_types":     memory.EdgeTypes(),
+		"scopes":         memory.Scopes(),
+		"threshold":      memory.DefaultThreshold,
+		"justifications": justifications,
 	})
 	return nil
 }

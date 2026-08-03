@@ -215,20 +215,30 @@ func validateEntryV2(e *Entry) []Problem {
 }
 
 // validateEdgeV2 is the complete rule set for an edge written under schema
-// version 2. Rule for rule it is validateEdgeV1 — version 2 changed nothing
-// about what a relation may say.
+// version 2. It differs from validateEdgeV1 in one rule, the edge-type set:
+// version 2 widened it from six types to eleven by adding the state edges, and
+// edgeTypesV1 still holds the six it was written with.
 //
-// It is written out rather than delegating to validateEdgeV1, and that is not
-// ceremony. The first rule any version states is which version the record
-// declares, and v1's says 1: an edge stamped 2 judged by v1's rules would be
-// refused for the stamp the tool itself put on it, and since the write gate is
-// the current version's rules, `link` would refuse every edge it tried to
-// write. A rule set is a whole rule set, and the version rule is one of them.
+// It was written out in full rather than delegated to validateEdgeV1 back when
+// the two were rule for rule identical, and that was not ceremony. The first
+// rule any version states is which version the record declares, and v1's says
+// 1: an edge stamped 2 judged by v1's rules would be refused for the stamp the
+// tool itself put on it, and since the write gate is the current version's
+// rules, `link` would refuse every edge it tried to write. A rule set is a whole
+// rule set, and the version rule is one of them. The widening is what that
+// separation bought — the set moved here and version 1's did not move at all.
+//
+// What this does not check is whether a state edge points at a record that
+// could justify it. That question is log-wide — a rule set judges one record in
+// isolation and cannot see the target's kind — and it belongs on the write
+// path, where `link` has every entry in hand. See CheckJustification. Keeping
+// it out of here is also what stops a rule that arrived today from condemning an
+// edge written yesterday.
 func validateEdgeV2(e *Edge) []Problem {
 	var c checks
 	c.version("version", e.Version, SchemaVersion2)
 	c.literalKind("kind", e.Kind, KindEdge)
-	c.edgeType("type", e.Type, edgeTypesV1)
+	c.edgeType("type", e.Type, edgeTypesV2)
 	c.ulid("from", e.From)
 	c.ulid("to", e.To)
 	c.distinct("to", e.From, e.To)

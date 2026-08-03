@@ -351,10 +351,15 @@ func TestVersion1sRulesDidNotMoveWhenVersion2Arrived(t *testing.T) {
 	}
 }
 
-// Version 2 narrowed the scopes and nothing else. Stated as a test because the
-// cheapest way to break a version bump is to smuggle a second change into it,
-// where nobody looking at the scope set would think to check.
-func TestVersion2ChangedOnlyTheScopeSet(t *testing.T) {
+// Version 2 narrowed the scopes and took nothing else away. Stated as a test
+// because the cheapest way to break a version bump is to smuggle a second
+// change into it, where nobody looking at the scope set would think to check.
+//
+// It has since widened the edge types, which is a different act: adding a value
+// to a closed set makes no record on disk illegal, so it needs no bump. What
+// this guards is the direction that does — nothing version 1 accepted may have
+// gone missing.
+func TestVersion2TookNothingAwayButTheScope(t *testing.T) {
 	if len(entryKinds) != len(entryKindsV1) {
 		t.Errorf("the current kind set is not version 1's: %v", EntryKinds())
 	}
@@ -375,6 +380,123 @@ func TestVersion2ChangedOnlyTheScopeSet(t *testing.T) {
 	}
 	if ps := ValidateEdge(newTestEdge(t, EdgeImplements, mustULID(t), mustULID(t))); len(ps) != 0 {
 		t.Errorf("version 2 keeps version 1's edge types: %v", ps)
+	}
+}
+
+// ------------------------------------------------------ the state edges ---
+//
+// Five edge types added to version 2 in place, because widening a closed set
+// makes nothing already written illegal.
+
+// The widening did not leak backwards. edgeTypesV1 is its own map with its own
+// six members, and if the two had been aliased — `edgeTypesV2 = edgeTypesV1`,
+// which is two names for one map, since a map is a reference — this is the test
+// that would notice, because v1's set would have grown to eleven behind its own
+// back.
+func TestTheWideningDidNotLeakIntoVersion1(t *testing.T) {
+	states := []EdgeType{EdgeApprovedForExecution, EdgeMet, EdgeCancelled, EdgeSeparated, EdgeBlocked}
+
+	if len(edgeTypesV1) != 6 {
+		t.Fatalf("version 1 knew six edge types and still has to: %v", sortedEdgeTypes(edgeTypesV1))
+	}
+	if len(edgeTypesV2) != 11 {
+		t.Fatalf("version 2 knows version 1's six plus five states: %v", sortedEdgeTypes(edgeTypesV2))
+	}
+	for _, s := range states {
+		if edgeTypesV1[s] {
+			t.Errorf("%q reached version 1's frozen set", s)
+		}
+		if !edgeTypesV2[s] {
+			t.Errorf("%q is missing from version 2's set", s)
+		}
+	}
+	for typ := range edgeTypesV1 {
+		if !edgeTypesV2[typ] {
+			t.Errorf("version 1's %q went missing from version 2's set", typ)
+		}
+	}
+	if CurrentSchemaVersion != SchemaVersion2 {
+		t.Errorf("the widening was additive and must not have moved the current version, got %d",
+			CurrentSchemaVersion)
+	}
+	for _, s := range states {
+		if !edgeTypes[s] {
+			t.Errorf("the current set must be version 2's, and %q is not in it", s)
+		}
+	}
+}
+
+// The pair that says a closed set really was widened *inside* a version rather
+// than everywhere at once: the same edge, byte for byte apart from the stamp, is
+// refused when it declares version 1 and accepted when it declares version 2.
+//
+// This is the cost the additive choice was taken with, and it is worth seeing:
+// the refusal a v1 reader gives is `type`, a problem, rather than the honest
+// `unjudged` it would give for a version it had never heard of.
+func TestAStateEdgeIsVersion2sAndVersion1RefusesIt(t *testing.T) {
+	a := newTestEntry(t, nil)
+	b := newTestEntry(t, func(e *Entry) { e.Kind = KindDecision })
+
+	atV1 := newTestEdge(t, EdgeMet, a.ID, b.ID)
+	atV1.Version = SchemaVersion1
+	atV2 := newTestEdge(t, EdgeMet, a.ID, b.ID) // stamped CurrentSchemaVersion
+
+	rep := ValidateLog("test.jsonl", []Line{
+		{Num: 1, Entry: a}, {Num: 2, Entry: b},
+		{Num: 3, Edge: atV1}, {Num: 4, Edge: atV2},
+	})
+
+	if len(rep.Unjudged) != 0 {
+		t.Fatalf("both versions ship in this binary, nothing should go unjudged: %v", rep.Unjudged)
+	}
+	if len(rep.Problems) != 1 {
+		t.Fatalf("expected exactly one problem, the v1 edge, got %v", rep.Problems)
+	}
+	p := rep.Problems[0]
+	if p.Line != 3 || p.Field != "type" {
+		t.Fatalf("expected a type problem on line 3, got %v", p)
+	}
+	if !strings.Contains(p.Message, string(EdgeMet)) {
+		t.Errorf("the problem should name the offending value, got %q", p.Message)
+	}
+	if ps := validateEdgeV2(atV2); len(ps) != 0 {
+		t.Errorf("v2's edge rules must accept a state edge: %v", ps)
+	}
+	if ps := validateEdgeV1(atV1); problemFields(ps) != "type" {
+		t.Errorf("v1's edge rules must refuse it, and only for the type: %v", ps)
+	}
+}
+
+// The write gate writes every state. Guarded because the gate reads its rules
+// out of the version table, so a widening that touched edgeTypesV2 but left
+// validateEdgeV2 naming edgeTypesV1 would compile, pass everything above, and
+// still refuse every state edge `link` tried to write.
+func TestTheWriteGateAcceptsEveryStateEdge(t *testing.T) {
+	for _, typ := range JustifiedEdgeTypes() {
+		if ps := ValidateEdge(newTestEdge(t, typ, mustULID(t), mustULID(t))); len(ps) != 0 {
+			t.Errorf("the write gate must accept a %q edge: %v", typ, ps)
+		}
+	}
+}
+
+// The read sweep does not know the justification rule, and must not learn it. A
+// state edge pointing at something the allowlist would refuse is a record on
+// disk, and a rule that arrived after it was written does not get to condemn it
+// retroactively — the refusal happens once, in `link`, on the way in.
+func TestTheReadSweepDoesNotApplyTheJustificationRule(t *testing.T) {
+	objective := newTestEntry(t, func(e *Entry) { e.Kind = KindObjective })
+	other := newTestEntry(t, func(e *Entry) { e.Kind = KindObjective })
+
+	if err := CheckJustification(EdgeMet, KindObjective); err == nil {
+		t.Fatal("the premise of this test is that the write path would refuse this edge")
+	}
+
+	rep := ValidateLog("test.jsonl", []Line{
+		{Num: 1, Entry: objective}, {Num: 2, Entry: other},
+		{Num: 3, Edge: newTestEdge(t, EdgeMet, objective.ID, other.ID)},
+	})
+	if !rep.OK || len(rep.Problems) != 0 {
+		t.Fatalf("the sweep stays tolerant of a state edge already on disk: %v", rep.Problems)
 	}
 }
 

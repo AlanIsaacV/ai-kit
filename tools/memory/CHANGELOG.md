@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+### State is an edge, and an edge has to be justified
+
+Five edge types join the six that were already here: `approved_for_execution`,
+`met`, `cancelled`, `separated`, `blocked`. What state a record is in stops
+being prose in a body and becomes a relation, which is the only shape an
+append-only log can hold honestly — a field would have to be rewritten to
+change, and nothing here is ever rewritten. The default state is the absence of
+all five, so being in it costs nothing and leaving it costs one appended line.
+
+- **The second endpoint is the evidence.** `link` refuses a state edge whose
+  target could not justify it: `approved_for_execution`, `cancelled` and
+  `separated` take a `decision`, `met` takes a `decision` or a `review-finding`,
+  `blocked` takes an `open-question` or a `decision`. The refusal names the
+  allowed kinds and the kind that was actually there, so it can be acted on
+  without going back to the log to look the id up by hand.
+- **The rule is on the write path and nowhere else.** A version's rule set
+  judges one record in isolation and cannot see the target's kind; `link`
+  already loads every entry to refuse a dangling edge, so the kind is free at
+  the one moment it can still be acted on — the log is append-only, and there is
+  no taking a state back afterwards. `validate` does not apply it, so a rule
+  that arrived today never condemns an edge written yesterday.
+- **No reflexive form.** An edge from a record to itself would be a state
+  asserted with nothing behind it, indistinguishable on disk from one that was
+  earned, and it would need `validate` to start permitting cycles of length one.
+- **The six original types are untouched.** They say how two records relate
+  rather than what happened to one of them, and `supersedes` in particular has
+  edges on disk that a rule invented afterwards has no business calling invalid.
+- **Done inside version 2, and there is no version 3.** Widening a closed set is
+  additive: no record already written becomes illegal, and no frozen rule set
+  has to change. The cost was taken knowingly and is written into the README's
+  compatibility rule — a binary built before this has rules for version 2, so it
+  meets a `met` edge stamped 2 and reports `type: unknown`, a false problem,
+  where for a version it did not know at all it would have reported an honest
+  `unjudged`.
+- **`edgeTypesV2` is its own map literal**, naming all eleven types rather than
+  aliasing `edgeTypesV1`. A Go map is a reference, and two names for one map are
+  both narrowable, so an alias would let a later bump narrow version 1's frozen
+  set by accident. `validateEdgeV2` names the new set; `edgeTypesV1`,
+  `validateEdgeV1` and `CurrentSchemaVersion` did not move, and an edge
+  declaring version 1 with a state type is still refused by version 1's rules.
+- **`memory kinds` advertises eleven edge types**, and publishes the allowlist
+  itself under a new `justifications` key — an object of state to allowed kinds,
+  holding only the five types that carry a rule. A set that widens has to widen
+  the advertised list with it, for the same reason a set that narrows has to
+  narrow it: otherwise the tool hides a value it accepts, or enforces a rule a
+  caller can only discover by tripping over it. The existing `entry_kinds`,
+  `edge_types`, `scopes` and `threshold` keys are unchanged.
+- **Which state edge wins is decided and written down**, in the README: the most
+  recent state edge by `at`, ties broken by later line in the file. Moving
+  between states means writing the state you are moving to, with no retraction
+  and no `supersedes` — `approved_for_execution` → `blocked` →
+  `approved_for_execution` → `met` is a correct trace of a state machine, not a
+  contradiction, and a superseded `blocked` is stale rather than wrong. The
+  known limit is stated with it: returning to bare `planned` is not expressible,
+  because `planned` is the absence of state edges. **Nothing computes this
+  yet** — there is no `memory state`, and neither `query` nor `graph` resolves a
+  state. The rule is recorded now so the read path that will need it is not
+  invented twice.
+
 ### One log per repo, and schema version 2
 
 The plan scope is gone. There is one log, at `<repo>/.ai-kit/memory.jsonl`, and
@@ -45,12 +104,14 @@ yesterday became invalid.
   narrowed where a log lives, not what a record says, so a second copy of the
   kind set would be one more thing to keep in step. `unit` in particular stays a
   kind.
-- `validateEdgeV2` is `validateEdgeV1` rule for rule, written out again rather
-  than delegated to. That is not ceremony: the first rule any version states is
-  which version the record declares, and v1's says 1 — so a v2 edge judged by
-  v1's rules would be refused for the stamp the tool itself applied, and the
-  write gate, being the current version's rules, would refuse every edge `link`
-  wrote. A version is a whole rule set, and the version rule is one of them.
+- `validateEdgeV2` was `validateEdgeV1` rule for rule at this bump, and was
+  written out again rather than delegated to. That is not ceremony: the first
+  rule any version states is which version the record declares, and v1's says
+  1 — so a v2 edge judged by v1's rules would be refused for the stamp the tool
+  itself applied, and the write gate, being the current version's rules, would
+  refuse every edge `link` wrote. A version is a whole rule set, and the version
+  rule is one of them. Writing it out is also what let the edge-type set widen
+  later without version 1's moving; see the section above.
 - `ScopePlan` survives as a Go constant. `scopesV1` names it and version 1's
   rules are frozen, which makes it version 1 vocabulary rather than dead code.
 

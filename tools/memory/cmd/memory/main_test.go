@@ -589,9 +589,11 @@ func TestKindsAdvertisesTwoScopesAndKeepsVersion1sKinds(t *testing.T) {
 		t.Fatalf("kinds: %v\n%s", err, stdout)
 	}
 	var out struct {
-		EntryKinds []string `json:"entry_kinds"`
-		EdgeTypes  []string `json:"edge_types"`
-		Scopes     []string `json:"scopes"`
+		EntryKinds     []string            `json:"entry_kinds"`
+		EdgeTypes      []string            `json:"edge_types"`
+		Scopes         []string            `json:"scopes"`
+		Threshold      int                 `json:"threshold"`
+		Justifications map[string][]string `json:"justifications"`
 	}
 	if err := json.Unmarshal(stdout, &out); err != nil {
 		t.Fatal(err)
@@ -599,16 +601,289 @@ func TestKindsAdvertisesTwoScopesAndKeepsVersion1sKinds(t *testing.T) {
 	if strings.Join(out.Scopes, ",") != "repo,user" {
 		t.Errorf(`expected scopes ["repo","user"], got %v`, out.Scopes)
 	}
-	// Version 2 changed the scopes and nothing else. `unit` in particular stays:
-	// taking it out belongs to another objective.
+	if out.Threshold != memory.DefaultThreshold {
+		t.Errorf("the threshold key is part of the shape other things read, got %d", out.Threshold)
+	}
+	// Version 2 took no kind away. `unit` in particular stays: removing it
+	// belongs to another objective.
 	for _, want := range []string{"objective", "unit", "decision", "deviation", "assumption",
 		"open-question", "wont-fix", "dead-end", "adr", "postmortem", "review-finding"} {
 		if !slices.Contains(out.EntryKinds, want) {
 			t.Errorf("kind %q went missing from the advertised set: %v", want, out.EntryKinds)
 		}
 	}
-	if !slices.Contains(out.EdgeTypes, "implements") {
-		t.Errorf("edge types should be version 1's: %v", out.EdgeTypes)
+	// The other direction of the same obligation: a version that *widens* a
+	// closed set has to widen this list with it, or the tool goes on hiding a
+	// value it accepts. Eleven types — version 1's six and the five states.
+	want := []string{
+		"implements", "derives_from", "supersedes", "answers", "caused_by", "relates_to",
+		"approved_for_execution", "met", "cancelled", "separated", "blocked",
+	}
+	if len(out.EdgeTypes) != len(want) {
+		t.Errorf("expected %d edge types, got %d: %v", len(want), len(out.EdgeTypes), out.EdgeTypes)
+	}
+	for _, w := range want {
+		if !slices.Contains(out.EdgeTypes, w) {
+			t.Errorf("edge type %q is not advertised: %v", w, out.EdgeTypes)
+		}
+	}
+
+	// A rule the tool enforces but does not publish is a rule a caller can only
+	// meet as a refusal, so the allowlist is advertised the same way the closed
+	// sets are — and only for the types that carry one, since an absent key says
+	// "no rule" where an empty list would say "nothing may justify this".
+	wantJustifications := map[string][]string{
+		"approved_for_execution": {"decision"},
+		"met":                    {"decision", "review-finding"},
+		"cancelled":              {"decision"},
+		"separated":              {"decision"},
+		"blocked":                {"decision", "open-question"},
+	}
+	if len(out.Justifications) != len(wantJustifications) {
+		t.Errorf("expected the five states to be published, got %v", out.Justifications)
+	}
+	for state, kinds := range wantJustifications {
+		got, published := out.Justifications[state]
+		if !published {
+			t.Errorf("state %q has a rule that is not advertised: %v", state, out.Justifications)
+			continue
+		}
+		if strings.Join(got, ",") != strings.Join(kinds, ",") {
+			t.Errorf("%s may be justified by %v, advertised as %v", state, kinds, got)
+		}
+	}
+	for _, relation := range []string{"implements", "derives_from", "supersedes",
+		"answers", "caused_by", "relates_to"} {
+		if _, published := out.Justifications[relation]; published {
+			t.Errorf("%q carries no rule and must not be listed as though it did", relation)
+		}
+	}
+}
+
+// What `kinds` publishes has to be what `link` enforces. Read out of the CLI on
+// one side and exercised against a real log on the other, because the failure
+// this catches is a published list that quietly drifts from the rule — which
+// looks like documentation and behaves like a lie.
+func TestTheAdvertisedAllowlistIsTheOneLinkEnforces(t *testing.T) {
+	cmd := exec.Command(memoryBin, "kinds")
+	stdout, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("kinds: %v\n%s", err, stdout)
+	}
+	var out struct {
+		Justifications map[string][]string `json:"justifications"`
+	}
+	if err := json.Unmarshal(stdout, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Justifications) == 0 {
+		t.Fatal("kinds published no justifications at all")
+	}
+
+	r := throwawayRepo(t)
+	source := addKind(t, r, "objective", "The objective whose state this is")
+	targets := map[string]string{}
+	for _, k := range memory.EntryKinds() {
+		targets[string(k)] = addKind(t, r, string(k), "A "+string(k))
+	}
+
+	for state, kinds := range out.Justifications {
+		advertised := map[string]bool{}
+		for _, k := range kinds {
+			advertised[k] = true
+		}
+		for kind, id := range targets {
+			res := runBare(t, r, "link", "--type", state, "--from", source, "--to", id)
+			if advertised[kind] != (res.code == 0) {
+				t.Errorf("kinds says %s may be justified by %v; link exited %d for a %s target",
+					state, kinds, res.code, kind)
+			}
+		}
+	}
+}
+
+// -------------------------------------------------------- the state edges ---
+
+// addKind is `add` with the kind spelled out. The justification rule is a
+// question about the *target's* kind, so a test of it needs a log holding one
+// entry of each.
+func addKind(t *testing.T, r repo, kind, title string) string {
+	t.Helper()
+	res := runBare(t, r, "add", "--plan", "demo", "--kind", kind, "--title", title, "--about", "auth")
+	if res.code != 0 {
+		t.Fatalf("add --kind %s: exit %d\n%s%s", kind, res.code, res.stdout, res.stderr)
+	}
+	return recordID(t, res)
+}
+
+// The whole rule, exercised against a real log holding one entry of every kind:
+// each state edge is written when it points at a record that could justify it
+// and refused when it does not, the refusal says both what was allowed and what
+// was actually there, and nothing refused reaches disk.
+//
+// The case worth naming is `met` from one objective to another. It is the shape
+// the rule exists to stop — a state asserted with nothing behind it, which on
+// disk is indistinguishable from one that was earned.
+func TestAStateEdgeIsWrittenOnlyWhenSomethingJustifiesIt(t *testing.T) {
+	r := throwawayRepo(t)
+
+	source := addKind(t, r, "objective", "The objective whose state this is")
+	targets := map[string]string{}
+	for _, k := range memory.EntryKinds() {
+		targets[string(k)] = addKind(t, r, string(k), "A "+string(k))
+	}
+
+	allowed := map[string][]string{
+		"approved_for_execution": {"decision"},
+		"met":                    {"decision", "review-finding"},
+		"cancelled":              {"decision"},
+		"separated":              {"decision"},
+		"blocked":                {"decision", "open-question"},
+	}
+
+	for typ, kinds := range allowed {
+		ok := map[string]bool{}
+		for _, k := range kinds {
+			ok[k] = true
+		}
+		for kind, id := range targets {
+			before := len(lines(t, r.log))
+			res := runBare(t, r, "link", "--type", typ, "--from", source, "--to", id)
+
+			if ok[kind] {
+				if res.code != 0 {
+					t.Errorf("%s → %s must be accepted: exit %d\n%s%s", typ, kind, res.code, res.stdout, res.stderr)
+				}
+				if after := len(lines(t, r.log)); after != before+1 {
+					t.Errorf("%s → %s should have appended one line, went from %d to %d", typ, kind, before, after)
+				}
+				continue
+			}
+
+			if res.code == 0 {
+				t.Errorf("%s → %s must be refused", typ, kind)
+			}
+			code, msg := errorCode(t, res)
+			if code != "unjustified_state" {
+				t.Errorf("%s → %s: expected an unjustified_state refusal, got %q", typ, kind, code)
+			}
+			if !strings.Contains(msg, kind) {
+				t.Errorf("%s → %s: the refusal must name the target's kind, got %q", typ, kind, msg)
+			}
+			for _, k := range kinds {
+				if !strings.Contains(msg, k) {
+					t.Errorf("%s → %s: the refusal must name %q as allowed, got %q", typ, kind, k, msg)
+				}
+			}
+			if after := len(lines(t, r.log)); after != before {
+				t.Errorf("a refused link wrote to the log: %d lines became %d", before, after)
+			}
+		}
+	}
+
+	// The six types that were here before carry no rule at all, and adding one
+	// to them was explicitly out of scope: `supersedes` alone already has edges
+	// on disk that a rule invented afterwards has no business condemning.
+	for kind, id := range targets {
+		if res := runBare(t, r, "link", "--type", "relates_to", "--from", source, "--to", id); res.code != 0 {
+			t.Errorf("relates_to → %s must be unaffected: exit %d\n%s%s", kind, res.code, res.stdout, res.stderr)
+		}
+	}
+}
+
+// A state edge is a record like any other: it lands on disk stamped with the
+// version whose rule set accepted it, and it is reachable from both of its
+// endpoints by a graph walk — which is the only way anything reads a state, this
+// unit having added no command that reports one.
+func TestAWrittenStateEdgeIsStampedAndReachable(t *testing.T) {
+	r := throwawayRepo(t)
+	objective := addKind(t, r, "objective", "The objective whose state this is")
+	decision := addKind(t, r, "decision", "The decision that closed it")
+
+	res := runBare(t, r, "link", "--type", "met", "--from", objective, "--to", decision)
+	if res.code != 0 {
+		t.Fatalf("link --type met: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+
+	got := lines(t, r.log)
+	if len(got) != 3 {
+		t.Fatalf("expected two entries and one edge, got %d lines", len(got))
+	}
+	var edge struct {
+		Version int    `json:"version"`
+		Kind    string `json:"kind"`
+		Type    string `json:"type"`
+		From    string `json:"from"`
+		To      string `json:"to"`
+	}
+	if err := json.Unmarshal([]byte(got[2]), &edge); err != nil {
+		t.Fatalf("the appended line is not JSON: %v\n%s", err, got[2])
+	}
+	if edge.Version != memory.CurrentSchemaVersion {
+		t.Errorf("a state edge is stamped %d, got %d: %s", memory.CurrentSchemaVersion, edge.Version, got[2])
+	}
+	if edge.Kind != "edge" || edge.Type != "met" || edge.From != objective || edge.To != decision {
+		t.Fatalf("the appended line is not that edge: %s", got[2])
+	}
+
+	res = runBare(t, r, "graph", "--from", objective, "--depth", "1")
+	if res.code != 0 {
+		t.Fatalf("graph: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	var g struct {
+		Nodes []struct {
+			Entry struct {
+				ID string `json:"id"`
+			} `json:"entry"`
+			Via   string `json:"via"`
+			Depth int    `json:"depth"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(res.stdout), &g); err != nil {
+		t.Fatal(err)
+	}
+	reached := false
+	for _, n := range g.Nodes {
+		if n.Entry.ID == decision && n.Depth == 1 && n.Via == "met" {
+			reached = true
+		}
+	}
+	if !reached {
+		t.Fatalf("the justifying record must be one hop from the objective: %+v", g.Nodes)
+	}
+}
+
+// The rule refuses records on the way in; it does not condemn records already
+// written. An edge the write path would refuse today is a perfectly readable
+// line tomorrow, and the sweep says so — otherwise every rule added later would
+// retroactively break a log nobody touched.
+func TestValidateToleratesAStateEdgeTheWritePathWouldRefuse(t *testing.T) {
+	r := throwawayRepo(t)
+	objective := addKind(t, r, "objective", "The objective whose state this is")
+	other := addKind(t, r, "objective", "Some other objective")
+
+	if res := runBare(t, r, "link", "--type", "met", "--from", objective, "--to", other); res.code == 0 {
+		t.Fatal("the premise of this test is that link refuses this edge")
+	}
+
+	// Hand-written, because the write path is exactly what will not produce it:
+	// this is what an edge from a binary that predates the rule looks like.
+	appendLine(t, r.log, `{"version":2,"kind":"edge","type":"met","from":"`+objective+`",`+
+		`"to":"`+other+`","at":"2026-08-03T10:00:00Z"}`)
+
+	out, code := validateOne(t, r)
+	if !out.OK || code != 0 {
+		t.Fatalf("the sweep must stay tolerant: ok=%v exit=%d %+v", out.OK, code, out.Reports[0].Problems)
+	}
+	if len(out.Reports[0].Problems) != 0 {
+		t.Fatalf("expected no problems, got %+v", out.Reports[0].Problems)
+	}
+	if len(out.Reports[0].Unjudged) != 0 {
+		t.Fatalf("version 2 is this binary's own version, nothing should go unjudged: %+v",
+			out.Reports[0].Unjudged)
+	}
+	if out.Reports[0].Edges != 1 {
+		t.Errorf("the edge should still be counted, got %d", out.Reports[0].Edges)
 	}
 }
 

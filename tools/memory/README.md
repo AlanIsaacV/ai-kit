@@ -83,8 +83,83 @@ decision is recorded, and no later verification pass raises it again.
 
 ## Edge types
 
+**Relations** — how two records stand to each other.
+
 `implements` · `derives_from` · `supersedes` · `answers` · `caused_by` ·
 `relates_to`
+
+**States** — what happened to one record.
+
+`approved_for_execution` · `met` · `cancelled` · `separated` · `blocked`
+
+A state is an edge and not a field, for the same reason validity is derived: a
+field would have to be rewritten to change, and nothing here is ever rewritten.
+The absence of all five is a state too — the default one — so being in it costs
+nothing, and leaving it costs one appended line and takes nothing back.
+
+**A state edge points at the record that justifies it.** The second endpoint is
+not decoration: it is the evidence, and `link` refuses an edge whose target
+could not be it.
+
+| State | May point at |
+|---|---|
+| `approved_for_execution` | `decision` |
+| `met` | `decision`, `review-finding` |
+| `cancelled` | `decision` |
+| `separated` | `decision` |
+| `blocked` | `open-question`, `decision` |
+
+The refusal names both the allowed kinds and the kind that was actually there.
+There is no reflexive form — an edge from a record to itself would be a state
+asserted with nothing behind it, and on disk it would look exactly like one that
+was earned.
+
+The rule runs on the **write path only**, where the target's kind is in hand.
+`validate` does not apply it, so a state edge already on disk is never condemned
+by a requirement that arrived after it was written. The six relation types carry
+no such rule at all: they describe a relation rather than a transition, and
+`supersedes` already has edges on disk that no later rule should be able to call
+invalid.
+
+The allowlist is published by `memory kinds`, under `justifications`, so it can
+be read without provoking a refusal to find out. Only the five states appear
+there: a type with no key has no rule, which is a different claim from a type
+with an empty list.
+
+### Which state edge wins
+
+A record accumulates state edges; it does not replace them. So a reader needs a
+rule, and this is it:
+
+> **A record's state is the most recent state edge by `at`, ties broken by order
+> in the file — the later line wins. Moving between states means writing the
+> state you are moving to. There is no retraction, and none is needed.**
+
+`approved_for_execution` → `blocked` (something more urgent appeared) →
+`approved_for_execution` → `met` is a normal, correct sequence, not a
+contradiction to be repaired. The edges are a trace of the state machine, and
+every one of them was true when it was written. A `blocked` edge sitting under a
+later `met` is *stale*, not *wrong* — and that trace, "this was blocked for
+three days in March", is exactly the history a mutable status field would have
+destroyed the moment the block cleared.
+
+Two consequences worth stating, because both look like omissions:
+
+- **A state edge needs no `id`.** Nothing ever has to refer back to one to undo
+  it. Recency settles it.
+- **`supersedes` is not involved.** It replaces a *record* with a better record.
+  A later state does not say the earlier one was mistaken, so borrowing
+  `supersedes` for it would file a true statement as a correction.
+
+And one honest limit: **returning to bare `planned` is not expressible.**
+`planned` is the absence of state edges, and an edge cannot assert an absence.
+In practice nothing wants to: a record leaves `approved_for_execution` for
+`blocked` or `cancelled`, not for `planned`.
+
+This rule is written down and nothing computes it yet. There is no `memory
+state` command, and `query` and `graph` report edges rather than a resolved
+state — deliberately, since a derivation belongs with the read path that needs
+it. Whoever builds that reads this section first.
 
 ## Changing the schema
 
@@ -111,6 +186,16 @@ existed.
   can detect: nothing looks wrong, everything is.
 - **Adding an optional field is free.** Old records simply lack it, and a
   reader ignores keys it does not know rather than calling the line malformed.
+- **Widening a closed set is additive, and happens inside the current
+  version.** Adding a kind, an edge type or a scope makes no record already
+  written illegal, so there is nothing for a bump to protect. It is not free,
+  and the price falls on *readers* rather than on records: a binary built before
+  the widening has rules for the current version, judges the new value by them,
+  and reports `type: unknown` — a problem that is not one — where for a version
+  it had never heard of it would have reported an honest `unjudged`. Bump anyway
+  when that false alarm would cost more than the new value is worth. The
+  edge-type set was widened this way, from six to eleven; see
+  [the versions](#the-versions).
 - **Narrowing a closed set is a version bump.** Dropping a kind, an edge type
   or a scope — anything that makes a legal record illegal — cannot be done by
   editing the current version's rules, because those rules are still what the
@@ -152,17 +237,27 @@ rather than passed over in silence.
 
 | Version | What it says | What changed |
 |---|---|---|
-| 1 | `scope` is one of `plan`, `repo`, `user` | The original shape |
-| 2 | `scope` is one of `repo`, `user` | The plan scope was removed |
+| 1 | `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
+| 2 | `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
 
-**Version 2 is the current version, and the scope set is the whole of the
-difference.** The kinds, the edge types and every field are version 1's — that is
-why `validateEntryV2` names `entryKindsV1` and `edgeTypesV1` rather than
-declaring sets of its own. There was no migration: the records already on disk
-declare version 1, most of them carrying `"scope": "plan"`, and `validateEntryV1`
-goes on judging them by the rules they were written against, where that value is
-valid. Not a byte of them was rewritten, and no legacy value entered the current
-validator.
+**Version 2 is the current version, and dropping the scope is what the bump
+bought.** The kinds and every field are version 1's — that is why
+`validateEntryV2` names `entryKindsV1` rather than declaring a set of its own.
+There was no migration: the records already on disk declare version 1, most of
+them carrying `"scope": "plan"`, and `validateEntryV1` goes on judging them by
+the rules they were written against, where that value is valid. Not a byte of
+them was rewritten, and no legacy value entered the current validator.
+
+**The edge types widened afterwards, and stayed inside version 2.**
+`edgeTypesV2` holds version 1's six plus the five [state
+types](#edge-types). Widening makes no record on disk illegal, so there was
+nothing for a version 3 to protect, and the cost — a pre-widening binary
+reporting a false `type: unknown` — was taken with open eyes; see the
+compatibility rule above. `edgeTypesV1` is a separate map literal spelling out
+its own six members, deliberately not `edgeTypesV2` under a second name: a Go
+map is a reference, so an alias would be one map wearing two names, either of
+which looks safe to narrow. An edge declaring version 1 with a state type is
+still refused, by version 1's rules, exactly as it should be.
 
 Two things a reader will expect to be wrong, and are not:
 
@@ -170,13 +265,15 @@ Two things a reader will expect to be wrong, and are not:
   rules are frozen, so it is version 1 vocabulary rather than dead code. What
   went away is `plan` as a place `Resolve` can find and as a value the CLI
   accepts.
-- **`validateEdgeV2` is `validateEdgeV1` rule for rule, written out again.** It
-  cannot delegate, and this is the one place obligation 2 above has teeth: the
-  first rule any version states is *which version the record declares*, and v1's
-  says 1. An edge stamped 2 judged by v1's rules would be refused for the stamp
-  the tool itself put on it — and since the write gate is the current version's
-  rules, `link` would refuse every edge it tried to write. A version is a whole
-  rule set, and the version rule is one of them.
+- **`validateEdgeV2` states its own rules even where they match
+  `validateEdgeV1`.** It cannot delegate, and this is the one place obligation 2
+  above has teeth: the first rule any version states is *which version the record
+  declares*, and v1's says 1. An edge stamped 2 judged by v1's rules would be
+  refused for the stamp the tool itself put on it — and since the write gate is
+  the current version's rules, `link` would refuse every edge it tried to write.
+  A version is a whole rule set, and the version rule is one of them. Writing it
+  out is also what let the edge types widen without version 1's set moving: one
+  validator changed the set it names, the other did not.
 
 ## Usage
 
@@ -189,6 +286,7 @@ memory add   --plan jwt-migration --kind decision \
              --about auth,pkg/auth/
 
 memory link  --type supersedes --from <new-id> --to <old-id>
+memory link  --type met --from <objective-id> --to <decision-id>
 
 memory query --plan jwt-migration --about auth --kind decision --current
 memory search --plan jwt-migration "key rotation"
@@ -220,6 +318,18 @@ everything under it, so `--about pkg/auth/` finds a record tagged
 - An edge whose endpoints do not both exist is refused at write time; `validate`
   also sweeps for dangling edges, because they fail silently — a graph walk
   just returns less than it should.
+- A state edge is refused **by `link`** unless it points at a record whose kind
+  could justify it, and the refusal names both the allowed kinds and the kind
+  that was actually there. The same edge sitting on disk sweeps clean, because
+  the rule is on the way in and nowhere else. `link` is the whole of it, and
+  that is narrower than "at write time": `promote` copies edges into the target
+  log without passing any gate, so a state edge whose justification was left
+  behind can arrive there unchecked. That is open question
+  `01KZ38XQTXFQZRVG6VMPRA82SK`, and the copy is at
+  `internal/memory/promote.go:88`.
+- An edge declaring version 1 with a type version 2 added is refused by the
+  sweep; the identical edge declaring version 2 passes, and version 1's own set
+  is still the six it shipped with.
 - Appending never changes bytes already written, including when a record is
   superseded — and including when a record predates the `version` stamp: it is
   read as version 1, not rewritten to say so.
