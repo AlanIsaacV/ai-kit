@@ -1,0 +1,8 @@
+# Working memory the assistant writes for itself. These are local by design:
+# the real work lands in the code, nobody reviews them by hand, and committing
+# them only adds noise to pull requests.
+plans/
+.ai-kit/
+
+# Build output
+/bin/
