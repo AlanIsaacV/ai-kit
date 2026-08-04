@@ -1,6 +1,6 @@
 ---
 name: plan
-description: "Turn a request into a written objective before any code is written — explore the problem, clarify what is genuinely ambiguous, weigh solution options with the user, and produce a reviewable draft they can read in full and correct. Use this whenever the user describes something they want built, changed, migrated or fixed and the shape of the work is not already settled between you. Triggers on: 'plan this', 'planeá esto', 'quiero hacer X', 'necesito implementar', 'how should we approach', 'armemos un plan', 'ayudame a pensar', 'vamos a refactorizar', 'necesito migrar', 'quiero agregar la feature', 'me gustaría que el sistema haga X'. Use it for small work too — a two-file fix gets the same structure, just one turn of the loop instead of many, so never skip it because the task looks small. Do NOT use it to continue an objective that already exists: that is the `work` skill."
+description: "Turn a request into a written objective before any code is written — explore the problem, clarify what is genuinely ambiguous, weigh solution options with the user, and produce a reviewable draft they can read in full and correct. Use this whenever the user describes something they want built, changed, migrated or fixed and the shape of the work is not already settled between you. Triggers on: 'plan this', 'planeá esto', 'quiero hacer X', 'necesito implementar', 'how should we approach', 'armemos un plan', 'ayudame a pensar', 'vamos a refactorizar', 'necesito migrar', 'quiero agregar la feature', 'me gustaría que el sistema haga X'. Use it for small work too — a two-file fix gets the same structure, just one turn of the loop instead of many, so never skip it because the task looks small. To continue an objective that already exists, or to open a more specific one underneath it, use the `work` skill instead; `plan` is for opening a new objective."
 ---
 
 # plan
@@ -78,8 +78,11 @@ scope: both
 Fold its `findings` into your understanding and keep its `gaps` — they belong
 in the draft's "What I don't know".
 
-If an objective already exists for this work (`$MEMORY query --kind objective
---current`), this is not the right skill. Point the user at `work`.
+An objective may derive from another, so a more specific objective underneath an
+existing one is an ordinary move rather than a reason to stop. Look at what is
+already open (`$MEMORY query --kind objective --current`): if this work continues
+one of those, point the user at `work`, which opens children as it goes. `plan`
+stays the right skill for opening a new objective.
 
 ### 2 — Ask only what is genuinely ambiguous
 

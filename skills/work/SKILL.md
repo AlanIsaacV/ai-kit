@@ -1,35 +1,45 @@
 ---
 name: work
-description: "Run one unit of work against an existing objective, end to end: define what this turn delivers, get it approved, implement it, verify it against the approved criteria, review the code with the user, record what was learned, and decide what comes next. Use whenever there is already an objective recorded and the user wants to move it forward. Triggers on: 'sigamos', 'continuemos', 'next unit', 'seguí con el plan', 'arrancá', 'dale', 'implementá la siguiente parte', 'retomemos', 'continue where we left off', 'what's next', or the start of a fresh session on work already planned. If no objective exists yet, use the `plan` skill first — do not invent one to have something to point at."
+description: "Run one turn of work against an objective, end to end: resolve which objective you are on, decide what this turn delivers — that objective, or a more specific one opened underneath it when it is too big for a session — get it approved, implement it, verify it against the approved criteria, review the code with the user, record what was learned, and decide what comes next. Use whenever there is already an objective recorded and the user wants to move it forward. Triggers on: 'sigamos', 'continuemos', 'next unit', 'seguí con el plan', 'arrancá', 'dale', 'implementá la siguiente parte', 'retomemos', 'continue where we left off', 'what's next', or the start of a fresh session on work already planned. If no objective exists yet, use the `plan` skill first — do not invent one to have something to point at."
 ---
 
 # work
 
-One turn of the loop: define a unit, build it, check it honestly, learn from
-it, decide what is next.
+One turn of the loop: pick the objective this turn executes, build it, check it
+honestly, learn from it, decide what is next.
 
 You are the orchestrator. You hold the objective, you talk to the user, and you
 delegate the actual work. You do not write production code and you do not
 verify your own criteria — you defined them, which is exactly why you are the
 wrong one to judge whether they were met.
 
+Objectives nest. An objective may derive from another, and the one this turn
+runs against — the **executable objective** — is the one whose criteria carry a
+required fidelity and which has no open child of its own. Opening a more
+specific objective underneath the current one is an ordinary move, not an
+admission that the plan was wrong: it costs one record and one edge, and the
+parent is still there afterwards.
+
 ## Hard rules
 
-1. **The objective is loaded first and stays loaded.** Every unit answers "how
-   does this move the objective". A unit that cannot answer it is a unit that
-   should not run.
+1. **The objective is loaded first and stays loaded.** Every objective answers
+   "how does this move the one it derives from" — a root objective answers to
+   the request that opened it. An objective that cannot answer it is an
+   objective that should not run.
 2. **Never write production code in this thread.** That is the `implement`
    subagent's job. Reading a few files to check drift or spot-check a claim is
    fine; editing project source is not.
-3. **The user approves the unit before anything is built.** Hard stop, every
-   time. Silence is not approval.
+3. **The user approves the executable objective before anything is built.** Hard
+   stop, every time. Silence is not approval.
 4. **Acceptance criteria are frozen at approval.** Nothing downstream may add,
    soften or reinterpret them. A condition discovered later is an
    `open-question` for the user, never a criterion the system grades itself
    against.
 5. **Verification runs in a different subagent than implementation**, with
    fresh context.
-6. **State changes go through the `memory` CLI.** Never hand-edit the log.
+6. **State changes go through the `memory` CLI.** Never hand-edit the log. A
+   state is an appended edge pointing at the record that justifies it, so
+   nothing already written is ever rewritten to change one.
 7. **Conversation in the user's language; everything written to disk in
    English.**
 
@@ -45,31 +55,73 @@ them above a threshold. When that happens, **narrow the query** — do not raise
 the limit to make the wall of text appear. If you genuinely need to read a lot
 of history, that is a job for a subagent, not for this context.
 
+`$MEMORY kinds` is the authority on which record kinds and edge types exist and
+on which record each state edge is allowed to point at; `$MEMORY --help` on
+which flags exist. A command this file does not show is one of those two reads
+away.
+
 ## Steps
 
-### 1 — Load the objective and only the history that bears on this turn
+### 1 — Resolve which objective you are on, and load only the history that bears on this turn
 
 ```bash
-$MEMORY query --plan <slug> --kind objective --current
-$MEMORY query --plan <slug> --kind unit --limit 3          # what the last turns delivered
-$MEMORY query --plan <slug> --kind open-question,assumption --current
+$MEMORY query --plan <tree-slug> --kind objective --current
+$MEMORY state
+$MEMORY query --plan <tree-slug> --kind open-question,assumption --current
 ```
 
-That is the whole start-up read, and it is bounded by the plan's shape rather
+That is the whole start-up read, and it is bounded by the tree's shape rather
 than its age. Pull anything else on demand and by area — `--about <area>` for
 the surface this turn will touch, `--kind wont-fix` before proposing work that
 someone already decided was not worth doing.
 
+**Read the `current_objective` field, not just the records.** The objective
+query returns it as `current_objective` and `state` returns the same answer as
+`current`: an `id`, a `title`, and the `rule` and `why` that resolved it. The
+rule is either `approved_for_execution` — an open objective carries the latest
+freeze in the log — or `activity`, meaning none does and this is simply the one
+most recently touched. Name that objective and its rule to the user in one line,
+and when more than one objective is open, offer the switch and let them pick.
+Do not choose silently among several; do not ask when only one is open, because
+then there is nothing to ask.
+
+`--current` returns **every** open objective rather than the one you are on:
+settled for an objective means `met` or `cancelled`, and nothing else takes it
+off that list — not depth, not having an open child, not `separated`. The
+`depth` in `state` is advisory: it says where an objective sits, not which one
+to work. A list coming back is not a cue to take the deepest one. The answer to
+"where am I" is `current_objective` plus the user.
+
+`state` is given no plan filter on purpose: `--plan` is accepted there and
+ignored, because narrowing the derivation would change the answers rather than
+the view. An objective's parent, its children and which objective is current are
+properties of the log, not of the question. Several roots in one log are normal —
+nothing requires an objective to have a parent.
+
+`--plan` names the **objective tree** — the value in every record's
+`origin.plan` — and not the drafts directory, and the two do drift apart. A
+query that comes back `count: 0` while `current_objective` carries
+`outside_filter: true` is telling you the slug is wrong, not that the log is
+empty: the derivation read the whole log, found the objective and named it from
+outside your filter. Take the slug from the objective's own record, not from the
+directory its draft sits in.
+
+A log written before objectives went recursive also holds `unit` records.
+Nothing writes them any more and the read above does not ask for them, so their
+absence is history rather than a gap.
+
 Then look at reality, not just the record: `git log --oneline -15` and the
 state of the files the objective's orientation named. **The objective was
-written at a point in time and the repo has moved.** If something that the plan
-assumed is no longer true, surface it now, before defining a unit on top of it.
-Finding drift is a good outcome, not a delay.
+written at a point in time and the repo has moved.** If something that it
+assumed is no longer true, surface it now, before choosing what to execute on
+top of it. Finding drift is a good outcome, not a delay.
 
-### 2 — Choose what this unit delivers
+### 2 — Choose the objective this turn executes
 
-Pick from what the objective still needs, given what exists today. The
-criteria a unit has to meet:
+Either the open objective you are already on, or a child opened underneath it
+because that one is too big for a session. Pick against what the objective
+still needs, given what exists today. The criteria the executable objective has
+to meet:
 
 - **It delivers something demonstrable.** At the end you can show it working.
   Not "the layer is refactored" — "you can cancel an order and see the reason
@@ -77,30 +129,35 @@ criteria a unit has to meet:
 - **It fits one session with room to spare.** Context that fills up is context
   that starts forgetting the objective, which is the failure this whole shape
   exists to avoid. When in doubt, split.
-- **It is worth doing on its own.** If it only makes sense once a later unit
-  lands, either merge them or do the later one first.
+- **It is worth doing on its own.** If it only makes sense once a sibling
+  objective lands, either merge them or do that one first.
 - **It names what it does not cover.** Two or three non-goals. This is the
   cheapest scope control there is.
-- **It says how it serves the objective**, in one line. If that line is hard to
-  write, that is the signal — ask the user before going further.
+- **It says how it serves the objective above it**, in one line. If that line is
+  hard to write, that is the signal — ask the user before going further.
 
-Do not derive the unit from a pre-existing phase list. There isn't one, on
+Do not derive the objective from a pre-existing phase list. There isn't one, on
 purpose: you are choosing against the current state of the repo, which is
-better information than anything written weeks ago.
+better information than anything written weeks ago. Candidate children stay
+**prose** — a sentence in the parent's draft — until someone is about to work
+one. A record is for the objective being opened now; enumerating the rest of the
+tree up front turns it back into the phase list this shape exists to avoid.
 
-### 3 — Write the unit draft
+### 3 — Write the executable objective's draft
 
-Write `plans/<slug>/draft-unit.md`. Overwrite the previous one; the closed
-units live in memory.
+Drafts live at `plans/<objective-slug>/draft-objective.md`: one directory per
+objective, named after the objective. If `plan` already wrote that file, extend
+it in place; if you are opening a child, write its own. The sections the loop
+reads:
 
 ```markdown
-# Unit: <short name>
+# Objective: <one line>
 
 ## Deliverable
 <What will be demonstrably working when this is done. One paragraph.>
 
-## How this serves the objective
-<One line.>
+## How this serves the objective above
+<One line. A root objective serves the request that opened it.>
 
 ## Acceptance criteria
 1. <Observable statement that can fail.>
@@ -108,14 +165,22 @@ units live in memory.
 2. ...
 
 ## Out of scope
-- <what this unit does not touch>
+- <what this objective does not touch>
 
 ## Files and areas expected
 <Best current understanding. Not a contract — deviations get recorded.>
 
 ## Open questions carried in
-- <anything from memory still unanswered that this unit touches>
+- <anything from memory still unanswered that this objective touches>
 ```
+
+A draft `plan` wrote may arrive with a `## Success criteria` section and no
+fidelity on any of it. When it does: rename that heading to
+`## Acceptance criteria`, number the criteria, and add the fidelity line to each
+one. That is first-pass work — it is what makes the objective executable, and a
+draft whose criteria already carry fidelity has been through it and has nothing
+left to rename. `## Acceptance criteria` is the exact heading `verify` reads — a
+criterion under any other heading is a criterion nobody will check.
 
 **The fidelity line on each criterion is the load-bearing part.** It is decided
 here, with the user, before anyone has an interest in the answer. A criterion
@@ -125,25 +190,66 @@ later report it satisfied on the strength of a mock. Choosing `mocked` is
 allowed — it just has to be a choice made in the open, now, rather than a
 convenience discovered later.
 
+On a resumption, `## Acceptance criteria` is not edited. That section is what
+`verify` grades, so editing it after approval would move the criteria with
+nothing recording that they moved; changing a criterion means superseding the
+objective instead. Extending the draft in place is for the sections around it.
+
 ### 4 — Gate
 
-> Escribí la unidad en `plans/<slug>/draft-unit.md`. Leela entera — sobre todo
-> los **criterios de aceptación** y la fidelidad que pide cada uno, porque son
-> los únicos contra los que se va a verificar después y no se pueden cambiar
-> una vez que arrancamos. Corregí lo que quieras en el archivo y decime cuando
-> arrancamos.
+> Escribí el objetivo en `plans/<objective-slug>/draft-objective.md`. Leelo
+> entero — sobre todo los **criterios de aceptación** y la fidelidad que pide
+> cada uno, porque son los únicos contra los que se va a verificar después y no
+> se pueden cambiar una vez que arrancamos. Corregí lo que quieras en el archivo
+> y decime cuando arrancamos.
 
 Stop. Re-read the file when they come back — their edits are the decision.
 
-On approval, record the unit and link it to the objective:
+On approval, and only on approval. A child you just opened becomes a record and
+gets its parent — one move, two commands:
 
 ```bash
-UNIT=$($MEMORY add --plan <slug> --kind unit --title "<short name>" \
+CHILD=$($MEMORY add --plan <tree-slug> --kind objective --title "<short name>" \
   --body "<deliverable + acceptance criteria + out of scope>" --about <areas> \
   | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
 
-$MEMORY link --plan <slug> --type implements --from "$UNIT" --to <objective-id>
+$MEMORY link --type derives_from --from "$CHILD" --to <parent-objective-id>
 ```
+
+An objective derives from at most one objective, and the second `derives_from`
+is refused naming the parent it already has. There is no taking a parent back
+afterwards, so link it to the one it is actually under.
+
+Then freeze it, whether it is the child you just opened or the objective you
+were already on:
+
+```bash
+FREEZE=$($MEMORY add --plan <tree-slug> --kind decision \
+  --title "Approved for execution: <short name>" \
+  --body "<the acceptance criteria as approved, each with its required fidelity>" \
+  --about <areas> \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
+
+$MEMORY link --type approved_for_execution --from <objective-id> --to "$FREEZE"
+```
+
+That decision is the freeze as a record. The edge has to point at the record
+that justifies it — `approved_for_execution` accepts a `decision` and nothing
+else — so what was approved, and when, is on disk before any code is. What
+verification is read against is the draft file: `verify` opens
+`plans/<objective-slug>/draft-objective.md` and grades the criteria under
+`## Acceptance criteria` there. The decision is the append-only evidence of what
+that section said at approval, not a second copy that gets graded. Making the
+record the graded artifact would mean recutting `verify`, which has not happened
+yet.
+
+A second `approved_for_execution` on an objective that already carries one is a
+**resumption, not a re-freeze**: it is how a session that stopped picks the
+thread back up. The criteria live in the objective's body and in the decision
+the first approval pointed at, and the log never rewrites either — so changing
+criteria means superseding the objective, not approving it again. The draft file
+is the mutable one, which is why step 3 leaves `## Acceptance criteria` alone on
+a resumption.
 
 `add` prints the whole record; the id is at `.record.id`. Every command prints
 JSON on success and on failure alike, so check the exit code rather than
@@ -156,17 +262,36 @@ subagent that only knows its ticket will satisfy the ticket and nothing else,
 which is how work ends up technically complete and beside the point.
 
 ```
-objective: <the objective's title and body, verbatim>
-unit: <absolute path to draft-unit.md>
+objective: <the parent objective's title and body, verbatim — or this one's, if it is a root>
+unit: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 memory_cmd: <absolute path to the memory binary>
-plan_slug: <slug>
-unit_id: <the id from step 4>
+plan_slug: <tree-slug>
+unit_id: <the executable objective's id>
 constraints: <anything from memory that binds this surface — decisions, wont-fix>
 ```
 
+Those two parameters are still called `unit` and `unit_id`: that is the contract
+`implement`, `verify` and `review` read, and it holds until those three are
+recut. The values are the executable objective's draft and its id.
+
 When it returns: if it is `blocked` or `partial`, stop and bring it to the
 user. Do not chain another attempt at the same wall.
+
+When the wall is external — a credential, an upstream decision, someone else's
+release — record what is being waited on and say so on the objective:
+
+```bash
+BLOCKER=$($MEMORY add --plan <tree-slug> --kind open-question \
+  --title "<what is being waited on>" --about <area> \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
+
+$MEMORY link --type blocked --from <objective-id> --to "$BLOCKER"
+```
+
+`blocked` points at the `open-question` or the `decision` that says what the
+wait is; being held up by your own open child needs no edge, because that is
+read off the tree.
 
 ### 6 — Verify
 
@@ -174,16 +299,17 @@ Launch the `verify` subagent — a different one, with no memory of having
 written the code:
 
 ```
-unit: <absolute path to draft-unit.md>
+unit: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 changed_files: <from the implement result>
-memory_cmd: <path>   plan_slug: <slug>   unit_id: <id>
+memory_cmd: <path>   plan_slug: <tree-slug>   unit_id: <the objective's id>
 ```
 
 Read its result against three things:
 
-- Any criterion reported met at a **lower fidelity than the unit required** is
-  not met. Treat it as unverified regardless of how confident the report reads.
+- Any criterion reported met at a **lower fidelity than the objective required**
+  is not met. Treat it as unverified regardless of how confident the report
+  reads.
 - Any `unverified` criterion is named to the user explicitly, with its count.
   "Ready to close, two criteria unverified" is an honest sentence; silence
   about them is not.
@@ -196,7 +322,7 @@ that stops you from arriving at the end of the objective without knowing how
 any of it works.
 
 ```
-unit: <absolute path to draft-unit.md>
+unit: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 changed_files: <from the implement result>
 ```
@@ -217,7 +343,7 @@ data can't be negative here, we'll tell the team instead — that is a decision
 worth keeping:
 
 ```bash
-$MEMORY add --plan <slug> --kind wont-fix \
+$MEMORY add --plan <tree-slug> --kind wont-fix \
   --title "<the risk, stated plainly>" \
   --body "<the user's reason>" --about <area>
 ```
@@ -226,16 +352,16 @@ Before raising anything in a future turn, check `--kind wont-fix` for that
 area. Re-raising something already dismissed is exactly the waste this record
 exists to prevent.
 
-### 9 — Close the unit
+### 9 — Close the objective, then look up at its parent
 
 Record what this turn actually produced:
 
 ```bash
-$MEMORY add --plan <slug> --kind decision  --title "..." --about <area>   # choices made mid-flight
-$MEMORY add --plan <slug> --kind deviation --title "..." --about <area>   # where reality differed from the unit
-$MEMORY add --plan <slug> --kind assumption --title "..." --about <area>  # what had to be assumed
-$MEMORY add --plan <slug> --kind open-question --title "..." --about <area>
-$MEMORY add --plan <slug> --kind dead-end   --title "..." --about <area>  # a path tried and abandoned
+$MEMORY add --plan <tree-slug> --kind decision  --title "..." --about <area>   # choices made mid-flight
+$MEMORY add --plan <tree-slug> --kind deviation --title "..." --about <area>   # where reality differed from the objective
+$MEMORY add --plan <tree-slug> --kind assumption --title "..." --about <area>  # what had to be assumed
+$MEMORY add --plan <tree-slug> --kind open-question --title "..." --about <area>
+$MEMORY add --plan <tree-slug> --kind dead-end   --title "..." --about <area>  # a path tried and abandoned
 ```
 
 `dead-end` is worth the keystrokes: without it, a future session cheerfully
@@ -245,38 +371,94 @@ Answer an open question or an assumption by linking the record that settles it,
 rather than by editing anything:
 
 ```bash
-$MEMORY link --plan <slug> --type answers --from <new-id> --to <question-id>
+$MEMORY link --type answers --from <new-id> --to <question-id>
 ```
 
-Then `$MEMORY validate --plan <slug>` to confirm the log is still sound.
+Then close the objective. Closing is an edge, never an edit: `met` is the state
+that counts toward the parent, and it points at the record that justifies it — a
+`decision` or a `review-finding`:
+
+```bash
+CLOSE=$($MEMORY add --plan <tree-slug> --kind review-finding \
+  --title "<what verification and review actually established>" \
+  --body "<criteria met, criteria unverified, what the user accepted>" \
+  --about <areas> \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
+
+$MEMORY link --type met --from <objective-id> --to "$CLOSE"
+```
+
+An objective that is not going to happen closes with `cancelled` instead, and
+one whose work continues outside this parent with `separated`. Both point at the
+`decision` that says so, and neither counts toward the parent's completion.
+
+Then, before anything else is chosen, look up at the parent:
+
+```bash
+$MEMORY state --id <parent-objective-id>
+```
+
+Report two things to the user, in this order. First the **parent's success
+criteria**, from its record body — step 1 already loaded it. Then its three
+completion buckets exactly as the command returns them: `counted_done`,
+`not_counted`, `outstanding`. The parent's criteria come first because a child
+that closed is only worth something as a step toward the objective above it, and
+this is the moment to notice that the parent is done, or that what it still
+needs is something nobody has opened yet.
+
+Report the buckets as they come back, without tidying them. `state` also returns
+`blocked_by_open_child`, derived from the tree, and the two can disagree: a
+child can be off the blocking list and still sit in `outstanding`. Show both and
+ask the user. A disagreement there is a real question about what counts as done,
+not something to settle on the objective's behalf.
+
+A root objective has no parent to look up. Point `--id` at the objective you just
+closed instead and report its own tally, so the turn still ends by saying what is
+left rather than what was finished.
+
+Then `$MEMORY validate` to confirm the log is still sound.
 
 ### 10 — Decide what comes next
 
-Say, in a few lines: what the objective still needs, and what the obvious next
-unit looks like. Then ask whether to keep going here or stop.
+Say, in a few lines: what the objective above still needs, and what the obvious
+next objective under it looks like. Then ask whether to keep going here or stop.
 
-Keep going in this session when the context still has room and the next unit is
+Keep going in this session when the context still has room and the next one is
 small. Stop when the context is filling — a session that pushes on past that
 point starts forgetting the objective, and everything after that is worse than
 what came before it.
 
+Work you discovered mid-flight that is larger than this objective assumed does
+not evaporate at the end of the turn. Open it as a `planned` child before the
+session ends — `add` plus `derives_from`, and nothing else, since `planned` is
+the absence of any state edge — or leave it as prose in the parent's draft when
+nobody is going to pick it up soon. A record is for work someone will do; prose
+is for the rest.
+
 When stopping, hand over a prompt the user can paste into a fresh session:
 
 ```
-Continuá el objetivo `<slug>` en <repo>. Corré el skill `work`:
-lo último que cerró fue `<unit name>`; lo que sigue es <one line>.
+Continuá el árbol `<tree-slug>` en <repo>. Corré el skill `work`: estábamos en
+`<objective title>`; lo último que cerró fue `<name>`; lo que sigue es <one line>.
 ```
 
-If the objective's success criteria are all met, say so plainly and offer the
-promotion pass: which decisions, ADRs and postmortems are worth lifting out of
-this repo's log to the user level, where they outlive it
-(`$MEMORY promote --ids ... --to user`). That choice is the user's — suggest
-candidates, do not promote on your own.
+If the parent's success criteria are all met — the tally in step 9 is what tells
+you — say so plainly and offer the promotion pass: which decisions, ADRs and
+postmortems are worth lifting out of this repo's log to the user level, where
+they outlive it (`$MEMORY promote --ids ... --to user`). That choice is the
+user's — suggest candidates, do not promote on your own.
 
 ## Key principles
 
-- **The objective is the thing being served.** The unit is only a means, and a
-  unit that cannot say how it serves the objective is not ready to run.
+- **The objective above is the thing being served.** The one you execute is only
+  a means, and an objective that cannot say how it serves the one it derives
+  from is not ready to run.
+- **Opening a child is not abandoning the parent.** One record, one edge, and
+  the parent is still there — which is what makes "this is bigger than one
+  session" a cheap thing to discover.
+- **Nothing is rewritten to change state.** Every transition is an appended edge
+  pointing at the record that justifies it, so the log stays a true trace rather
+  than a current status.
 - **Criteria are frozen before there is any incentive to move them.** That is
   the entire defense against verification that grades its own work.
 - **Required fidelity is agreed up front.** A mock satisfying a criterion about
@@ -284,5 +466,5 @@ candidates, do not promote on your own.
 - **The one who built it does not get to bless it.**
 - **"Not worth fixing" is a real answer, and it gets recorded.** Otherwise the
   same imaginary risk comes back every turn.
-- **Stop before the context fills, not after.** Splitting a unit is cheap;
+- **Stop before the context fills, not after.** Splitting an objective is cheap;
   losing the thread halfway through one is not.
