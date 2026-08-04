@@ -315,6 +315,79 @@ func TestNoFlagOrVariableReopensThePlanScope(t *testing.T) {
 	}
 }
 
+// The kind version 3 removed, from both sides at once: nothing may write it, and
+// everything already written with it still reads.
+//
+// The write half is the gate, which is the current version's rules and has no
+// lever on it — `--kind unit` is refused for the kind, and a refused add appends
+// nothing, so the log is the same length afterwards.
+//
+// The read half is the dispatch, and it is the reason the removal cost a version
+// bump rather than an edit to version 1's kind set. The two hand-written lines
+// below are the shape this repo's own log holds six of: one reading as version 1
+// with `scope: plan`, one declaring version 2, both carrying kind `unit`. They
+// sweep clean, they are counted, and nothing about them is unjudged — this binary
+// has rules for both versions and those rules still say `unit` is a kind.
+func TestNothingWritesTheUnitKindAndTheRecordsThatDoStillRead(t *testing.T) {
+	r := throwawayRepo(t)
+	add(t, r, "RS256 over HS256")
+	appendLine(t, r.log, `{"id":"01KZ34GQZ7T0WZPT4BBBMN93EK","kind":"unit","slug":"an-unstamped-unit",`+
+		`"scope":"plan","at":"2026-08-01T10:00:00Z","about":["auth"],`+
+		`"title":"A unit written before the stamp existed","origin":{"plan":"demo"}}`)
+	appendLine(t, r.log, `{"version":2,"id":"01KZ4N1PM38APVV93MG3J38BD2","kind":"unit","slug":"a-v2-unit",`+
+		`"scope":"repo","at":"2026-08-02T10:00:00Z","about":["auth"],`+
+		`"title":"A unit written while the kind was still current","origin":{"plan":"demo"}}`)
+	before := lines(t, r.log)
+
+	res := run(t, r, "add", "--kind", "unit", "--title", "One more unit", "--about", "auth")
+	if res.code == 0 {
+		t.Fatal("`unit` is not a kind any more and the gate must refuse it")
+	}
+	code, _ := errorCode(t, res)
+	if code != "invalid_record" {
+		t.Errorf("expected an invalid_record refusal, got %q", code)
+	}
+	// The refusal carries the field and the value, so a caller who still has the
+	// old vocabulary in hand learns which word the tool stopped speaking — and the
+	// set it advertises instead no longer holds it.
+	var refusal struct {
+		Problems []struct {
+			Field   string `json:"field"`
+			Message string `json:"message"`
+		} `json:"problems"`
+	}
+	if err := json.Unmarshal([]byte(res.stdout), &refusal); err != nil {
+		t.Fatalf("a refusal must still print JSON: %v\n%s", err, res.stdout)
+	}
+	if len(refusal.Problems) != 1 || refusal.Problems[0].Field != "kind" {
+		t.Fatalf("expected one problem, on the kind: %+v", refusal.Problems)
+	}
+	if !strings.Contains(refusal.Problems[0].Message, "unit") {
+		t.Errorf("the refusal should name the kind that was passed, got %q", refusal.Problems[0].Message)
+	}
+	if !strings.Contains(refusal.Problems[0].Message, "valid:") ||
+		strings.Contains(refusal.Problems[0].Message, ", unit") {
+		t.Errorf("and the set it may use instead, with `unit` no longer in it, got %q",
+			refusal.Problems[0].Message)
+	}
+	if after := lines(t, r.log); len(after) != len(before) {
+		t.Fatalf("a refused add must write nothing, log went from %d to %d lines", len(before), len(after))
+	}
+
+	out, exit := validateOne(t, r)
+	if !out.OK || exit != 0 {
+		t.Fatalf("the records that declare a version where `unit` is legal must still pass: %+v",
+			out.Reports[0].Problems)
+	}
+	if len(out.Reports[0].Unjudged) != 0 {
+		t.Fatalf("both versions ship in this binary; neither record goes unjudged: %+v",
+			out.Reports[0].Unjudged)
+	}
+	if out.Reports[0].Entries != 3 {
+		t.Errorf("every entry is counted, got %d", out.Reports[0].Entries)
+	}
+}
+
 // Dropping DisallowUnknownFields on the read path did not lose typo
 // protection; it moved it to where typos originate. The CLI is what a person
 // mistypes, and it refuses before anything reaches the log.
@@ -581,7 +654,7 @@ func TestInitCreatesTheRepoLogAndRefusesThePlanScope(t *testing.T) {
 // `kinds` is where a caller learns what the write gate will accept, so a version
 // that narrows a closed set has to narrow this list with it. Otherwise the tool
 // goes on advertising a value it refuses.
-func TestKindsAdvertisesTwoScopesAndKeepsVersion1sKinds(t *testing.T) {
+func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 	// `kinds` reads no log and takes no flags, so it is run bare.
 	cmd := exec.Command(memoryBin, "kinds")
 	stdout, err := cmd.Output()
@@ -604,13 +677,21 @@ func TestKindsAdvertisesTwoScopesAndKeepsVersion1sKinds(t *testing.T) {
 	if out.Threshold != memory.DefaultThreshold {
 		t.Errorf("the threshold key is part of the shape other things read, got %d", out.Threshold)
 	}
-	// Version 2 took no kind away. `unit` in particular stays: removing it
-	// belongs to another objective.
-	for _, want := range []string{"objective", "unit", "decision", "deviation", "assumption",
-		"open-question", "wont-fix", "dead-end", "adr", "postmortem", "review-finding"} {
+	// Version 3 took `unit` away, and this is the list a caller reads to find out
+	// what the write gate accepts — so the narrowing has to show up here, or the
+	// tool advertises a kind it refuses. The ten that are left, and no eleventh.
+	wantKinds := []string{"objective", "decision", "deviation", "assumption",
+		"open-question", "wont-fix", "dead-end", "adr", "postmortem", "review-finding"}
+	for _, want := range wantKinds {
 		if !slices.Contains(out.EntryKinds, want) {
 			t.Errorf("kind %q went missing from the advertised set: %v", want, out.EntryKinds)
 		}
+	}
+	if len(out.EntryKinds) != len(wantKinds) {
+		t.Errorf("expected %d entry kinds, got %d: %v", len(wantKinds), len(out.EntryKinds), out.EntryKinds)
+	}
+	if slices.Contains(out.EntryKinds, "unit") {
+		t.Errorf("`unit` is gone in version 3 and must not be advertised: %v", out.EntryKinds)
 	}
 	// The other direction of the same obligation: a version that *widens* a
 	// closed set has to widen this list with it, or the tool goes on hiding a

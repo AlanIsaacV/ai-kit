@@ -74,12 +74,19 @@ can now be linked, whatever plan produced them.
 
 | Group | Kinds | What they are for |
 |---|---|---|
-| Core | `objective` `unit` `decision` `deviation` | Make the work loop run |
+| Core | `objective` `decision` `deviation` | Make the work loop run |
 | Learning | `assumption` `open-question` `wont-fix` `dead-end` | Stop verification theater and repeated work |
 | Knowledge | `adr` `postmortem` `review-finding` | Outlive the plan, get promoted upward |
 
 `wont-fix` earns its place: once you decide a risk is not worth covering, that
 decision is recorded, and no later verification pass raises it again.
+
+There used to be a `unit` as well, for a piece of work under an objective, and
+removing it is what [schema version 3](#changing-the-schema) is. An objective may
+derive from an objective, so the work under one is another objective and the kind
+named a distinction the tool no longer draws. The records already on disk that
+carry it declare version 1 or version 2 and are still judged by the rules those
+versions state, where the kind is valid.
 
 ## Edge types
 
@@ -316,9 +323,11 @@ existed.
 
 **The compatibility rule.** Within a version, changes are additive only.
 
-- **Never rename a field.** The JSON key *is* the identity here — this is
-  protobuf's discipline without protobuf's numbering. A rename is a delete plus
-  an add, and every record already written fails it.
+- **Never rename a field, and never remove one.** The JSON key *is* the identity
+  here — this is protobuf's discipline without protobuf's numbering. A rename is a
+  delete plus an add, and every record already written fails it. A field that has
+  gone quiet stays where it is: `Origin.Unit` is populated by nothing and removed
+  by nobody.
 - **Never repurpose one.** Same key, new meaning, is the only change no reader
   can detect: nothing looks wrong, everything is.
 - **Adding an optional field is free.** Old records simply lack it, and a
@@ -350,7 +359,9 @@ existed.
    Compose them from the same `checks` helpers the older validators use, so
    "is this a ULID" never has two implementations that can drift apart.
 3. **Repoint the present.** Register the version in `CurrentSchema`, then move
-   `CurrentSchemaVersion`, `entryKinds`, `edgeTypes` and `scopes` to it. The
+   `CurrentSchemaVersion` and whichever of `entryKinds`, `edgeTypes` and `scopes`
+   the new version declares a set for — the rest keep pointing where they point,
+   which is what version 3 did with the edge types and the scopes. The
    write gate reads its own rules back out of that same table, so there is no
    second list to keep in step — and if you stamp a version you forgot to
    register, the binary refuses to start instead of quietly reporting every new
@@ -374,16 +385,33 @@ rather than passed over in silence.
 
 | Version | What it says | What changed |
 |---|---|---|
-| 1 | `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
-| 2 | `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
+| 1 | eleven kinds; `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
+| 2 | eleven kinds; `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
+| 3 | ten kinds; `scope` and the edge types are version 2's | `unit` was removed from the entry kinds. Nothing else moved |
 
-**Version 2 is the current version, and dropping the scope is what the bump
-bought.** The kinds and every field are version 1's — that is why
-`validateEntryV2` names `entryKindsV1` rather than declaring a set of its own.
-There was no migration: the records already on disk declare version 1, most of
-them carrying `"scope": "plan"`, and `validateEntryV1` goes on judging them by
-the rules they were written against, where that value is valid. Not a byte of
-them was rewritten, and no legacy value entered the current validator.
+**Version 3 is the current version, and dropping the `unit` kind is what the bump
+bought.** `entryKindsV3` is version 1's eleven without it, and everything else is
+a set version 3 names rather than declares: `validateEntryV3` names `scopesV2` and
+`validateEdgeV3` names `edgeTypesV2`, so `implements` and both scopes go on
+meaning what they meant.
+
+**It is also the first time a narrowing had records on disk to condemn**, which is
+the case the version stamp was built for and had not yet been asked to handle. Six
+entries in this repo's log carry kind `unit` — two reading as version 1, four
+declaring version 2 — and `validateEntryV1` and `validateEntryV2` both name
+`entryKindsV1`. So `entryKindsV1` keeps the kind, `entryKindsV3` is its own map
+literal that does not, and the read sweep judges each of those six by the version
+it declares. There was no migration and no line was rewritten. A record stamped 1
+or 2 is still judged by a set that contains `unit`; `add --kind unit` is refused,
+because the write gate is the current version's rules and never dispatches.
+
+**Version 2's bump bought dropping the plan scope**, and its kinds and every
+field are version 1's — that is why `validateEntryV2` names `entryKindsV1` rather
+than declaring a set of its own. There was no migration there either: the records
+already on disk declare version 1, most of them carrying `"scope": "plan"`, and
+`validateEntryV1` goes on judging them by the rules they were written against,
+where that value is valid. Not a byte of them was rewritten, and no legacy value
+entered the current validator.
 
 **The edge types widened afterwards, and stayed inside version 2.**
 `edgeTypesV2` holds version 1's six plus the five [state
@@ -396,12 +424,26 @@ map is a reference, so an alias would be one map wearing two names, either of
 which looks safe to narrow. An edge declaring version 1 with a state type is
 still refused, by version 1's rules, exactly as it should be.
 
-Two things a reader will expect to be wrong, and are not:
+Five things a reader will expect to be wrong, and are not:
 
 - **The Go constant `ScopePlan` stays.** `scopesV1` names it and version 1's
   rules are frozen, so it is version 1 vocabulary rather than dead code. What
   went away is `plan` as a place `Resolve` can find and as a value the CLI
   accepts.
+- **The `unit` kind, by contrast, keeps no Go constant at all.**
+  `entryKindsV1` holds `Kind("unit")` as a bare literal instead. The value has to
+  be in version 1's frozen set or six records stop validating, so it is spelled
+  there, once. But a constant in the `const` block is how this package says "a kind
+  you may write", and nothing may write this one — so the kind exists in exactly
+  one place with no constant naming it, and that asymmetry is the signal rather
+  than an oversight. The difference from `ScopePlan` is that `scopesV1` is not the
+  only thing naming `ScopePlan`: `Resolve` matches on it to refuse `plan` *by
+  name*, which needs the constant.
+- **`Origin.Unit` stays, as a field nothing populates.** Removing it would change
+  no byte on disk — no record sets it and the key is `omitempty` — which is the
+  whole argument for deleting it and the reason not to. Additive only means never
+  remove a field, and a rule that holds except where removal happens to be
+  invisible is a rule nobody can lean on.
 - **`validateEdgeV2` states its own rules even where they match
   `validateEdgeV1`.** It cannot delegate, and this is the one place obligation 2
   above has teeth: the first rule any version states is *which version the record
@@ -411,6 +453,12 @@ Two things a reader will expect to be wrong, and are not:
   A version is a whole rule set, and the version rule is one of them. Writing it
   out is also what let the edge types widen without version 1's set moving: one
   validator changed the set it names, the other did not.
+- **`validateEdgeV3` exists although version 3 changed nothing about an edge.**
+  Same rule, second time it was billed: every edge written now is stamped 3, so a
+  `ruleSetV3` reusing `validateEdgeV2` would send every one of them into rules
+  that require 2 and `link` would refuse them all. The three edge validators
+  differ only in the stamp they require and the set they name, and whether that
+  duplication stays affordable is open question `01KZ3472NSEBRE0C9XE6AP6TCC`.
 
 ## Usage
 
@@ -493,6 +541,14 @@ everything under it, so `--about pkg/auth/` finds a record tagged
 - `plan` is refused as a scope going in, by no flag and no environment variable
   can it be reopened, and the records already on disk that carry it still pass
   the sweep.
+- `unit` is refused as a kind going in, the refusal names the field and the set
+  that no longer holds it, `memory kinds` does not advertise it, and a refused
+  `add` leaves the log the length it was.
+- One entry with kind `unit` is accepted by version 1's and version 2's
+  validators and refused by version 3's, on the `kind` field — the narrowing did
+  not leak backwards through a map two names shared. Through the sweep, the same
+  three records produce exactly one problem, on the line that declares 3, and
+  nothing goes unjudged.
 - Promotion preserves ids, does not mutate the source, is idempotent, never
   copies an edge whose other end stayed behind, and never restamps the version a
   record was written under.

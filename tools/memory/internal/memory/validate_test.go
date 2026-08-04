@@ -47,6 +47,20 @@ func newV1Entry(t *testing.T, mutate func(*Entry)) *Entry {
 	})
 }
 
+// newV2Entry is a record in the shape version 2 wrote: stamped 2, scoped repo.
+// Four entries in this repo's log look like this and carry kind `unit` — a value
+// version 2 accepts and version 3 does not — so a fixture that stamps the current
+// version cannot stand in for one.
+func newV2Entry(t *testing.T, mutate func(*Entry)) *Entry {
+	t.Helper()
+	return newTestEntry(t, func(e *Entry) {
+		e.Version = SchemaVersion2
+		if mutate != nil {
+			mutate(e)
+		}
+	})
+}
+
 func problemFields(ps []Problem) string {
 	var s []string
 	for _, p := range ps {
@@ -114,6 +128,18 @@ func newTestEdge(t *testing.T, typ EdgeType, from, to string) *Edge {
 		Kind:    KindEdge, Type: typ, From: from, To: to,
 		At: time.Now().UTC().Format(time.RFC3339),
 	}
+}
+
+// newV2Edge is an edge stamped version 2: the shape every edge already on disk
+// carries. newTestEdge stamps the current version, which is what `link` writes
+// today, and since version 3 the two are different numbers — an edge judged by
+// the wrong version's rules is refused for the stamp before anything else about
+// it is looked at.
+func newV2Edge(t *testing.T, typ EdgeType, from, to string) *Edge {
+	t.Helper()
+	e := newTestEdge(t, typ, from, to)
+	e.Version = SchemaVersion2
+	return e
 }
 
 func mustULID(t *testing.T) string {
@@ -346,7 +372,7 @@ func TestVersion1sRulesDidNotMoveWhenVersion2Arrived(t *testing.T) {
 	if ps := validateEntryV1(newV1Entry(t, nil)); len(ps) != 0 {
 		t.Fatalf("v1's validator must still accept a v1 record: %v", ps)
 	}
-	if ps := validateEntryV2(newTestEntry(t, func(e *Entry) { e.Scope = ScopePlan })); problemFields(ps) != "scope" {
+	if ps := validateEntryV2(newV2Entry(t, func(e *Entry) { e.Scope = ScopePlan })); problemFields(ps) != "scope" {
 		t.Fatalf("v2's validator must refuse the plan scope and nothing else: %v", ps)
 	}
 }
@@ -358,27 +384,34 @@ func TestVersion1sRulesDidNotMoveWhenVersion2Arrived(t *testing.T) {
 // It has since widened the edge types, which is a different act: adding a value
 // to a closed set makes no record on disk illegal, so it needs no bump. What
 // this guards is the direction that does — nothing version 1 accepted may have
-// gone missing.
+// gone missing from version 2.
+//
+// Read out of version 2's own validator and version 2's own sets. It used to be
+// read out of whatever was current, which was version 2's while version 2 was
+// current; version 3 is current now and it *did* take a kind away, so "the
+// current set is version 1's" stopped being this test's question and became
+// version 3's. See TestVersion3TookNothingAwayButTheUnitKind.
 func TestVersion2TookNothingAwayButTheScope(t *testing.T) {
-	if len(entryKinds) != len(entryKindsV1) {
-		t.Errorf("the current kind set is not version 1's: %v", EntryKinds())
+	if len(entryKindsV1) != 11 {
+		t.Errorf("version 1 knew eleven kinds and still has to: %v", sortedKinds(entryKindsV1))
 	}
 	for k := range entryKindsV1 {
-		if !entryKinds[k] {
-			t.Errorf("kind %q went missing from the current set", k)
+		if ps := validateEntryV2(newV2Entry(t, func(e *Entry) { e.Kind = k })); len(ps) != 0 {
+			t.Errorf("kind %q went missing from version 2's set: %v", k, ps)
 		}
 	}
 	for t2 := range edgeTypesV1 {
-		if !edgeTypes[t2] {
-			t.Errorf("edge type %q went missing from the current set", t2)
+		if !edgeTypesV2[t2] {
+			t.Errorf("edge type %q went missing from version 2's set", t2)
 		}
 	}
-	// `unit` in particular: removing it is a later objective's business, and a
-	// bump that quietly took it out would condemn records nobody meant to touch.
-	if ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = KindUnit })); len(ps) != 0 {
+	// `unit` in particular, which the loop above covers and which is worth its own
+	// line: it is version 3 that removes it, and until then a bump that quietly
+	// took it out would have condemned six records nobody meant to touch.
+	if ps := validateEntryV2(newV2Entry(t, func(e *Entry) { e.Kind = Kind("unit") })); len(ps) != 0 {
 		t.Errorf("version 2 keeps version 1's kinds, `unit` included: %v", ps)
 	}
-	if ps := ValidateEdge(newTestEdge(t, EdgeImplements, mustULID(t), mustULID(t))); len(ps) != 0 {
+	if ps := validateEdgeV2(newV2Edge(t, EdgeImplements, mustULID(t), mustULID(t))); len(ps) != 0 {
 		t.Errorf("version 2 keeps version 1's edge types: %v", ps)
 	}
 }
@@ -415,9 +448,12 @@ func TestTheWideningDidNotLeakIntoVersion1(t *testing.T) {
 			t.Errorf("version 1's %q went missing from version 2's set", typ)
 		}
 	}
-	if CurrentSchemaVersion != SchemaVersion2 {
-		t.Errorf("the widening was additive and must not have moved the current version, got %d",
-			CurrentSchemaVersion)
+	// The widening was additive and moved no version. Version 3 moved the current
+	// version afterwards, by narrowing the *kinds*, and it declared no edge set of
+	// its own — so the current edge types are still version 2's eleven, which is
+	// the claim this test can still make about the widening.
+	if len(edgeTypes) != len(edgeTypesV2) {
+		t.Errorf("the current edge set is still version 2's: %v", EdgeTypes())
 	}
 	for _, s := range states {
 		if !edgeTypes[s] {
@@ -439,7 +475,7 @@ func TestAStateEdgeIsVersion2sAndVersion1RefusesIt(t *testing.T) {
 
 	atV1 := newTestEdge(t, EdgeMet, a.ID, b.ID)
 	atV1.Version = SchemaVersion1
-	atV2 := newTestEdge(t, EdgeMet, a.ID, b.ID) // stamped CurrentSchemaVersion
+	atV2 := newV2Edge(t, EdgeMet, a.ID, b.ID) // the version that gained the type
 
 	rep := ValidateLog("test.jsonl", []Line{
 		{Num: 1, Entry: a}, {Num: 2, Entry: b},
@@ -500,6 +536,118 @@ func TestTheReadSweepDoesNotApplyTheJustificationRule(t *testing.T) {
 	}
 }
 
+// ------------------------------------------------------------- version 3 ---
+//
+// The bump that removed the `unit` kind. The second narrowing, and the first one
+// with records on disk carrying the value it takes away.
+
+// The narrowing did not leak backwards, which is the whole reason version 3
+// exists rather than being an edit to version 1's set.
+//
+// Six entries in this repo's log carry kind `unit` — two reading as version 1,
+// four declaring version 2 — and validateEntryV1 and validateEntryV2 both name
+// entryKindsV1. So the kind has to go on being legal at those two versions and
+// stop being legal at the version the tool writes today. One entry, three
+// validators, differing in the stamp each requires and the kind set each names.
+//
+// Had entryKindsV3 been `= entryKindsV1` — two names for one map, since a map is
+// a reference — the first two checks below would fail, and every one of those six
+// records would be reported as a problem by a rule set frozen years before the
+// kind was dropped.
+func TestTheUnitKindStaysValidAtV1AndV2AndIsRefusedAtV3(t *testing.T) {
+	// Spelled out, because no constant names it any more: `unit` is a value in
+	// version 1's frozen set and nothing this tool may write. See entryKindsV1.
+	const unit = Kind("unit")
+
+	if ps := validateEntryV1(newV1Entry(t, func(e *Entry) { e.Kind = unit })); len(ps) != 0 {
+		t.Errorf("version 1's rules must still accept `unit`: %v", ps)
+	}
+	if ps := validateEntryV2(newV2Entry(t, func(e *Entry) { e.Kind = unit })); len(ps) != 0 {
+		t.Errorf("version 2's rules must still accept `unit`: %v", ps)
+	}
+
+	ps := validateEntryV3(newTestEntry(t, func(e *Entry) { e.Kind = unit }))
+	if problemFields(ps) != "kind" {
+		t.Fatalf("version 3's rules must refuse `unit`, on the kind and nothing else: %v", ps)
+	}
+	if !strings.Contains(ps[0].Message, string(unit)) {
+		t.Errorf("the problem should name the offending value, got %q", ps[0].Message)
+	}
+	if strings.Contains(ps[0].Message, ", unit") {
+		t.Errorf("version 3 must not go on advertising `unit` as a kind, got %q", ps[0].Message)
+	}
+}
+
+// The same claim through the dispatch, on the shape the log actually holds: the
+// identical record judged by the version it declares, three times over. One
+// problem, on the version that dropped the kind, and nothing left unjudged —
+// which is what "no migration was needed" means in practice.
+func TestTheUnitRecordsOnDiskAreJudgedByTheVersionTheyDeclare(t *testing.T) {
+	const unit = Kind("unit")
+
+	rep := ValidateLog("test.jsonl", []Line{
+		{Num: 1, Entry: newV1Entry(t, func(e *Entry) { e.Kind = unit })},
+		{Num: 2, Entry: newV2Entry(t, func(e *Entry) { e.Kind = unit })},
+		{Num: 3, Entry: newTestEntry(t, func(e *Entry) { e.Kind = unit })},
+	})
+
+	if len(rep.Unjudged) != 0 {
+		t.Fatalf("all three versions ship in this binary, nothing should go unjudged: %v", rep.Unjudged)
+	}
+	if rep.Entries != 3 {
+		t.Errorf("every record is counted whether or not it passes, got %d", rep.Entries)
+	}
+	if len(rep.Problems) != 1 {
+		t.Fatalf("expected exactly one problem, the v3 record, got %v", rep.Problems)
+	}
+	if p := rep.Problems[0]; p.Line != 3 || p.Field != "kind" {
+		t.Fatalf("expected a kind problem on line 3, got %v", p)
+	}
+}
+
+// Version 3 narrowed the kinds and took nothing else away — the same guard
+// version 2 gets, in the direction a bump can silently overreach.
+func TestVersion3TookNothingAwayButTheUnitKind(t *testing.T) {
+	if len(entryKindsV3) != 10 {
+		t.Errorf("version 3 knows version 1's eleven minus `unit`: %v", sortedKinds(entryKindsV3))
+	}
+	if entryKindsV3[Kind("unit")] {
+		t.Error("version 3 exists to drop the `unit` kind")
+	}
+	for k := range entryKindsV1 {
+		if k == Kind("unit") {
+			continue
+		}
+		if !entryKindsV3[k] {
+			t.Errorf("kind %q went missing from version 3's set", k)
+		}
+		if ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = k })); len(ps) != 0 {
+			t.Errorf("the write gate must still accept kind %q: %v", k, ps)
+		}
+	}
+	// The sets version 3 did not declare are the ones it still names. `implements`
+	// in particular stays valid: six edges on disk use it.
+	for _, typ := range EdgeTypes() {
+		if ps := ValidateEdge(newTestEdge(t, typ, mustULID(t), mustULID(t))); len(ps) != 0 {
+			t.Errorf("version 3 keeps version 2's edge types, and %q is one: %v", typ, ps)
+		}
+	}
+	if joinScopes(Scopes()) != "repo, user" {
+		t.Errorf("version 3 left the scopes where version 2 put them: %v", Scopes())
+	}
+	// And what `memory kinds` prints is the set the gate enforces, because they
+	// are one map. A version that narrowed one and not the other would advertise
+	// a value it refuses.
+	for _, k := range EntryKinds() {
+		if k == Kind("unit") {
+			t.Errorf("the advertised set still offers `unit`: %v", EntryKinds())
+		}
+	}
+	if len(EntryKinds()) != len(entryKindsV3) {
+		t.Errorf("the advertised set is version 3's: %v", EntryKinds())
+	}
+}
+
 // The write gate cannot be talked into leniency. The plan scope is refused going
 // in whatever a caller says, and there is no flag or variable that reopens it —
 // the gate is the current version's rules, and the current version does not have
@@ -509,8 +657,8 @@ func TestTheWriteGateRefusesThePlanScope(t *testing.T) {
 		t.Fatalf("expected the write gate to refuse scope plan, got %v", ps)
 	}
 	// Declaring the older version on the way in does not buy the value back:
-	// the gate does not dispatch, so a v1 record hits v2's rules and is refused
-	// twice over — for the scope and for the stamp.
+	// the gate does not dispatch, so a v1 record hits the current version's rules
+	// and is refused twice over — for the scope and for the stamp.
 	ps := ValidateEntry(newV1Entry(t, nil))
 	if len(ps) != 2 || problemFields(ps) != "version,scope" {
 		t.Fatalf("expected the gate to refuse both the version and the scope, got %v", ps)
@@ -543,18 +691,35 @@ func TestEdgesAreJudgedByTheVersionTheyDeclare(t *testing.T) {
 }
 
 // An edge stamped with one version judged by another version's rules is refused
-// for the stamp, which is why version 2 states its own edge rules rather than
-// pointing at version 1's — even though the two are rule for rule identical.
-// Delegating would have made `link` refuse every edge it wrote.
+// for the stamp, which is why every version states its own edge rules rather
+// than pointing at the version before it — even where the two are rule for rule
+// identical. Delegating would make `link` refuse every edge it wrote.
+//
+// Version 3 is the second time that bill came due. It changed nothing about how
+// an edge is judged and still has a validateEdgeV3, because `ruleSetV3` reusing
+// `validateEdgeV2` sends every edge the tool now writes — stamped 3 — into rules
+// that require 2, and the write gate is the current version's rules. The three
+// checks below are the same claim made about all three versions.
 func TestEachVersionsEdgeRulesRequireThatVersionsStamp(t *testing.T) {
 	a, b := mustULID(t), mustULID(t)
 
-	atV2 := newTestEdge(t, EdgeDerivesFrom, a, b) // stamped CurrentSchemaVersion
-	if ps := validateEdgeV2(atV2); len(ps) != 0 {
-		t.Fatalf("v2's edge rules must accept the edge the tool writes: %v", ps)
+	atCurrent := newTestEdge(t, EdgeDerivesFrom, a, b) // stamped CurrentSchemaVersion
+	if ps := validateEdgeV3(atCurrent); len(ps) != 0 {
+		t.Fatalf("v3's edge rules must accept the edge the tool writes: %v", ps)
 	}
-	if ps := validateEdgeV1(atV2); problemFields(ps) != "version" {
-		t.Fatalf("v1's edge rules must refuse a v2 stamp, and only for the stamp: %v", ps)
+	if ps := validateEdgeV2(atCurrent); problemFields(ps) != "version" {
+		t.Fatalf("v2's edge rules must refuse a v3 stamp, and only for the stamp: %v", ps)
+	}
+	if ps := validateEdgeV1(atCurrent); problemFields(ps) != "version" {
+		t.Fatalf("v1's edge rules must refuse a v3 stamp, and only for the stamp: %v", ps)
+	}
+
+	atV2 := newV2Edge(t, EdgeDerivesFrom, a, b)
+	if ps := validateEdgeV2(atV2); len(ps) != 0 {
+		t.Fatalf("v2's edge rules must still accept a v2 edge: %v", ps)
+	}
+	if ps := validateEdgeV3(atV2); problemFields(ps) != "version" {
+		t.Fatalf("v3's edge rules must refuse a v2 stamp: %v", ps)
 	}
 
 	atV1 := newTestEdge(t, EdgeDerivesFrom, a, b)
@@ -564,6 +729,9 @@ func TestEachVersionsEdgeRulesRequireThatVersionsStamp(t *testing.T) {
 	}
 	if ps := validateEdgeV2(atV1); problemFields(ps) != "version" {
 		t.Fatalf("v2's edge rules must refuse a v1 stamp: %v", ps)
+	}
+	if ps := validateEdgeV3(atV1); problemFields(ps) != "version" {
+		t.Fatalf("v3's edge rules must refuse a v1 stamp: %v", ps)
 	}
 }
 
@@ -760,7 +928,7 @@ func TestAnAbsentVersionKeyReadsAsVersionOneOnAnEdge(t *testing.T) {
 	// And it cannot be written, now that the current version is not 1. This is
 	// the promise record.go makes about the stamp: a writer that forgot cannot
 	// reach disk, because the gate judges an unstamped record as version 1 and
-	// the gate is version 2's rules.
+	// the gate is the current version's rules.
 	if ps := ValidateEdge(e); problemFields(ps) != "version" {
 		t.Fatalf("the write gate must refuse an unstamped edge, for the stamp: %v", ps)
 	}

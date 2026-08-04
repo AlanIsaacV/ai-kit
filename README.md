@@ -12,15 +12,16 @@ a growing log, and then — reasonably, to keep context bounded — excluded tha
 log from every session's start-up read. The subagent that wrote the code never
 received the objective at all. So the work satisfied its tickets and drifted
 away from the point. Here the objective is loaded first, stays loaded, is
-passed to every subagent, and every unit of work has to state in one line how
-it serves it.
+passed to every subagent, and every objective has to state in one line how it
+serves the one above it — or, for a root, the request that opened it.
 
 **Phases were rigid.** Writing the full contents of every phase during planning
 means writing phase five with the least information you will ever have about
 it. Changing it afterwards cost enough that the plan got followed instead of
-corrected. Here there is no phase list: there is an objective, and units of
-work defined immediately before each one runs, against the current state of the
-repo rather than against a document from three weeks ago.
+corrected. Here there is no phase list: there is an objective, and more
+specific objectives opened underneath it immediately before each one runs,
+against the current state of the repo rather than against a document from three
+weeks ago.
 
 **Verification graded its own homework.** Criteria written by the same model
 that then checked them, satisfied by tests against mocked dependencies, passing
@@ -34,20 +35,21 @@ implementation.
 
 ```
 skills/plan    turn a request into a written objective, reviewable in full
-skills/work    run one unit: define, gate, implement, verify, review, record
+skills/work    run one objective: pick, gate, implement, verify, review, record
 agents/        explore · implement · verify · review
 tools/memory   the append-only knowledge log everything writes to
 ```
 
-`plan` runs once per objective. `work` runs once per unit and is resumable in a
-fresh session. Small work takes the same path — one turn of the loop instead of
-many — so there is no second door to pick and no escalation path to get wrong.
+`plan` runs once per objective, including each one opened underneath another.
+`work` runs one objective per turn and is resumable in a fresh session. Small
+work takes the same path — one turn of the loop instead of many — so there is no
+second door to pick and no escalation path to get wrong.
 
 ## How the drafts work
 
-Both skills negotiate through a markdown file rather than through chat. The
-objective and each unit are written to `plans/<slug>/`, and the user reads and
-edits the file directly.
+Both skills negotiate through a markdown file rather than through chat. Every
+objective is written to `plans/<objective-slug>/` — one directory per objective —
+and the user reads and edits the file directly.
 
 This is deliberate. Being shown a three-bullet summary and asked "look right?"
 is how a plan gets approved that nobody read — you end up seeing the headlines

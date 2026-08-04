@@ -246,6 +246,62 @@ func validateEdgeV2(e *Edge) []Problem {
 	return c.ps
 }
 
+// ------------------------------------------------------- version 3 rules ---
+
+// validateEntryV3 is the complete rule set for an entry written under schema
+// version 3 — the whole list, like the two before it, so that reading this one
+// function tells you everything a v3 entry has to satisfy.
+//
+// The difference is entryKindsV3, which no longer holds `unit`. Every other rule
+// is the same rule with the same set: scopesV2, because version 3 did not touch
+// where a log lives, and naming version 2's set here is deliberate for the reason
+// validateEntryV2 gives for naming entryKindsV1 — a version states its rules in
+// full, not a private copy of every value they close over.
+func validateEntryV3(e *Entry) []Problem {
+	var c checks
+	c.version("version", e.Version, SchemaVersion3)
+	c.ulid("id", e.ID)
+	c.entryKind("kind", e.Kind, entryKindsV3)
+	c.slug("slug", e.Slug)
+	c.scope("scope", e.Scope, scopesV2)
+	c.timestamp("at", e.At)
+	c.tags("about", e.About)
+	c.text("title", e.Title)
+	return c.ps
+}
+
+// validateEdgeV3 is the complete rule set for an edge written under schema
+// version 3. Version 3 changed nothing about how an edge is judged: the type set
+// is edgeTypesV2's eleven, and every other rule is the rule version 2 stated.
+//
+// So it looks like a copy, and the copy is not optional — this is validateEdgeV2's
+// own lesson applied a second time. The first rule any version states is which
+// version the record declares, and v2's says 2. Every edge written from here on
+// is stamped 3, and the write gate is the current version's rules, so a ruleSetV3
+// that reused validateEdgeV2 whole would make `link` refuse every edge it tried
+// to write — for the stamp the tool itself put on it. Measured rather than
+// reasoned about, in the pass that added this version: with the reuse in place,
+// nine tests in this package failed on an edge with "record declares schema
+// version 3 but is being judged as version 2", among them the write gate
+// accepting a state edge and the sweep judging what this binary just wrote.
+//
+// A rule set is a whole rule set, and the version rule is one of them. The three
+// edge validators now differ only in the stamp they require and the set they
+// name, and whether that duplication stays affordable is open question
+// 01KZ3472NSEBRE0C9XE6AP6TCC — which asked to be revisited at version 3, and is
+// noted here rather than answered.
+func validateEdgeV3(e *Edge) []Problem {
+	var c checks
+	c.version("version", e.Version, SchemaVersion3)
+	c.literalKind("kind", e.Kind, KindEdge)
+	c.edgeType("type", e.Type, edgeTypesV2)
+	c.ulid("from", e.From)
+	c.ulid("to", e.To)
+	c.distinct("to", e.From, e.To)
+	c.timestamp("at", e.At)
+	return c.ps
+}
+
 // ---------------------------------------------------------------- schema ---
 
 // RuleSet is the complete validation rule set for one schema version: how an
@@ -258,6 +314,7 @@ type RuleSet struct {
 
 var ruleSetV1 = RuleSet{Entry: validateEntryV1, Edge: validateEdgeV1}
 var ruleSetV2 = RuleSet{Entry: validateEntryV2, Edge: validateEdgeV2}
+var ruleSetV3 = RuleSet{Entry: validateEntryV3, Edge: validateEdgeV3}
 
 // currentRules is the rule set for CurrentSchemaVersion, and the write gate
 // uses it directly instead of dispatching.
@@ -311,6 +368,7 @@ func CurrentSchema() Schema {
 	return Schema{
 		SchemaVersion1: ruleSetV1,
 		SchemaVersion2: ruleSetV2,
+		SchemaVersion3: ruleSetV3,
 	}
 }
 

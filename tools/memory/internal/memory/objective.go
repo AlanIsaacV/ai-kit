@@ -583,9 +583,9 @@ type activity struct {
 // it, which is what breaks a tie.
 //
 // Either endpoint, because most of what happens to an objective is written
-// pointing at it: the unit that implements it, the decision taken under it, the
-// child that derives from it. An edge touching a *child*, though, is activity on
-// the child and not on the parent — this walks edges, not the tree.
+// pointing at it: the decision taken under it, the deviation recorded against it,
+// the child that derives from it. An edge touching a *child*, though, is activity
+// on the child and not on the parent — this walks edges, not the tree.
 //
 // The line number is why NewTree takes lines. `at` is written to the second, and
 // this loop appends a batch of records at the end of a turn, so sharing an `at`

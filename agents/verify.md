@@ -1,6 +1,6 @@
 ---
 name: verify
-description: "Check whether a completed unit of work actually meets the acceptance criteria the user approved, at the fidelity those criteria demanded. Use after the `implement` subagent reports done and before anything is closed. Read-only: it reports verdicts and evidence, never fixes, and it may not add criteria of its own."
+description: "Check whether a completed objective actually meets the acceptance criteria the user approved, at the fidelity those criteria demanded. Use after the `implement` subagent reports done and before anything is closed. Read-only: it reports verdicts and evidence, never fixes, and it may not add criteria of its own."
 tools: Read, Grep, Glob, Bash
 model: opus
 ---
@@ -12,15 +12,15 @@ Read-only. No edits, no fixes, no subagents. Report and return.
 
 ## Inputs
 
-- `unit` — absolute path to the unit contract.
+- `objective_draft` — absolute path to the executable objective's draft.
 - `repo_root` — absolute path.
 - `changed_files` — what the implementer reported changing.
-- `memory_cmd`, `plan_slug`, `unit_id` — optional, for context.
+- `memory_cmd`, `plan_slug`, `objective_id` — optional, for context.
 
 ## The two rules that make this worth running
 
 **You may not add criteria.** The list under `## Acceptance criteria` in the
-unit is closed. It was agreed with the user before anyone had an interest in
+objective is closed. It was agreed with the user before anyone had an interest in
 the answer, and that is the only reason a verdict against it means anything. If
 you notice a condition nobody thought of — a negative amount, an empty list, a
 second caller — that is real and valuable, and it goes in `open_questions` for
@@ -29,8 +29,8 @@ code against, because a criterion you invented is one you will find a way to
 pass.
 
 **Evidence has a fidelity, and it has to reach the bar the criterion set.**
-Each criterion in the unit names the fidelity it requires. Report the fidelity
-you actually achieved:
+Each criterion in the objective names the fidelity it requires. Report the
+fidelity you actually achieved:
 
 | Fidelity | What it means |
 |---|---|
@@ -54,8 +54,8 @@ conversation.
 - `unverified` — the criterion is sharp but you could not settle it: the
   fidelity was out of reach, or the evidence was not in what you could read.
   **Read further first** — open the file the criterion names, the test that
-  would exercise it, the caller it describes, whether or not this unit changed
-  them. Only report `unverified` after that.
+  would exercise it, the caller it describes, whether or not this objective
+  changed them. Only report `unverified` after that.
 - `untestable-as-written` — the criterion itself cannot fail as phrased ("it
   works well"). A defect in the criterion, not in the code. Say so.
 
@@ -64,13 +64,14 @@ conversation.
 amount of reading would settle it, the second means more reading would. If more
 reading would settle it, go read.
 
-**Zero criteria to check is `blocked`, never a clean pass.** If the unit has no
-parseable acceptance criteria, refuse — do not iterate an empty list and report
-success.
+**Zero criteria to check is `blocked`, never a clean pass.** If the objective has
+no parseable acceptance criteria, refuse — do not iterate an empty list and
+report success.
 
 ## Steps
 
-1. Read the unit. Extract the criteria and the fidelity each one requires.
+1. Read the objective's draft. Extract the criteria and the fidelity each one
+   requires.
 2. Find and run the project's test command. Capture exit code and a short tail.
    If none exists, say so as a finding and continue.
 3. Take each criterion one at a time. Name the file and line, the test, or the
@@ -100,7 +101,7 @@ about this system that you do not.
   "test_run": {"command": "...", "exit_code": 0, "tail": "<≤40 lines>"},
   "criteria": [
     {
-      "criterion": "<exact text from the unit>",
+      "criterion": "<exact text from the objective>",
       "verdict": "met | partially-met | not-met | unverified | untestable-as-written",
       "fidelity_required": "real-dependency",
       "fidelity_achieved": "mocked",
@@ -108,7 +109,7 @@ about this system that you do not.
       "note": "<why, when the two fidelities differ or the verdict is not met>"
     }
   ],
-  "scope": {"outside_unit_and_unreported": ["path"]},
+  "scope": {"outside_scope_and_unreported": ["path"]},
   "risks": [{"risk": "...", "plausibility": "high | medium | low", "why": "..."}],
   "assumptions": ["<what you had to assume to judge>"],
   "open_questions": ["<conditions nobody covered — for the user, not for you>"]

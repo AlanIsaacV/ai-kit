@@ -395,8 +395,8 @@ func TestTheResolvedCurrentObjectiveIsReportedWithItsRule(t *testing.T) {
 	r := throwawayRepo(t)
 	touched := addObjective(t, r, "The objective touched most recently")
 	marked := addObjective(t, r, "The objective that will be approved")
-	unit := addKind(t, r, "unit", "A unit of work under the first one")
-	mustLink(t, r, "implements", unit, touched)
+	deviation := addKind(t, r, "deviation", "Something that came out of the first one")
+	mustLink(t, r, "relates_to", deviation, touched)
 
 	got := readQuery(t, r, "query", "--plan", "demo", "--kind", "objective", "--current")
 	if got.CurrentObjective == nil {
@@ -500,8 +500,8 @@ func TestTheCurrentObjectiveIsDerivedBeforeThePlanFilter(t *testing.T) {
 	r := throwawayRepo(t)
 	mine := addObjectiveIn(t, r, "mine", "The objective in the plan being queried")
 	theirs := addObjectiveIn(t, r, "elsewhere", "The objective actually being worked on")
-	unit := addKind(t, r, "unit", "A unit under the other plan's objective")
-	mustLink(t, r, "implements", unit, theirs)
+	deviation := addKind(t, r, "deviation", "Something recorded under the other plan's objective")
+	mustLink(t, r, "relates_to", deviation, theirs)
 
 	got := readQuery(t, r, "query", "--plan", "mine", "--kind", "objective", "--current")
 	if got.Count != 1 || got.Records[0].ID != mine {

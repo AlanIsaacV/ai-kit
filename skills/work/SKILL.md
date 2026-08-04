@@ -253,17 +253,17 @@ which is how work ends up technically complete and beside the point.
 
 ```
 objective: <the parent objective's title and body, verbatim — or this one's, if it is a root>
-unit: <absolute path to draft-objective.md>
+objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 memory_cmd: <absolute path to the memory binary>
 plan_slug: <tree-slug>
-unit_id: <the executable objective's id>
+objective_id: <the executable objective's id>
 constraints: <anything from memory that binds this surface — decisions, wont-fix>
 ```
 
-Those two parameters are still called `unit` and `unit_id`: that is the contract
-`implement`, `verify` and `review` read, and it holds until those three are
-recut. The values are the executable objective's draft and its id.
+`objective_draft` is the executable objective's draft file and `objective_id` its
+record id. `objective` is the parent's title and body — orienting context, not
+the thing being built — which is why the draft carries a name of its own.
 
 When it returns: if it is `blocked` or `partial`, stop and bring it to the
 user. Do not chain another attempt at the same wall.
@@ -289,10 +289,10 @@ Launch the `verify` subagent — a different one, with no memory of having
 written the code:
 
 ```
-unit: <absolute path to draft-objective.md>
+objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 changed_files: <from the implement result>
-memory_cmd: <path>   plan_slug: <tree-slug>   unit_id: <the objective's id>
+memory_cmd: <path>   plan_slug: <tree-slug>   objective_id: <the objective's id>
 ```
 
 Read its result against three things:
@@ -312,7 +312,7 @@ that stops you from arriving at the end of the objective without knowing how
 any of it works.
 
 ```
-unit: <absolute path to draft-objective.md>
+objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 changed_files: <from the implement result>
 ```

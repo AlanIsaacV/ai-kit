@@ -351,12 +351,12 @@ func TestCurrentFallsBackToActivityAndThenPrefersTheMark(t *testing.T) {
 	older := objective(t, "Touched first")
 	newer := objective(t, "Touched last")
 	decision := entry(t, KindDecision, "The decision that pins the focus", "auth")
-	unit := entry(t, KindUnit, "A unit of work under the older objective", "auth")
+	deviation := entry(t, KindDeviation, "Something that came out of the newer objective", "auth")
 
 	edges := []*Edge{
-		edgeAt(EdgeImplements, unit.ID, newer.ID, "2026-08-03T12:00:00Z"),
+		edgeAt(EdgeRelatesTo, deviation.ID, newer.ID, "2026-08-03T12:00:00Z"),
 	}
-	all := []*Entry{older, newer, decision, unit}
+	all := []*Entry{older, newer, decision, deviation}
 
 	cur := NewTree(logOf(all, edges)).Current()
 	if cur.ID != newer.ID || cur.Rule != RuleActivity {

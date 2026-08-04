@@ -2,11 +2,89 @@
 
 ## Unreleased
 
+### Schema version 3
+
+The `unit` kind is gone. An objective may derive from an objective, so the work
+under one is another objective, and a separate kind for it named a distinction
+the tool no longer draws.
+
+The second narrowing bump, and the first one that had records on disk carrying
+the value it takes away — which makes it the first evidence that the version
+stamp bought what it was built to buy. It answers open question
+`01KZ3472SM2FC6ERY4JV2HYXBX`, which asked what `validate` does with a record
+whose version is known but whose kind was removed by a later version, and
+deferred on the grounds that there were none of those. There were six.
+
+- **`entryKindsV3` is version 1's eleven without `unit`**, spelled out as its own
+  map literal. Not `= entryKindsV1` and not an edit to it: a Go map is a
+  reference, so an alias is one map under two names, either of which looks safe to
+  narrow — and narrowing version 1's frozen set is precisely what condemns the
+  records already written. `entryKinds` *was* that alias until this bump and now
+  points at version 3's set, which is what `memory kinds` prints and what the
+  write gate enforces.
+- **No migration, because version dispatch made migration unnecessary** — not
+  because the log happened to be empty, which is what the objective above this one
+  assumed when it deferred the removal. Six entries in this repo's log carry kind
+  `unit`: one with no `version` key at all, one declaring 1, four declaring 2.
+  `validateEntryV1` and `validateEntryV2` both name `entryKindsV1`, where the kind
+  is valid, so all six and the 23 edges touching them sweep clean, judged by the
+  rules they were written against. Not a byte of them was rewritten. REJECTED:
+  deleting the six, which costs 29 of the log's lines and the trace of which piece
+  of work produced which decision and closed which question; and a separate
+  writable-kinds set governing `add` while the validators stay put, which is the
+  two-lists drift the version table exists to prevent — two records both stamped 2
+  would disagree about whether `unit` was legal when they were written, with
+  nothing on disk saying which.
+- **The kind keeps no Go constant.** `entryKindsV1` holds `Kind("unit")` as a bare
+  literal instead. The value has to stay in version 1's set or those six records
+  stop validating, but a constant in the `const` block is how this package says "a
+  kind you may write", and nothing may write this one — so the kind now exists in
+  exactly one place with nothing naming it, and that asymmetry is the signal. It is
+  the one difference from how `ScopePlan` was handled, and the reason is that
+  `scopesV1` is not the only thing naming `ScopePlan`: `Resolve` matches on it to
+  refuse `plan` *by name*, which needs the constant.
+- **`validateEdgeV3` exists although version 3 changed nothing about an edge.** It
+  names `edgeTypesV2` and states every other rule version 2 stated, and the
+  duplication is not optional — it is the same bill the version 2 bump paid, come
+  round a second time. The first rule any version states is which version the
+  record declares; every edge written from now on is stamped 3, and the write gate
+  is the current version's rules, so a `ruleSetV3` reusing `validateEdgeV2` makes
+  `link` refuse every edge it tries to write. Measured rather than argued: with
+  the reuse in place, nine tests failed on an edge with *record declares schema
+  version 3 but is being judged as version 2*, the write gate accepting a state
+  edge among them. Open question `01KZ3472NSEBRE0C9XE6AP6TCC` asked whether the
+  per-version validators stay maintainable past about three versions and said to
+  revisit at version 3; this is version 3, and it is noted here rather than
+  answered.
+- **Only the kinds moved.** `validateEntryV3` names `scopesV2` and there is no
+  `edgeTypesV3`, so both scopes and all eleven edge types go on meaning what they
+  meant. `implements` in particular stays valid: six edges on disk use it, and
+  narrowing an edge type is a bump like any other, which this version did not take.
+- **`Origin.Unit` stays**, a field nothing populates. Removing it would change no
+  byte on disk — no record sets it and the key is `omitempty` — which is the whole
+  argument for deleting it and the reason not to: additive only means never remove
+  a field, and a rule that holds except where removal happens to be invisible is a
+  rule nobody can lean on. `add --unit` still fills it and still says "unit of
+  work" in its help text, which is the last surface where the retired word is
+  spoken.
+- **The version boundary in this repo's own log falls mid-session, not at a
+  release.** No line before 172 declares version 3 and no line from 172 on
+  declares anything else, and the two sides sit eight minutes apart inside the
+  objective that made version 3: the decision approving the work is stamped 2, the
+  deviations recording how it was implemented are stamped 3. The stamps are still
+  monotonic, by line and by `at` — what moved is that `CurrentSchemaVersion` in the
+  source and the version actually reaching disk were different numbers for part of
+  a session, because the skills' bootstrap builds the binary only when the file is
+  absent, so every process went on running the old one until it was rebuilt by
+  hand. That is open question `01KZ38XQRZXAR81J9MKS33AFTA` observed rather than
+  reasoned about, and nothing about it is invalid: each of those lines is judged by
+  the version it declares, which is the whole point of stamping per record.
+
 ### The objective tree, and everything read off it
 
 The parent relation stops being prose and becomes a relation the tool can
-enforce and answer questions about. No new edge type, no new kind, no version 3:
-this is a rule and a derivation over records the schema already allows.
+enforce and answer questions about. No new edge type, no new kind, no version
+bump: this is a rule and a derivation over records the schema already allows.
 
 - **An objective derives from at most one objective, and never in a circle.**
   The parent relation is `derives_from` with an **objective at both ends** —
@@ -125,7 +203,11 @@ all five, so being in it costs nothing and leaving it costs one appended line.
   compatibility rule — a binary built before this has rules for version 2, so it
   meets a `met` edge stamped 2 and reports `type: unknown`, a false problem,
   where for a version it did not know at all it would have reported an honest
-  `unjudged`.
+  `unjudged`. **There is a version 3 now** — see *Schema version 3* above — and it
+  took nothing from the edge types: this widening still needed no bump, still has
+  none, and `edgeTypesV2` is still the set the current version names. The sentence
+  is left standing because it was true of this change and stays true of it; what
+  moved is the world around it.
 - **`edgeTypesV2` is its own map literal**, naming all eleven types rather than
   aliasing `edgeTypesV1`. A Go map is a reference, and two names for one map are
   both narrowable, so an alias would let a later bump narrow version 1's frozen
@@ -193,7 +275,10 @@ yesterday became invalid.
 - `validateEntryV2` states its whole rule set, naming `entryKindsV1`: version 2
   narrowed where a log lives, not what a record says, so a second copy of the
   kind set would be one more thing to keep in step. `unit` in particular stays a
-  kind.
+  kind — **until version 3, which is the version that removed it**, and which had
+  to declare a kind set of its own to do so without reaching back through this
+  shared one. The four version 2 records carrying the kind are still judged here,
+  and still pass.
 - `validateEdgeV2` was `validateEdgeV1` rule for rule at this bump, and was
   written out again rather than delegated to. That is not ceremony: the first
   rule any version states is which version the record declares, and v1's says

@@ -45,10 +45,29 @@ const SchemaVersion1 = 1
 // that value is valid. Not one byte of them was rewritten to get here.
 const SchemaVersion2 = 2
 
+// SchemaVersion3 narrows the entry kinds to the ten that are left: `unit` is
+// gone. The model it belonged to is gone with it — an objective may now derive
+// from an objective, so a smaller piece of work under one is simply another
+// objective, and a separate kind for it named a distinction the tool no longer
+// draws.
+//
+// It narrows nothing else, and no field changed. The scopes are version 2's and
+// the edge types are version 2's, which is why validateEntryV3 names scopesV2
+// and validateEdgeV3 names edgeTypesV2 rather than declaring sets of their own.
+// `implements` in particular stays valid: six edges on disk use it.
+//
+// The bump is what makes this safe rather than tidy. Six entries on disk carry
+// kind `unit` — two reading as version 1, four declaring version 2 — and both of
+// those versions' validators name entryKindsV1. Narrowing that map in place
+// would condemn all six for a value that was legal when they were written, so
+// version 3 declares entryKindsV3 as its own literal and leaves version 1's set
+// alone. Nothing was migrated and no line was rewritten to get here.
+const SchemaVersion3 = 3
+
 // CurrentSchemaVersion is what every record written from now on is stamped
 // with. There is no flag for it: a version the caller can choose is a version
 // the caller can get wrong, and the tool always knows which schema it writes.
-const CurrentSchemaVersion = SchemaVersion2
+const CurrentSchemaVersion = SchemaVersion3
 
 // resolveVersion turns a declared version into the version a record is judged
 // at. Zero means the `version` key was absent, which reads as version 1: the
@@ -74,7 +93,6 @@ type Kind string
 const (
 	// Core — what makes the work loop run.
 	KindObjective Kind = "objective"
-	KindUnit      Kind = "unit"
 	KindDecision  Kind = "decision"
 	KindDeviation Kind = "deviation"
 
@@ -97,8 +115,33 @@ const (
 // it. It is frozen: a later version that adds or removes a kind declares its
 // own set and leaves this one alone, because the records already on disk still
 // have to be judged by the set they were written against.
+//
+// `unit` is spelled here as a bare Kind("unit") and has no constant anywhere,
+// and that asymmetry is the point: the constants above are the kinds you may
+// write, and nothing may write this one — version 3 removed it. The value still
+// has to sit in this set, because six entries on disk carry it and this is the
+// set version 1's and version 2's validators both judge them by. So it appears
+// as a literal, once, in the one place that has to hold it, next to the sentence
+// saying why. A constant would have advertised it in the same breath.
 var entryKindsV1 = map[Kind]bool{
-	KindObjective: true, KindUnit: true, KindDecision: true, KindDeviation: true,
+	KindObjective: true, Kind("unit"): true, KindDecision: true, KindDeviation: true,
+	KindAssumption: true, KindOpenQuestion: true, KindWontFix: true, KindDeadEnd: true,
+	KindADR: true, KindPostmortem: true, KindReviewFinding: true,
+}
+
+// entryKindsV3 is the closed set of entry kinds as schema version 3 defines it:
+// version 1's eleven without `unit`. Ten kinds, and the whole of what the bump
+// changed.
+//
+// Every member is written out rather than copied from entryKindsV1 or aliased to
+// it, and that is not ceremony — it is the trap this version had to walk around.
+// A Go map is a reference, so `entryKindsV3 = entryKindsV1` would be one map
+// under two names, either of which looks safe to narrow, and narrowing it
+// through either name would take `unit` out of version 1's frozen set as well.
+// Six entries on disk are judged by that set and every one of them carries the
+// kind this version drops.
+var entryKindsV3 = map[Kind]bool{
+	KindObjective: true, KindDecision: true, KindDeviation: true,
 	KindAssumption: true, KindOpenQuestion: true, KindWontFix: true, KindDeadEnd: true,
 	KindADR: true, KindPostmortem: true, KindReviewFinding: true,
 }
@@ -107,12 +150,12 @@ var entryKindsV1 = map[Kind]bool{
 // the write gate enforces. Whoever adds a version repoints this at the new
 // version's set — that is one of the three obligations the README names.
 //
-// Version 2 did not touch the kinds, so it is still version 1's set and this
-// still points at it. A second map with the same keys would be one more thing
-// to keep in step, and — since a map is a reference — an `entryKindsV2 =
-// entryKindsV1` alias would be a trap: two names for one map, either of which
-// looks safe to narrow.
-var entryKinds = entryKindsV1
+// Version 3's, the first version to touch the kinds. Version 2 did not, so this
+// line read `entryKinds = entryKindsV1` until now — which is precisely why
+// version 3 could not narrow the current set without declaring its own: a map is
+// a reference, and under that alias "narrow what the tool accepts today" and
+// "narrow version 1's frozen set" were one edit. See entryKindsV3.
+var entryKinds = entryKindsV3
 
 // EntryKinds returns every entry kind the current schema accepts, sorted. Used
 // by the CLI's help and error messages so the closed set is stated in exactly
@@ -132,8 +175,11 @@ func sortedKinds(set map[Kind]bool) []Kind {
 type EdgeType string
 
 const (
-	// EdgeImplements points a unit at the objective it serves. This is the
-	// edge that keeps the objective reachable from any unit of work.
+	// EdgeImplements points a piece of work at the objective it serves. It was
+	// written for the `unit` kind version 3 removed, and it stays valid because
+	// six edges on disk use it: an edge type is narrowed by a bump like any other
+	// closed set, and version 3 narrowed none. What implements an objective now
+	// is another objective, and that relation is `derives_from`.
 	EdgeImplements EdgeType = "implements"
 	// EdgeDerivesFrom points a synthesis at its sources: an ADR at the
 	// decisions and deviations that produced it.
@@ -210,6 +256,11 @@ var edgeTypesV2 = map[EdgeType]bool{
 // edgeTypes is the current schema's set: version 2's, which is version 1's six
 // widened by the five state types. See entryKinds for what repointing this is
 // for.
+//
+// Version 3 left it here. It narrowed the entry kinds and nothing else, so there
+// is no edgeTypesV3 to point at — the same arrangement validateEntryV2 had with
+// entryKindsV1, and for the same reason: a version owes the reader its rules
+// stated in full, not a private copy of every set they close over.
 var edgeTypes = edgeTypesV2
 
 // EdgeTypes returns every edge type the current schema accepts, sorted.
@@ -250,7 +301,8 @@ var scopesV1 = map[Scope]bool{ScopePlan: true, ScopeRepo: true, ScopeUser: true}
 // yesterday is illegal today, and no record written yesterday becomes invalid.
 var scopesV2 = map[Scope]bool{ScopeRepo: true, ScopeUser: true}
 
-// scopes is the current schema's set.
+// scopes is the current schema's set. Still version 2's: version 3 took a kind
+// away and left the scopes where they were.
 var scopes = scopesV2
 
 // Scopes returns every scope the current schema accepts, sorted. Like
@@ -280,7 +332,18 @@ type Origin struct {
 	Repo   string `json:"repo,omitempty"`
 	Plan   string `json:"plan,omitempty"`
 	Author string `json:"author,omitempty"`
-	Unit   string `json:"unit,omitempty"`
+
+	// Unit is dead vocabulary and stays anyway. Version 3 removed the `unit`
+	// kind; no record in either log populates this key, and `omitempty` means
+	// deleting the field would change not one byte on disk.
+	//
+	// Which is the whole argument for deleting it, and the reason not to. The
+	// compatibility rule is additive only — never rename a field, never repurpose
+	// one, never remove one — and a rule that holds except where removal happens
+	// to be invisible is a rule a reader cannot lean on. What it costs to keep is
+	// one unused string; what it buys is that no later reader has to work out
+	// whether some key they remember was dropped or was never there.
+	Unit string `json:"unit,omitempty"`
 }
 
 // Entry is one recorded thing. Written once, never modified: a correction is a
