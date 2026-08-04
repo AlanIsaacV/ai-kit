@@ -67,7 +67,7 @@ away.
 
 ## Steps
 
-### 1 — Resolve which objective you are on, and load only the history that bears on this turn
+### 1 — Resolve which objective you are on, load only the history that bears on this turn, and put it on the table
 
 ```bash
 $MEMORY query --plan <tree-slug> --kind objective --current
@@ -120,6 +120,74 @@ state of the files the objective's orientation named. **The objective was
 written at a point in time and the repo has moved.** If something that it
 assumed is no longer true, surface it now, before choosing what to execute on
 top of it. Finding drift is a good outcome, not a delay.
+
+#### Put the carried-in questions and assumptions in front of the user
+
+The `open-question,assumption` query above pulls records written in earlier
+turns, and loading them as ambient context is not the same as anybody having read
+them. Close this step by putting them on the table in **one** round.
+
+Filter first, and filter in the open. The test is narrow: a record bears on this
+turn when it touches the objective about to run, or the surface that objective is
+going to change. Everything else belongs to a sibling objective, or to code this
+turn never opens, and it stays in the log. A round that dumps every open record
+trains the user to skim the one thing you needed them to read.
+
+Then name what the filter dropped, in one line, with its count. The judgment is
+yours to make and it is not yours to make quietly — a record left out in silence
+is a question the user never learns existed:
+
+> Dejé afuera seis preguntas abiertas que no tocan esta superficie; decime si
+> querés verlas.
+
+Naming a count is not running a round over all of them, so the saving stays and
+the user can still ask for any of it. When the filter leaves nothing, there is no
+round — an empty one spends the same attention as a real one and buys nothing —
+**and you say that** rather than moving on wordlessly. "No quedó nada abierto que
+toque esto" is one line and it is the difference between a filter that ran and a
+step that was skipped.
+
+Then one message, with three parts:
+
+- The assumptions as **numbered prose, one line each**: what was assumed, what it
+  costs if it is wrong, and where it came from. Not a table, not a wall of record
+  ids.
+- The open questions that have discrete answers, batched into **one**
+  `AskUserQuestion` — one call for all of them, not one call each.
+- An open ask for what the list is missing, and for corrections by number. An
+  assumption nobody would have picked out of a menu is exactly the one this
+  round exists to catch.
+
+Where an assumption came from is written into the record body as a line reading
+`Provenance: <value>`, with one of three values — `you chose this`, `their words`,
+`my call`. Show it with the assumption, because it is what decides how hard to
+push here: a `my call` nobody has looked at since it was written is the one worth
+arguing about, and `you chose this` is one the user already settled and does not
+need to relitigate. Two assumptions that read identically are not the same risk
+once you know which of them anybody ever agreed to.
+
+When that line is absent the provenance is **unknown**, and unknown is not
+`my call`. Records written before the convention carry no label at all, and
+reading the weakest value into them would invent the very thing the label exists
+to prevent — a provenance nobody stated. Say that it carries no label and let the
+user say which it was.
+
+> Antes de elegir qué ejecutamos: esto es lo que quedó abierto de turnos
+> anteriores y toca lo de este turno. Corregime cualquiera por número, y decime
+> qué falta que no esté en la lista.
+
+This happens **before step 2 chooses the objective**, and the order is the whole
+point — a carried-in open question can change *which* objective this turn should
+run. Asked after the choice is made, the answer that would have sent you
+somewhere else arrives against an objective already picked, and the cheap moment
+to change course is gone.
+
+**Nothing in this round gets labelled answered.** Answering is an appended
+`answers` edge in step 9 and that edge needs a record to point at, so until one
+exists the question stays open in the log however plainly the user spoke to it.
+A round that quietly marks things resolved is how the log stops being a true
+trace. The same holds for an assumption: the user answering the question next to
+it is not the user confirming it, and only their words about that assumption are.
 
 ### 2 — Choose the objective this turn executes
 
@@ -188,10 +256,10 @@ objective instead. Extending the draft in place is for the sections around it.
 
 **When `plan` ran in this turn, the gate already happened.** The user read those
 criteria and the fidelity each one demands in `plan`'s own gate, minutes ago, in
-this conversation, and corrected them in the file. Do not put the same text in
-front of them a second time: asking somebody to re-read what they just approved
-is how they learn to skim the one artifact this entire loop depends on them
-reading. Say that is why, and go straight to the freeze:
+this conversation, and corrected them there. Do not put the same text in front of
+them a second time: asking somebody to re-read what they just approved is how
+they learn to skim the one artifact this entire loop depends on them reading. Say
+that is why, and go straight to the freeze:
 
 > Los criterios que acabás de aprobar en el draft son los que se congelan — no te
 > los hago leer de nuevo. Arranco con eso.
@@ -202,10 +270,34 @@ them yet, this is where rule 3's hard stop happens:
 > El objetivo está en `plans/<objective-slug>/draft-objective.md`. Leelo
 > entero — sobre todo los **criterios de aceptación** y la fidelidad que pide
 > cada uno, porque son los únicos contra los que se va a verificar después y no
-> se pueden cambiar una vez que arrancamos. Corregí lo que quieras en el archivo
-> y decime cuando arrancamos.
+> se pueden cambiar una vez que arrancamos. Decime por chat qué cambiarías y
+> decime cuando arrancamos. Si lo que cambia es un criterio, lo pasamos de vuelta
+> por `plan`: desde acá no los toco.
 
-Stop. Re-read the file when they come back — their edits are the decision.
+Stop, and wait for their words. Feedback comes in chat — there is one correction
+channel, because two of them is how the file and the conversation drift apart.
+
+Feedback that touches an acceptance criterion is a **supersede, not an edit**. The
+criteria sit in the objective's own record and in the `decision` its approval
+pointed at, both append-only, and neither ever moves — so changing a criterion
+means writing a **new objective that supersedes this one**, not correcting the one
+in front of you. That is the same mechanism step 3 names for a resumption and the
+same one the resumption paragraph below names for a second freeze; this is where
+it gets used.
+
+Route it to **`plan`**, which owns criteria authorship: invoke the `plan` skill in
+this same conversation, say plainly that this is a supersede, and give it the
+objective you are on, the criterion, and what the user said about it. It writes
+the new objective, links it over the old one and gets its criteria approved. Then
+read that objective's draft and come back through step 3 against it — the
+objective this turn executes is now the new one. Do not ask `plan` to edit the
+criteria of the objective you came in with: the record and the freeze cannot be
+rewritten, so there is nothing there for it to edit.
+
+`work` never authors or edits a criterion — the thread that will be graded does
+not draft what it is graded against, the same reason `verify` runs in a subagent
+that did not write the code. Feedback about the rest of the draft you can take
+here, on the terms step 3 already set.
 
 Either way the approval is the user's and it is explicit — what changes is
 whether it happened in `plan`'s gate or in this one, never whether it happened.

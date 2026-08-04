@@ -40,9 +40,14 @@ child is worth opening, which is the only thing the descent needs from you.
    written. The draft has a section for them. An assumption you make silently is
    the exact mechanism by which what you build diverges from what was wanted,
    and it is invisible until it is expensive.
-3. **The draft is the readback.** Do not summarize the draft in chat and ask
-   "does this look right?" — the user needs to read the detail, not your summary
-   of it. Point them at the file.
+3. **The draft is the readback for the objective, the constraints and the
+   criteria.** Do not restate those in chat and ask "does this look right?" —
+   the user needs to read the detail, not your summary of it. Point them at the
+   file. The one exception is scoped by content, not by timing: your judgment
+   calls and the still-open questions go in front of the user in chat — step 4's
+   round, whenever it runs, including when step 6's feedback opens a new one.
+   Those are the cheapest things to correct and the most expensive ones to find
+   buried in a long draft.
 4. **A library version, an SDK shape or a provider API is resolved, never
    recalled.** Your training data lags releases. If the plan turns on an external
    dependency, look it up — `context7` if available, otherwise the pinned source
@@ -100,6 +105,17 @@ Three cases, and between them they are the whole placement decision:
   `## Acceptance criteria` with a fidelity line on each one** — it has been
   authored, and re-authoring it would move criteria that are supposed to be
   settled. Point the user at `work`, which executes it.
+- **The request is that those frozen criteria are *wrong*** — this is not the
+  case above and it is not refused. It is a **supersede**, and it is yours:
+  write a new objective with the criteria the user actually wants, and in step 7
+  link it with `--type supersedes` to the objective it replaces. Editing frozen
+  criteria in place is what this refuses; replacing them with a record that says
+  so is authorship. `work`'s gate routes feedback that touches a criterion here
+  on purpose, so this is the case arriving from there.
+
+The line between the last two is "run this" versus "these criteria are wrong".
+The first goes to `work` untouched. The second never gets applied by the thread
+that will be graded against it.
 
 Then investigate before forming an opinion — launch the `explore` subagent
 rather than reading widely in this thread, so the main context stays free for
@@ -111,8 +127,18 @@ repo_root: <absolute path>
 scope: both
 ```
 
+When you arrive here from step 8 — a descent into a child — this same
+invocation also carries `prior_findings`, the parent's `## Findings` with every
+claim and its `path:line` anchors intact, and asks for revalidation rather than
+a fresh exploration. Step 8 specifies that block and what comes back; launching
+`explore` without it makes the child pay again for what the parent already
+established.
+
 Fold its `findings` into your understanding and keep its `gaps` — they belong
-in the draft's "What I don't know".
+in the draft's "What I don't know". Keep the findings with their `path:line`
+evidence intact: a parent objective's draft carries them under `## Findings`, and
+a paraphrase that drops the anchors is what makes the next level down pay for the
+same exploration twice.
 
 #### Show the immediate parent, and say what it is not
 
@@ -154,9 +180,9 @@ Ask those in one `AskUserQuestion` call, multiple choice where the options are
 discrete. Do not ask a question whose every answer leads to the same next step.
 
 Everything you did **not** ask — every judgment call you made to keep moving —
-goes in the draft under Assumptions. That is the trade: you get to keep moving
-without interrogating the user, and in exchange nothing you decided stays
-invisible.
+goes on the table in step 4 and then in the draft under Assumptions. That is the
+trade: you get to keep moving without interrogating the user, and in exchange
+nothing you decided stays invisible.
 
 ### 3 — Put the real options on the table
 
@@ -169,7 +195,59 @@ though it were the only one.
 Options that turn on an external dependency get rule 4 applied first — resolve
 the version, then present the option.
 
-### 4 — Decide whether this objective is executable, then write the draft
+### 4 — Check your judgment calls before any file exists
+
+Nothing is written yet, and that is what makes this round cheap. The same content
+inside a 300-line draft costs the user a full read and costs you a full rewrite,
+so the decisions that are still soft get looked at here instead.
+
+Give every judgment call you made as **numbered prose, one line each** — what you
+decided, the alternative it displaced, and where the decision came from:
+
+> 1. Los rechazos van dentro del record de `decision` como campos, no como
+>    records aparte — desplazó un record por opción rechazada. Origen: `my call`.
+
+Provenance is a closed set of three values, and each one means exactly what it
+says:
+
+- **`you chose this`** — the user picked it, in this conversation, when asked
+  about *this* decision.
+- **`their words`** — it is in something they said or wrote, close enough that
+  they would recognize it as theirs.
+- **`my call`** — you decided it. This is the default, and it stays the default
+  for every assumption nobody has looked at yet.
+
+Answering a nearby question never promotes an assumption to `you chose this`, and
+answering a multiple-choice question that happens to touch the same area does not
+either — an option they picked answers the question you asked, not everything you
+decided around it. This repo has the failure on disk:
+`plans/loop-ergonomics/draft-objective.md`, under **Assumptions, with where each
+one comes from**, records six assumptions marked confirmed on the strength of
+adjacent multiple-choice answers, from a list the user had never been shown.
+
+Then ask, in two halves that stay distinguishable:
+
+- **The discrete questions, batched.** Everything still open whose answers are a
+  short closed set goes in **one** `AskUserQuestion` call — one call for the whole
+  round, not one per question.
+- **The open ask, on its own.** Multiple choice cannot carry "number 3 is wrong"
+  and it cannot carry "you missed an entire area", so ask for both in words:
+
+> Arriba están las suposiciones numeradas. Corregime cualquiera por número —
+> decime cómo va en realidad — y decime qué falta que no esté en la lista.
+> Todavía no escribí nada, así que corregir acá no cuesta nada.
+
+This round covers **only** the assumptions and the open questions. Not the
+objective, not the constraints, not the criteria, not what is out of scope —
+those are what the draft is for, and reading them back in chat is how the file
+stops being read.
+
+Then update the labels from what they answered, and only from that. An assumption
+they corrected in words becomes `their words`; one they chose between, in a
+question that was about that assumption, becomes `you chose this`; one they did not
+touch keeps `my call`, however obvious it looks to you.
+
+### 5 — Decide whether this objective is executable, then write the draft
 
 An objective is **executable** when one session can deliver it and somebody else
 can check it afterwards. That is a test with five parts, and it has to pass all
@@ -213,7 +291,7 @@ criteria on an objective one session cannot deliver, promise a verification pass
 that has no honest way to run.
 
 Write `plans/<objective-slug>/draft-objective.md`. No record exists yet, so you
-coin the slug here — and it is the record's own `slug` too, because step 6 passes
+coin the slug here — and it is the record's own `slug` too, because step 7 passes
 this same slug to `add --slug`, which takes it exactly as given. Derive it from
 the title the way the tool would if you left it out: lowercase, every run of
 characters outside `a-z0-9` collapsed to a single hyphen, no leading or trailing
@@ -224,7 +302,7 @@ and a path that mirrored the tree would have to move every time a parent changed
 If `plans/<slug>/draft-objective.md` already exists, that slug belongs to another
 objective — two objectives can legitimately derive the same one — and writing
 there would overwrite somebody else's draft: pick a slug that distinguishes this
-objective, and pass that same slug to `--slug` in step 6.
+objective, and pass that same slug to `--slug` in step 7.
 
 #### A parent objective's draft
 
@@ -235,6 +313,11 @@ objective, and pass that same slug to `--slug` in step 6.
 <The problem in your words, with enough detail that a wrong reading is
 obvious to the user. Not a restatement of their sentence.>
 
+## Findings
+- <one line per claim `explore` established, followed by its `path:line` anchors.
+  Keep the anchors — they are what lets a child revalidate this claim mechanically
+  instead of exploring it again from scratch.>
+
 ## Objective
 <What must be true when this is done. One paragraph.>
 
@@ -242,7 +325,9 @@ obvious to the user. Not a restatement of their sentence.>
 <One line. A root objective serves the request that opened it.>
 
 ## Assumptions I made
-- <each judgment call you made without asking, and why you made it>
+- <each judgment call you made without asking, one line: what you decided, the
+  alternative it displaced, and `provenance:` one of `you chose this`,
+  `their words`, `my call`>
 
 ## What I don't know
 - <each open question, including gaps `explore` reported>
@@ -281,7 +366,9 @@ obvious to the user. Not a restatement of their sentence.>
 <One line. A root objective serves the request that opened it.>
 
 ## Assumptions I made
-- <each judgment call you made without asking, and why you made it>
+- <each judgment call you made without asking, one line: what you decided, the
+  alternative it displaced, and `provenance:` one of `you chose this`,
+  `their words`, `my call`>
 
 ## What I don't know
 - <each open question, including gaps `explore` reported>
@@ -311,7 +398,9 @@ Every section the loop reads is in there, so nothing downstream has to add one:
 `verify` opens the file, grades `## Acceptance criteria` and checks the changed
 files against `## Out of scope`; `implement` and `review` read the whole thing.
 `work` extends the sections around the criteria as it goes and leaves the
-criteria themselves alone.
+criteria themselves alone. A parent's `## Findings` is what step 8 hands down to
+the child's `explore`, which is why the anchors go in the file instead of being
+paraphrased into `## What I understood`.
 
 **The fidelity line on each criterion is the load-bearing part.** It is decided
 here, with the user, before anyone has an interest in the answer. A criterion
@@ -326,7 +415,7 @@ assume anything" auditable instead of aspirational. **Out of scope** is what
 stops the work from quietly growing — it is worth pushing for two or three
 entries even when the user shrugs.
 
-### 5 — Hand the draft over and wait
+### 6 — Hand the draft over and wait
 
 This is the only time anybody asks the user to read these criteria. `work` does
 not ask again, so what they let through here is what gets built and graded.
@@ -338,24 +427,40 @@ the thing to read:
 > todo los **criterios de aceptación** y la fidelidad que pide cada uno, porque
 > son los únicos contra los que se va a verificar después y no se cambian una vez
 > que arrancamos. Después mirá **Assumptions I made** y **What I don't know**,
-> que es donde está lo que decidí sin preguntarte. Corregí directo en el archivo
-> lo que esté mal y avisame cuando esté listo.
+> que es donde está lo que decidí sin preguntarte. Contame por chat qué está mal
+> — el archivo lo reescribo yo con lo que me digas, no hace falta que lo edites.
 
 For a parent objective there is nothing to verify yet, so the scope and the
 judgment calls are what matter:
 
 > Escribí el objetivo en `plans/<slug>/draft-objective.md`. Abrilo y leelo
 > entero — sobre todo **Assumptions I made** y **What I don't know**, que es
-> donde está lo que decidí sin preguntarte. Corregí directo en el archivo lo
-> que esté mal y avisame cuando esté listo.
+> donde está lo que decidí sin preguntarte. Contame por chat qué está mal — el
+> archivo lo reescribo yo con lo que me digas, no hace falta que lo edites.
 
 Then stop. Do not proceed on silence, and do not re-explain the draft's
 contents in chat — that defeats the point of having written it.
 
-When they come back, re-read the file: they may have edited it, and their edits
-are the decision.
+Feedback comes back in chat, and applying it is yours. When it introduces a
+judgment call the round never covered — a new decision, an alternative you had not
+weighed, a question that is now open — take those items back through step 4's
+round before you touch the file. Rewriting the draft around an assumption the user
+has never seen is exactly what the checkpoint exists to prevent, and it costs more
+here than it did before the file existed.
 
-### 6 — Commit it to memory
+Then rewrite the **whole file**, not the parts that changed. A draft patched in
+place becomes a collage where the corrections no longer agree with the paragraphs
+around them. Afterwards, name the sections that moved and stop there:
+
+> Reescribí el archivo. Cambiaron **Assumptions I made**, **Out of scope** y el
+> criterio 3.
+
+Naming a section is an index, not a summary — the content still has to be read in
+the file. Saying what those sections now say is the chat summary hard rule 3
+forbids, so do not do it: no "ahora dice que…", no paraphrase of the new criterion,
+no diff in prose.
+
+### 7 — Commit it to memory
 
 Only once the user approves. The draft is a negotiating surface; memory is the
 record.
@@ -372,7 +477,7 @@ own could not be attached to its parent at all.
 # The objective itself. `--slug` is taken exactly as given, so pass the slug the
 # draft directory already has. Keep the record: the id comes out of it.
 REC=$($MEMORY add --plan <tree-slug> --kind objective \
-  --slug "<the slug you derived in step 4>" \
+  --slug "<the slug you derived in step 5>" \
   --title "<objective one-liner>" \
   --body "<Objective or Deliverable + Constraints + Out of scope + the criteria as written>" \
   --about <area>,<area>)
@@ -393,8 +498,10 @@ all.
 
 ```bash
 # One record per surviving assumption — these are open until something answers
-# them, and they are what a later verification pass is allowed to challenge.
-$MEMORY add --plan <tree-slug> --kind assumption --title "..." --about <area>
+# them, and they are what a later verification pass is allowed to challenge. The
+# provenance label goes in the body, on its own line, exactly as written here.
+$MEMORY add --plan <tree-slug> --kind assumption --title "..." \
+  --body "Provenance: <you chose this | their words | my call>" --about <area>
 
 # One record per open question.
 $MEMORY add --plan <tree-slug> --kind open-question --title "..." --about <area>
@@ -403,6 +510,13 @@ $MEMORY add --plan <tree-slug> --kind open-question --title "..." --about <area>
 $MEMORY add --plan <tree-slug> --kind decision --title "..." \
   --body "<why this over the alternatives>" --about <area>
 ```
+
+That `Provenance:` line is read, not just stored — `work`'s step 1 puts these
+records in front of the user across later turns, and it can only show the label
+if the record carries it. Keep the value to one of the three tokens step 4
+defined, verbatim. A label that lives only in the draft file lasts exactly as
+long as somebody is reading that draft, and re-deriving it later from memory is
+how six assumptions ended up marked confirmed.
 
 Tag `--about` with the areas and paths a future session would search by. A
 record nobody can find by filtering is a record nobody will read.
@@ -414,7 +528,7 @@ check the exit code rather than scanning the text.
 Leave the draft file on disk — it is the human-readable form of what was
 agreed, and the loop will want to look at it.
 
-### 7 — Descend, or hand off
+### 8 — Descend, or hand off
 
 **If what you just recorded is executable**, the descent is over. Say what was
 recorded and point at the next step:
@@ -435,18 +549,39 @@ one of its children right now, in this same conversation:
 
 The user picks; never pick silently among several. Then go back to step 1 for
 that child, with the objective you just recorded as its parent, and do the whole
-thing again: place it, look, ask what is genuinely ambiguous about *it*, write
-its draft, hand it over, record it with `derives_from`. Stop descending at the
-first objective that passes all five parts of step 4's test — that one is what
-goes to `work`.
+thing again: place it, look, ask what is genuinely ambiguous about *it*, put your
+judgment calls on the table, write its draft, hand it over, record it with
+`derives_from`. Stop descending at the first objective that passes all five parts
+of step 5's test — that one is what goes to `work`.
+
+The child's `explore` does not start from nothing. Hand it what the parent's
+`## Findings` already established — the `findings` array as it came back, each
+element keeping its `claim` and its `evidence` — and ask it to revalidate those
+and explore what is new, instead of establishing the topic again:
+
+```
+topic: <the one question that decides the shape of this child>
+repo_root: <absolute path>
+scope: both
+prior_findings: <the parent's findings, claim and evidence intact>
+```
+
+It returns `revalidated` alongside its own `findings`: one
+`{claim, evidence, verdict}` per inherited claim, with `verdict` exactly one of
+`still_holds`, `changed` or `could_not_check`. That is what tells you which case
+you are in — you cannot know before checking the anchors whether this child needs
+a full exploration or a paragraph of updates. A claim that still holds is a file
+nobody has to read twice; `changed` and `could_not_check` are where the child's
+own looking starts.
 
 **Stop descending when the context is filling**, before opening the next child
 rather than partway into it: every level costs another `explore` and another
-question round in this same context, and step 4's second sizing bullet already
-says what a context that fills up does to the objective it is holding. The
-objective step 6 just recorded is the parent the next session picks up from, so
-say which child comes next and hand over a prompt the user can paste into a fresh
-session:
+round with the user in this same context — the round is larger now that it
+carries step 4's checkpoint, and the `explore` is smaller when the parent's
+findings still hold — and step 5's second sizing bullet already says what a
+context that fills up does to the objective it is holding. The objective step 7
+just recorded is the parent the next session picks up from, so say which child
+comes next and hand over a prompt the user can paste into a fresh session:
 
 ```
 Seguí el árbol `<tree-slug>` en <repo>. Corré el skill `plan`: el padre es
