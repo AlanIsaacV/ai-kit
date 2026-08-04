@@ -1,29 +1,35 @@
 ---
 name: plan
-description: "Turn a request into a written objective before any code is written — explore the problem, clarify what is genuinely ambiguous, weigh solution options with the user, and produce a reviewable draft they can read in full and correct. Use this whenever the user describes something they want built, changed, migrated or fixed and the shape of the work is not already settled between you. Triggers on: 'plan this', 'planeá esto', 'quiero hacer X', 'necesito implementar', 'how should we approach', 'armemos un plan', 'ayudame a pensar', 'vamos a refactorizar', 'necesito migrar', 'quiero agregar la feature', 'me gustaría que el sistema haga X'. Use it for small work too — a two-file fix gets the same structure, just one turn of the loop instead of many, so never skip it because the task looks small. To continue an objective that already exists, or to open a more specific one underneath it, use the `work` skill instead; `plan` is for opening a new objective."
+description: "Author an objective before any code is written — explore the problem, clarify what is genuinely ambiguous, weigh the real options with the user, and produce a reviewable draft, with acceptance criteria and the fidelity each one demands, that they can read in full and correct. Use this whenever the user describes something they want built, changed, migrated or fixed and the shape of the work is not already settled between you. Use it again at any depth: opening a more specific objective underneath one that already exists is this skill's job, and it will keep descending until it reaches one a single session can deliver. Triggers on: 'plan this', 'planeá esto', 'quiero hacer X', 'necesito implementar', 'how should we approach', 'armemos un plan', 'ayudame a pensar', 'vamos a refactorizar', 'necesito migrar', 'quiero agregar la feature', 'me gustaría que el sistema haga X', 'esto es más grande de lo que pensábamos', 'abramos algo más chico debajo', 'define the acceptance criteria'. Use it for small work too — a two-file fix gets the same structure, just one objective instead of a tree, so never skip it because the task looks small. To move an objective that already exists and already carries fidelity-annotated criteria forward, use the `work` skill instead; `plan` authors, `work` executes."
 ---
 
 # plan
 
-Turn a request into an objective that stays in view for the whole job, then
-hand off to `work`, which runs one unit of work at a time against it.
+Turn a request into a written objective, at whatever depth the work actually
+sits, and stop there. When the objective is too big for one session, plan one of
+its children in the same conversation, and keep going until you reach one a
+session can deliver. That one goes to `work`, which executes it.
 
 ## The shape this produces, and why it is not a phase list
 
-There is an **objective** — stable, short, always loaded — and a **loop of work
-units**, each defined immediately before it runs.
+Objectives nest. An objective may derive from another, and this skill writes one
+at any depth: a root for a job nobody has framed yet, or something more specific
+underneath an objective that already exists. Going one level down is an ordinary
+move, not an admission that the objective above it was wrong.
 
 There is deliberately no numbered list of phases with their contents settled up
-front. Writing the detail of unit five during planning means writing it with
-the least information you will ever have about it, and once it exists as an
-approved artifact, changing it costs enough that people stop changing it and
-start following a plan they know is wrong. Defining each unit just before it
-runs makes reordering, splitting and dropping cost nothing — they are edits to
-a list, not a re-planning ceremony.
+front, and no enumeration of the tree underneath the objective you are writing.
+Writing the detail of a grandchild objective now means writing it with the least
+information you will ever have about it, and once it exists as an approved
+artifact, changing it costs enough that people stop changing it and start
+following a plan they know is wrong. Defining each objective just before it runs
+makes reordering, splitting and dropping cost nothing — they are edits to a
+list, not a re-planning ceremony.
 
-What you *do* fix now: the objective, its constraints, what is out of scope,
-and a rough orientation of the areas involved. That is enough to judge whether
-any given unit is worth doing, which is the only thing the loop needs from you.
+What you *do* fix now: this objective, its constraints, what is out of scope,
+and a rough orientation of the areas involved — with the children it probably
+has left as prose in that orientation. That is enough to judge whether any given
+child is worth opening, which is the only thing the descent needs from you.
 
 ## Hard rules
 
@@ -45,6 +51,12 @@ any given unit is worth doing, which is the only thing the loop needs from you.
    English.**
 6. **Never invent a path, a name or a number.** If you need one and cannot
    derive it, that is a question or an assumption, and both have a home.
+7. **Never write a state edge.** A `planned` objective is one with no state edge
+   at all. The edge that says execution has started is `work`'s to write, at the
+   moment execution starts — authorship finishing and execution starting are two
+   different events, and only the second one is a change of state.
+8. **The parent is context, never a constraint.** Nothing here derives a
+   requirement, a criterion or a refusal from the objective above.
 
 ## The memory log
 
@@ -56,18 +68,42 @@ MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
 [ -x "$MEMORY" ] || ( cd "${CLAUDE_PLUGIN_ROOT}/tools/memory" && go build -o "$MEMORY" ./cmd/memory )
 ```
 
-`$MEMORY kinds` lists every valid record kind and edge type. Read
-`${CLAUDE_PLUGIN_ROOT}/tools/memory/README.md` if you need the retrieval
-contract or the scope model in detail; the commands used here are below and
-that is usually enough.
+`$MEMORY kinds` lists every valid record kind and edge type. `$MEMORY state`
+reports the objectives in the log with each one's `parent`, `children` and
+`depth`. Read `${CLAUDE_PLUGIN_ROOT}/tools/memory/README.md` if you need the
+retrieval contract or the scope model in detail; the commands used here are
+below and that is usually enough.
 
 ## Steps
 
-### 1 — Understand the request, then go look
+### 1 — Understand the request, place it in the tree, then go look
 
-Read what the user asked for. Then investigate before forming an opinion —
-launch the `explore` subagent rather than reading widely in this thread, so the
-main context stays free for the objective itself:
+Read what the user asked for. Then find out where it sits:
+
+```bash
+$MEMORY state
+$MEMORY query --plan <tree-slug> --kind objective --current
+```
+
+`state` is given no plan filter on purpose: `--plan` is accepted there and
+ignored, because an objective's parent, its children and its depth are
+properties of the log rather than of the question. Several roots in one log are
+normal — nothing requires an objective to have a parent.
+
+Three cases, and between them they are the whole placement decision:
+
+- **Nothing open that this belongs under** — you are writing a root objective.
+- **The request is more specific than an objective already open** — you are
+  writing that objective's child. Take the parent's id and its tree slug from
+  `state`.
+- **The request *is* an objective already open whose draft already carries
+  `## Acceptance criteria` with a fidelity line on each one** — it has been
+  authored, and re-authoring it would move criteria that are supposed to be
+  settled. Point the user at `work`, which executes it.
+
+Then investigate before forming an opinion — launch the `explore` subagent
+rather than reading widely in this thread, so the main context stays free for
+the objective itself:
 
 ```
 topic: <the one question that decides the shape of this work>
@@ -78,11 +114,31 @@ scope: both
 Fold its `findings` into your understanding and keep its `gaps` — they belong
 in the draft's "What I don't know".
 
-An objective may derive from another, so a more specific objective underneath an
-existing one is an ordinary move rather than a reason to stop. Look at what is
-already open (`$MEMORY query --kind objective --current`): if this work continues
-one of those, point the user at `work`, which opens children as it goes. `plan`
-stays the right skill for opening a new objective.
+#### Show the immediate parent, and say what it is not
+
+When the objective you are about to write has a parent, show it to the user
+before writing anything — its title and its id, straight from `state`:
+
+> Esto queda debajo de **`<parent title>`** (`<parent id>`). Te lo muestro como
+> contexto, no como límite: sirve para que veamos si lo que vamos a hacer aporta
+> ahí, pero no decide nada de este objetivo.
+
+Say it in those terms, because it is true. The parent is there so the two of you
+can see what this objective is in service of, and for nothing else:
+
+- It adds no requirement. A constraint binds this objective only if it is
+  written into *this* draft.
+- It adds no criterion. The parent's success criteria are the parent's, and
+  restating them here would grade a child against work it was never scoped to
+  do.
+- It is never a reason to refuse. Not the depth, not "the parent does not mention
+  this", not "that belongs to a sibling". If the request does not fit under this
+  parent, then it is a root objective or a child of something else — say which,
+  and keep going.
+
+Only the *immediate* parent is shown. Walking the chain all the way up turns
+context into a wall of text nobody reads, which comes to the same thing as
+showing none of it.
 
 ### 2 — Ask only what is genuinely ambiguous
 
@@ -113,10 +169,64 @@ though it were the only one.
 Options that turn on an external dependency get rule 4 applied first — resolve
 the version, then present the option.
 
-### 4 — Write the draft
+### 4 — Decide whether this objective is executable, then write the draft
 
-Write `plans/<objective-slug>/draft-objective.md` using exactly this shape.
-Derive the slug from the objective, kebab-case.
+An objective is **executable** when one session can deliver it and somebody else
+can check it afterwards. That is a test with five parts, and it has to pass all
+five:
+
+- **It delivers something demonstrable.** At the end you can show it working.
+  Not "the layer is refactored" — "you can cancel an order and see the reason
+  recorded".
+- **It fits one session with room to spare.** Context that fills up is context
+  that starts forgetting the objective, which is the failure this whole shape
+  exists to avoid. When in doubt, split.
+- **It is worth doing on its own.** If it only makes sense once a sibling
+  objective lands, either merge them or do that one first.
+- **It names what it does not cover.** Two or three non-goals. This is the
+  cheapest scope control there is.
+- **It says how it serves the objective above it**, in one line. If that line is
+  hard to write, that is the signal — ask the user before going further.
+
+An objective that fails any of the five is a **parent objective**. It is real, it
+gets written and recorded like any other, and its completion comes from its
+children closing underneath it rather than from a verification pass — there is
+nothing for `verify` to grade in a draft no single session can execute.
+
+**The heading over the criteria is what says which of the two you wrote**, and
+you write one heading or the other, never both in the same draft:
+
+- **`## Success criteria`, with no fidelity line anywhere in the draft** — not
+  executable. Its criteria are observable statements about the whole objective,
+  met when its children are, so nothing grades this draft directly. They describe
+  the outcome and never restate the children: a criterion that names a child is a
+  phase list in a criterion's clothes, and it goes stale the moment the tree
+  changes shape.
+- **`## Acceptance criteria`, numbered, with a `fidelity required:` line on
+  every criterion** — executable, and that section is the only thing `verify`
+  grades.
+
+`## Acceptance criteria` is the exact heading `verify` reads — a criterion under
+any other heading is a criterion nobody will check. The mistake runs the other
+way too: fidelity lines under a `## Success criteria` heading, or acceptance
+criteria on an objective one session cannot deliver, promise a verification pass
+that has no honest way to run.
+
+Write `plans/<objective-slug>/draft-objective.md`. No record exists yet, so you
+coin the slug here — and it is the record's own `slug` too, because step 6 passes
+this same slug to `add --slug`, which takes it exactly as given. Derive it from
+the title the way the tool would if you left it out: lowercase, every run of
+characters outside `a-z0-9` collapsed to a single hyphen, no leading or trailing
+hyphen, at most 60 characters — truncate there and trim any hyphen the cut leaves
+behind. One directory per objective, flat, because the nesting lives in the log
+and a path that mirrored the tree would have to move every time a parent changed.
+
+If `plans/<slug>/draft-objective.md` already exists, that slug belongs to another
+objective — two objectives can legitimately derive the same one — and writing
+there would overwrite somebody else's draft: pick a slug that distinguishes this
+objective, and pass that same slug to `--slug` in step 6.
+
+#### A parent objective's draft
 
 ```markdown
 # Objective: <one line>
@@ -125,14 +235,17 @@ Derive the slug from the objective, kebab-case.
 <The problem in your words, with enough detail that a wrong reading is
 obvious to the user. Not a restatement of their sentence.>
 
+## Objective
+<What must be true when this is done. One paragraph.>
+
+## How this serves the objective above
+<One line. A root objective serves the request that opened it.>
+
 ## Assumptions I made
 - <each judgment call you made without asking, and why you made it>
 
 ## What I don't know
 - <each open question, including gaps `explore` reported>
-
-## Objective
-<What must be true when this is done. One paragraph.>
 
 ## Constraints
 - <technical, product, or process limits that bind the work>
@@ -144,12 +257,69 @@ obvious to the user. Not a restatement of their sentence.>
 - <observable statements. Each one must be able to fail.>
 
 ## Orientation
-<Areas likely involved, known risks, a tentative order of attack.
-This is a sketch to steer by, not a contract. Say so in one line.>
+<Areas likely involved, known risks, a tentative order of attack, and the
+children this objective probably has — one sentence each, as prose. This is a
+sketch to steer by, not a contract. Say so in one line.>
 
 ## Sources
 - <what you read or resolved; library versions with where you checked>
 ```
+
+#### An executable objective's draft
+
+```markdown
+# Objective: <one line>
+
+## What I understood
+<The problem in your words, with enough detail that a wrong reading is
+obvious to the user. Not a restatement of their sentence.>
+
+## Deliverable
+<What will be demonstrably working when this is done. One paragraph.>
+
+## How this serves the objective above
+<One line. A root objective serves the request that opened it.>
+
+## Assumptions I made
+- <each judgment call you made without asking, and why you made it>
+
+## What I don't know
+- <each open question, including gaps `explore` reported>
+
+## Constraints
+- <technical, product, or process limits that bind the work>
+
+## Out of scope
+- <what this objective does not touch>
+
+## Acceptance criteria
+1. <Observable statement that can fail.>
+   - **Verified by**: <the specific check> — **fidelity required**: real-dependency | integration | mocked | code-read
+2. ...
+
+## Files and areas expected
+<Best current understanding. Not a contract — deviations get recorded.>
+
+## Open questions carried in
+- <anything from memory still unanswered that this objective touches>
+
+## Sources
+- <what you read or resolved; library versions with where you checked>
+```
+
+Every section the loop reads is in there, so nothing downstream has to add one:
+`verify` opens the file, grades `## Acceptance criteria` and checks the changed
+files against `## Out of scope`; `implement` and `review` read the whole thing.
+`work` extends the sections around the criteria as it goes and leaves the
+criteria themselves alone.
+
+**The fidelity line on each criterion is the load-bearing part.** It is decided
+here, with the user, before anyone has an interest in the answer. A criterion
+about behavior against a database, a queue or a network says
+`real-dependency`, and that is what makes it impossible for verification to
+later report it satisfied on the strength of a mock. Choosing `mocked` is
+allowed — it just has to be a choice made in the open, now, rather than a
+convenience discovered later.
 
 Two sections carry most of the value. **Assumptions** is what makes "don't
 assume anything" auditable instead of aspirational. **Out of scope** is what
@@ -157,6 +327,22 @@ stops the work from quietly growing — it is worth pushing for two or three
 entries even when the user shrugs.
 
 ### 5 — Hand the draft over and wait
+
+This is the only time anybody asks the user to read these criteria. `work` does
+not ask again, so what they let through here is what gets built and graded.
+
+For an executable objective, the criteria and the fidelity each one demands are
+the thing to read:
+
+> Escribí el objetivo en `plans/<slug>/draft-objective.md`. Leelo entero — sobre
+> todo los **criterios de aceptación** y la fidelidad que pide cada uno, porque
+> son los únicos contra los que se va a verificar después y no se cambian una vez
+> que arrancamos. Después mirá **Assumptions I made** y **What I don't know**,
+> que es donde está lo que decidí sin preguntarte. Corregí directo en el archivo
+> lo que esté mal y avisame cuando esté listo.
+
+For a parent objective there is nothing to verify yet, so the scope and the
+judgment calls are what matter:
 
 > Escribí el objetivo en `plans/<slug>/draft-objective.md`. Abrilo y leelo
 > entero — sobre todo **Assumptions I made** y **What I don't know**, que es
@@ -174,41 +360,112 @@ are the decision.
 Only once the user approves. The draft is a negotiating surface; memory is the
 record.
 
-```bash
-# The objective itself.
-$MEMORY add --plan <slug> --kind objective \
-  --title "<objective one-liner>" \
-  --body "<Objective + Constraints + Out of scope + Success criteria>" \
-  --about <area>,<area>
+`--plan` names the **objective tree**, not this objective. For a child, take it
+from the parent's own record — `origin.plan`, which `state` reports as `plan` —
+rather than coining a slug out of the new objective's name. For a root, coin one
+for the tree. And never run `memory init` for a child: one log holds one
+objective tree, `init` is for a repo that has no log at all, and `link` refuses
+an endpoint it cannot see in the same log, so a child written into a log of its
+own could not be attached to its parent at all.
 
+```bash
+# The objective itself. `--slug` is taken exactly as given, so pass the slug the
+# draft directory already has. Keep the record: the id comes out of it.
+REC=$($MEMORY add --plan <tree-slug> --kind objective \
+  --slug "<the slug you derived in step 4>" \
+  --title "<objective one-liner>" \
+  --body "<Objective or Deliverable + Constraints + Out of scope + the criteria as written>" \
+  --about <area>,<area>)
+OBJ=$(printf '%s' "$REC" | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
+
+# When it has a parent: one edge, now, while you still know which one it is.
+$MEMORY link --type derives_from --from "$OBJ" --to <parent-objective-id>
+```
+
+`work` finds the draft by the record's slug, and passing `--slug` is what makes
+that slug the draft directory's name too — one name, rather than two that have to
+be kept in step.
+
+An objective derives from at most one objective, and the second `derives_from`
+is refused naming the parent it already has. There is no taking a parent back
+afterwards, so link it to the one it is actually under. A root gets no edge at
+all.
+
+```bash
 # One record per surviving assumption — these are open until something answers
 # them, and they are what a later verification pass is allowed to challenge.
-$MEMORY add --plan <slug> --kind assumption --title "..." --about <area>
+$MEMORY add --plan <tree-slug> --kind assumption --title "..." --about <area>
 
 # One record per open question.
-$MEMORY add --plan <slug> --kind open-question --title "..." --about <area>
+$MEMORY add --plan <tree-slug> --kind open-question --title "..." --about <area>
 
 # Any decision the conversation settled, especially a chosen option.
-$MEMORY add --plan <slug> --kind decision --title "..." \
+$MEMORY add --plan <tree-slug> --kind decision --title "..." \
   --body "<why this over the alternatives>" --about <area>
 ```
 
 Tag `--about` with the areas and paths a future session would search by. A
 record nobody can find by filtering is a record nobody will read.
 
+`add` prints the whole record; the id is at `.record.id` and the slug at
+`.record.slug`. Every command prints JSON on success and on failure alike, so
+check the exit code rather than scanning the text.
+
 Leave the draft file on disk — it is the human-readable form of what was
 agreed, and the loop will want to look at it.
 
-### 7 — Hand off
+### 7 — Descend, or hand off
 
-Tell the user what was recorded and point at the next step:
+**If what you just recorded is executable**, the descent is over. Say what was
+recorded and point at the next step:
 
-> Objetivo registrado (`<id>`), con N suposiciones y M preguntas abiertas.
-> Cuando quieras arrancar, corré `work` — define la primera unidad contra este
-> objetivo y te la pasa para aprobar antes de tocar código.
+> Objetivo registrado (`<id>`), con N suposiciones y M preguntas abiertas. Los
+> criterios ya los aprobaste, así que `work` arranca directo: implementa,
+> verifica contra esos criterios y te trae la review.
 
-If the whole job plainly fits in one unit, say so and offer to continue into
-`work` in this same session. Small work takes the same path, just once.
+If they want to start now, continue into `work` in this same session. The
+criteria they just read are the ones it runs against, and it does not make them
+read the same text a second time.
+
+**If it is not executable**, do not stop at the top of the tree. Offer to plan
+one of its children right now, in this same conversation:
+
+> `<title>` no entra en una sesión. Abajo veo `<A>`, `<B>` y `<C>` como
+> candidatos. Puedo planear uno ahora mismo — ¿con cuál arrancamos?
+
+The user picks; never pick silently among several. Then go back to step 1 for
+that child, with the objective you just recorded as its parent, and do the whole
+thing again: place it, look, ask what is genuinely ambiguous about *it*, write
+its draft, hand it over, record it with `derives_from`. Stop descending at the
+first objective that passes all five parts of step 4's test — that one is what
+goes to `work`.
+
+**Stop descending when the context is filling**, before opening the next child
+rather than partway into it: every level costs another `explore` and another
+question round in this same context, and step 4's second sizing bullet already
+says what a context that fills up does to the objective it is holding. The
+objective step 6 just recorded is the parent the next session picks up from, so
+say which child comes next and hand over a prompt the user can paste into a fresh
+session:
+
+```
+Seguí el árbol `<tree-slug>` en <repo>. Corré el skill `plan`: el padre es
+`<parent title>` (`<parent id>`), ya registrado; el próximo hijo a abrir es
+<one line>.
+```
+
+A descent that runs out of room mid-level is worse than one that stopped cleanly
+a level early, because the objective it was about to write is the one nobody will
+remember.
+
+Only the child being opened now becomes a record. The rest stay as prose in the
+parent's `## Orientation`, a sentence each, until somebody is about to work one.
+Turning them all into records up front is the phase list this shape exists to
+avoid, written at the moment you know least about them.
+
+None of this commits to a depth. Two levels is common, one is fine, and an
+objective that passes the five-part test on the first pass never has a child at
+all.
 
 ## Key principles
 
@@ -222,3 +479,7 @@ If the whole job plainly fits in one unit, say so and offer to continue into
   phase list with contents, changing course starts costing more than it should.
 - **Stop at the handoff.** Planning that slides into implementing is planning
   nobody got to review.
+- **Descending is cheap; detail written too early is not.** One record and one
+  edge open a child, and the parent is still there afterwards.
+- **The criteria get read once, here.** Everything downstream treats them as
+  settled, which is exactly why this is the step that cannot be rushed.

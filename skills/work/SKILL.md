@@ -1,6 +1,6 @@
 ---
 name: work
-description: "Run one turn of work against an objective, end to end: resolve which objective you are on, decide what this turn delivers — that objective, or a more specific one opened underneath it when it is too big for a session — get it approved, implement it, verify it against the approved criteria, review the code with the user, record what was learned, and decide what comes next. Use whenever there is already an objective recorded and the user wants to move it forward. Triggers on: 'sigamos', 'continuemos', 'next unit', 'seguí con el plan', 'arrancá', 'dale', 'implementá la siguiente parte', 'retomemos', 'continue where we left off', 'what's next', or the start of a fresh session on work already planned. If no objective exists yet, use the `plan` skill first — do not invent one to have something to point at."
+description: "Execute one objective end to end: resolve which objective you are on, confirm it is executable — its acceptance criteria each carrying the fidelity they require — freeze those criteria, implement it, verify it against them in a fresh subagent, review the code with the user, record what was learned, and decide what comes next. Use whenever an objective is already recorded and the user wants to move it forward. Triggers on: 'sigamos', 'continuemos', 'seguí con el plan', 'arrancá', 'dale', 'implementá la siguiente parte', 'retomemos', 'continue where we left off', 'what's next', 'terminá lo que quedó', or the start of a fresh session on work already planned. This skill executes and does not author: when no objective exists yet, when the one you are on is too big for a session, or when this turn discovers work nobody has framed, it invokes the `plan` skill to write that objective and get its criteria approved, then comes back here to run it."
 ---
 
 # work
@@ -10,15 +10,20 @@ honestly, learn from it, decide what is next.
 
 You are the orchestrator. You hold the objective, you talk to the user, and you
 delegate the actual work. You do not write production code and you do not
-verify your own criteria — you defined them, which is exactly why you are the
-wrong one to judge whether they were met.
+verify your own criteria — you ran the work and own the outcome, which is
+exactly why you are the wrong one to judge whether they were met.
 
 Objectives nest. An objective may derive from another, and the one this turn
 runs against — the **executable objective** — is the one whose criteria carry a
-required fidelity and which has no open child of its own. Opening a more
-specific objective underneath the current one is an ordinary move, not an
-admission that the plan was wrong: it costs one record and one edge, and the
-parent is still there afterwards.
+required fidelity. That is the whole marker: an objective is executable when its
+own criteria say what fidelity they need, whatever sits underneath it, because
+depth suggests and does not decide.
+
+Opening a more specific objective underneath the current one is an ordinary move,
+not an admission that the plan was wrong: it costs one record and one edge, and
+the parent is still there afterwards. Writing it is `plan`'s job rather than this
+skill's — here you notice that the objective in front of you is not the one to
+run, and invoke `plan` for the one that is.
 
 ## Hard rules
 
@@ -118,23 +123,16 @@ top of it. Finding drift is a good outcome, not a delay.
 
 ### 2 — Choose the objective this turn executes
 
-Either the open objective you are already on, or a child opened underneath it
+Either the open objective you are already on, or one `plan` opens underneath it
 because that one is too big for a session. Pick against what the objective
-still needs, given what exists today. The criteria the executable objective has
-to meet:
+still needs, given what exists today.
 
-- **It delivers something demonstrable.** At the end you can show it working.
-  Not "the layer is refactored" — "you can cancel an order and see the reason
-  recorded".
-- **It fits one session with room to spare.** Context that fills up is context
-  that starts forgetting the objective, which is the failure this whole shape
-  exists to avoid. When in doubt, split.
-- **It is worth doing on its own.** If it only makes sense once a sibling
-  objective lands, either merge them or do that one first.
-- **It names what it does not cover.** Two or three non-goals. This is the
-  cheapest scope control there is.
-- **It says how it serves the objective above it**, in one line. If that line is
-  hard to write, that is the signal — ask the user before going further.
+You do not size the candidate here and you do not write it. Whether an objective
+fits one session, delivers something demonstrable, is worth doing on its own,
+names its non-goals and can say in one line how it serves the objective above —
+that five-part test lives in `plan`, and it runs there with the user, ahead of
+any criteria. So when the answer here looks like "not this one, something
+smaller", the next move is to invoke `plan`, which step 3 says how to do.
 
 Do not derive the objective from a pre-existing phase list. There isn't one, on
 purpose: you are choosing against the current state of the repo, which is
@@ -143,52 +141,43 @@ better information than anything written weeks ago. Candidate children stay
 one. A record is for the objective being opened now; enumerating the rest of the
 tree up front turns it back into the phase list this shape exists to avoid.
 
-### 3 — Write the executable objective's draft
+### 3 — Confirm the objective is executable, or send it back to `plan`
 
 Drafts live at `plans/<objective-slug>/draft-objective.md`: one directory per
-objective, named after the objective. If `plan` already wrote that file, extend
-it in place; if you are opening a child, write its own. The sections the loop
-reads:
+objective. Take that slug from the objective record step 1 loaded — its own
+`slug` field, which `state` and `query` both report, not the `origin.plan` that
+names the tree — rather than deriving one from the title yourself. `plan` named
+the directory after that same field when it recorded the objective, and a
+derived name that lands one character off finds no draft and sends this step down
+the no-draft branch for an objective that has one. `plan` wrote that file. Open
+it and check two things, and nothing else:
 
-```markdown
-# Objective: <one line>
+- `## Acceptance criteria` is there.
+- Every criterion under it carries its own `fidelity required:` line.
 
-## Deliverable
-<What will be demonstrably working when this is done. One paragraph.>
+Both true and the objective is executable. The criteria in that file are what the
+rest of this turn runs against, and they are the only ones. Go to the gate.
 
-## How this serves the objective above
-<One line. A root objective serves the request that opened it.>
+Either one false — a `## Success criteria` heading, criteria with no fidelity on
+them, no draft at all — and this objective has not been authored for execution.
+Do not fill it in from here. **Invoke the `plan` skill in this same
+conversation**: the Skill tool, skill `plan`, or `ai-kit:plan` where the plugin
+namespace is in play. Tell it which objective you are on and what this turn needs
+from it. It places the objective in the tree, applies the five-part sizing test,
+writes the criteria with the fidelity each one demands, has the user read and
+correct them, records the objective and links it to its parent. Then re-read the
+draft it wrote and come back to this check.
 
-## Acceptance criteria
-1. <Observable statement that can fail.>
-   - **Verified by**: <the specific check> — **fidelity required**: real-dependency | integration | mocked | code-read
-2. ...
+The same call, for the same reason, when this turn discovered an objective that
+was not there before, or when the one you are on is plainly larger than one
+session. `plan` runs inside this conversation and hands back an executable
+objective; nothing about the session changes, and nobody gets sent elsewhere and
+told to come back.
 
-## Out of scope
-- <what this objective does not touch>
-
-## Files and areas expected
-<Best current understanding. Not a contract — deviations get recorded.>
-
-## Open questions carried in
-- <anything from memory still unanswered that this objective touches>
-```
-
-A draft `plan` wrote may arrive with a `## Success criteria` section and no
-fidelity on any of it. When it does: rename that heading to
-`## Acceptance criteria`, number the criteria, and add the fidelity line to each
-one. That is first-pass work — it is what makes the objective executable, and a
-draft whose criteria already carry fidelity has been through it and has nothing
-left to rename. `## Acceptance criteria` is the exact heading `verify` reads — a
-criterion under any other heading is a criterion nobody will check.
-
-**The fidelity line on each criterion is the load-bearing part.** It is decided
-here, with the user, before anyone has an interest in the answer. A criterion
-about behavior against a database, a queue or a network says
-`real-dependency`, and that is what makes it impossible for verification to
-later report it satisfied on the strength of a mock. Choosing `mocked` is
-allowed — it just has to be a choice made in the open, now, rather than a
-convenience discovered later.
+Writing those criteria here instead would hand them to the thread that is about
+to be graded on them — the same reason verification runs in a subagent that did
+not write the code. Rules 3 and 4 only mean something if the criteria were
+written and approved before this thread had any interest in the answer.
 
 On a resumption, `## Acceptance criteria` is not edited. That section is what
 `verify` grades, so editing it after approval would move the criteria with
@@ -197,7 +186,20 @@ objective instead. Extending the draft in place is for the sections around it.
 
 ### 4 — Gate
 
-> Escribí el objetivo en `plans/<objective-slug>/draft-objective.md`. Leelo
+**When `plan` ran in this turn, the gate already happened.** The user read those
+criteria and the fidelity each one demands in `plan`'s own gate, minutes ago, in
+this conversation, and corrected them in the file. Do not put the same text in
+front of them a second time: asking somebody to re-read what they just approved
+is how they learn to skim the one artifact this entire loop depends on them
+reading. Say that is why, and go straight to the freeze:
+
+> Los criterios que acabás de aprobar en el draft son los que se congelan — no te
+> los hago leer de nuevo. Arranco con eso.
+
+**When the criteria were approved in an earlier session** and nothing has frozen
+them yet, this is where rule 3's hard stop happens:
+
+> El objetivo está en `plans/<objective-slug>/draft-objective.md`. Leelo
 > entero — sobre todo los **criterios de aceptación** y la fidelidad que pide
 > cada uno, porque son los únicos contra los que se va a verificar después y no
 > se pueden cambiar una vez que arrancamos. Corregí lo que quieras en el archivo
@@ -205,23 +207,11 @@ objective instead. Extending the draft in place is for the sections around it.
 
 Stop. Re-read the file when they come back — their edits are the decision.
 
-On approval, and only on approval. A child you just opened becomes a record and
-gets its parent — one move, two commands:
+Either way the approval is the user's and it is explicit — what changes is
+whether it happened in `plan`'s gate or in this one, never whether it happened.
 
-```bash
-CHILD=$($MEMORY add --plan <tree-slug> --kind objective --title "<short name>" \
-  --body "<deliverable + acceptance criteria + out of scope>" --about <areas> \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
-
-$MEMORY link --type derives_from --from "$CHILD" --to <parent-objective-id>
-```
-
-An objective derives from at most one objective, and the second `derives_from`
-is refused naming the parent it already has. There is no taking a parent back
-afterwards, so link it to the one it is actually under.
-
-Then freeze it, whether it is the child you just opened or the objective you
-were already on:
+On approval, and only on approval, freeze it — whether `plan` authored it minutes
+ago or you were already on it:
 
 ```bash
 FREEZE=$($MEMORY add --plan <tree-slug> --kind decision \
@@ -429,11 +419,12 @@ point starts forgetting the objective, and everything after that is worse than
 what came before it.
 
 Work you discovered mid-flight that is larger than this objective assumed does
-not evaporate at the end of the turn. Open it as a `planned` child before the
-session ends — `add` plus `derives_from`, and nothing else, since `planned` is
-the absence of any state edge — or leave it as prose in the parent's draft when
-nobody is going to pick it up soon. A record is for work someone will do; prose
-is for the rest.
+not evaporate at the end of the turn. When somebody is going to pick it up, open
+it through `plan` — the skill invocation from step 3, in this session if there is
+context left for it, otherwise named in the handoff prompt below so the next
+session starts there. When nobody is going to pick it up soon, leave it as prose
+in the parent's draft. A record is for work someone will do; prose is for the
+rest.
 
 When stopping, hand over a prompt the user can paste into a fresh session:
 
