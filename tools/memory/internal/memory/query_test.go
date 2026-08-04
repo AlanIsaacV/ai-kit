@@ -1,10 +1,49 @@
 package memory
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 )
+
+// fileOf is the lines a log would hold for these records, in exactly the
+// positions given, numbered the way the store numbers them.
+//
+// Order is spelled out rather than assembled, because two of the rules under
+// test here are stated in terms of the file itself — "ties broken by the later
+// line" — and a fixture that could not put a record on a chosen line could not
+// exercise them.
+func fileOf(records ...any) []Line {
+	lines := make([]Line, 0, len(records))
+	for i, r := range records {
+		l := Line{Num: i + 1}
+		switch v := r.(type) {
+		case *Entry:
+			l.Entry = v
+		case *Edge:
+			l.Edge = v
+		default:
+			panic(fmt.Sprintf("fileOf: %T is neither an entry nor an edge", r))
+		}
+		lines = append(lines, l)
+	}
+	return lines
+}
+
+// logOf is fileOf for the fixtures that do not turn on file order: every entry,
+// then every edge. That is a log's usual shape anyway — an edge cannot be
+// written before both of its endpoints exist.
+func logOf(entries []*Entry, edges []*Edge) []Line {
+	records := make([]any, 0, len(entries)+len(edges))
+	for _, e := range entries {
+		records = append(records, e)
+	}
+	for _, e := range edges {
+		records = append(records, e)
+	}
+	return fileOf(records...)
+}
 
 func entry(t *testing.T, kind Kind, title string, about ...string) *Entry {
 	t.Helper()
@@ -43,12 +82,12 @@ func TestQueryFiltersByAboutAndKind(t *testing.T) {
 	c := entry(t, KindWontFix, "Concurrent cancel is impossible", "orders")
 	all := []*Entry{a, b, c}
 
-	res := Query(all, nil, Filter{About: []string{"orders"}})
+	res := Query(logOf(all, nil), Filter{About: []string{"orders"}})
 	if res.Count != 2 {
 		t.Fatalf("about=orders: want 2, got %d", res.Count)
 	}
 
-	res = Query(all, nil, Filter{About: []string{"orders"}, Kinds: []Kind{KindWontFix}})
+	res = Query(logOf(all, nil), Filter{About: []string{"orders"}, Kinds: []Kind{KindWontFix}})
 	if res.Count != 1 || res.Records[0].ID != c.ID {
 		t.Fatalf("about+kind: want just the wont-fix, got %+v", res.Records)
 	}
@@ -69,20 +108,20 @@ func TestQueryFiltersByOriginPlan(t *testing.T) {
 	orphan := entry(t, KindDecision, "Nobody knows where this came from", "auth")
 	all := []*Entry{mine, theirs, orphan}
 
-	res := Query(all, nil, Filter{Plan: "jwt-migration"})
+	res := Query(logOf(all, nil), Filter{Plan: "jwt-migration"})
 	if res.Count != 1 || res.Records[0].ID != mine.ID {
 		t.Fatalf("plan=jwt-migration should return only its own record, got %+v", res.Records)
 	}
 
-	res = Query(all, nil, Filter{Plan: "jwt-migration", About: []string{"orders"}})
+	res = Query(logOf(all, nil), Filter{Plan: "jwt-migration", About: []string{"orders"}})
 	if res.Count != 0 {
 		t.Fatalf("the plan bound and the tag bound both apply, got %d", res.Count)
 	}
 
-	if got := Query(all, nil, Filter{}).Count; got != 3 {
+	if got := Query(logOf(all, nil), Filter{}).Count; got != 3 {
 		t.Fatalf("no plan named means no plan filter, got %d", got)
 	}
-	if got := Query(all, nil, Filter{Plan: "order-cancellation"}).Count; got != 1 {
+	if got := Query(logOf(all, nil), Filter{Plan: "order-cancellation"}).Count; got != 1 {
 		t.Fatalf("the other plan's record is reachable by its own slug, got %d", got)
 	}
 }
@@ -101,7 +140,7 @@ func TestQueryWithholdsOverTheThresholdWithinOnePlan(t *testing.T) {
 	quiet.Origin = &Origin{Plan: "quiet"}
 	all = append(all, quiet)
 
-	res := Query(all, nil, Filter{Plan: "busy"})
+	res := Query(logOf(all, nil), Filter{Plan: "busy"})
 	if res.Count != DefaultThreshold+5 {
 		t.Fatalf("the count must cover only the named plan, got %d", res.Count)
 	}
@@ -109,7 +148,7 @@ func TestQueryWithholdsOverTheThresholdWithinOnePlan(t *testing.T) {
 		t.Fatalf("over the threshold the records are withheld: returned=%d truncated=%v", res.Returned, res.Truncated)
 	}
 
-	res = Query(all, nil, Filter{Plan: "quiet"})
+	res = Query(logOf(all, nil), Filter{Plan: "quiet"})
 	if res.Count != 1 || res.Truncated {
 		t.Fatalf("the quiet plan is unaffected by the busy one, got count=%d truncated=%v", res.Count, res.Truncated)
 	}
@@ -119,7 +158,7 @@ func TestQueryWithholdsOverTheThresholdWithinOnePlan(t *testing.T) {
 // to know the exact file that was tagged.
 func TestQueryAboutMatchesPathPrefix(t *testing.T) {
 	e := entry(t, KindDecision, "Token parsing lives in the middleware", "pkg/auth/middleware.go")
-	res := Query([]*Entry{e}, nil, Filter{About: []string{"pkg/auth/"}})
+	res := Query(logOf([]*Entry{e}, nil), Filter{About: []string{"pkg/auth/"}})
 	if res.Count != 1 {
 		t.Fatalf("prefix tag should match the file under it, got %d", res.Count)
 	}
@@ -133,10 +172,10 @@ func TestQueryCurrentDropsSupersededEntries(t *testing.T) {
 	edges := []*Edge{supersedes(t, fresh, old)}
 	all := []*Entry{old, fresh}
 
-	if got := Query(all, edges, Filter{}).Count; got != 2 {
+	if got := Query(logOf(all, edges), Filter{}).Count; got != 2 {
 		t.Fatalf("without --current both should be visible, got %d", got)
 	}
-	res := Query(all, edges, Filter{CurrentOnly: true})
+	res := Query(logOf(all, edges), Filter{CurrentOnly: true})
 	if res.Count != 1 || res.Records[0].ID != fresh.ID {
 		t.Fatalf("--current should leave only the replacement, got %+v", res.Records)
 	}
@@ -151,7 +190,7 @@ func TestQueryReturnsCountInsteadOfFloodingContext(t *testing.T) {
 		all = append(all, entry(t, KindDecision, "decision", "auth"))
 	}
 
-	res := Query(all, nil, Filter{About: []string{"auth"}})
+	res := Query(logOf(all, nil), Filter{About: []string{"auth"}})
 	if res.Count != DefaultThreshold+5 {
 		t.Fatalf("count must always be the true total, got %d", res.Count)
 	}
@@ -168,7 +207,7 @@ func TestQueryUnderThresholdReturnsEverything(t *testing.T) {
 	for i := 0; i < DefaultThreshold; i++ {
 		all = append(all, entry(t, KindDecision, "decision", "auth"))
 	}
-	res := Query(all, nil, Filter{})
+	res := Query(logOf(all, nil), Filter{})
 	if res.Truncated || res.Returned != DefaultThreshold {
 		t.Fatalf("at the threshold everything should come back, got returned=%d truncated=%v", res.Returned, res.Truncated)
 	}
@@ -179,7 +218,7 @@ func TestQueryExplicitLimitTakesMostRecent(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		all = append(all, entry(t, KindDecision, "decision", "auth"))
 	}
-	res := Query(all, nil, Filter{Limit: 3})
+	res := Query(logOf(all, nil), Filter{Limit: 3})
 	if res.Count != 40 || res.Returned != 3 || !res.Truncated {
 		t.Fatalf("limit: count=%d returned=%d truncated=%v", res.Count, res.Returned, res.Truncated)
 	}
@@ -194,7 +233,7 @@ func TestQueryThresholdCanBeDisabled(t *testing.T) {
 	for i := 0; i < DefaultThreshold+10; i++ {
 		all = append(all, entry(t, KindDecision, "decision", "auth"))
 	}
-	res := Query(all, nil, Filter{Threshold: -1})
+	res := Query(logOf(all, nil), Filter{Threshold: -1})
 	if res.Returned != len(all) {
 		t.Fatalf("threshold=-1 should hand back everything, got %d", res.Returned)
 	}
@@ -213,12 +252,12 @@ func TestQueryCurrentDropsAnsweredQuestions(t *testing.T) {
 	}
 	all := []*Entry{question, assumption, answer}
 
-	res := Query(all, edges, Filter{Kinds: []Kind{KindOpenQuestion, KindAssumption}, CurrentOnly: true})
+	res := Query(logOf(all, edges), Filter{Kinds: []Kind{KindOpenQuestion, KindAssumption}, CurrentOnly: true})
 	if res.Count != 1 || res.Records[0].ID != assumption.ID {
 		t.Fatalf("only the still-open assumption should remain, got %+v", res.Records)
 	}
 
-	if got := Query(all, edges, Filter{Kinds: []Kind{KindOpenQuestion}}).Count; got != 1 {
+	if got := Query(logOf(all, edges), Filter{Kinds: []Kind{KindOpenQuestion}}).Count; got != 1 {
 		t.Fatalf("without --current the answered question is still history, got %d", got)
 	}
 }
@@ -228,7 +267,7 @@ func TestQueryText(t *testing.T) {
 	a.Body = "Per-service key rotation requires asymmetric signing."
 	b := entry(t, KindDecision, "Cancel is async", "orders")
 
-	res := Query([]*Entry{a, b}, nil, Filter{Text: "KEY ROTATION"})
+	res := Query(logOf([]*Entry{a, b}, nil), Filter{Text: "KEY ROTATION"})
 	if res.Count != 1 || res.Records[0].ID != a.ID {
 		t.Fatalf("case-insensitive body search failed: %+v", res.Records)
 	}

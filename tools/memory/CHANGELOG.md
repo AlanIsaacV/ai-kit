@@ -2,6 +2,96 @@
 
 ## Unreleased
 
+### The objective tree, and everything read off it
+
+The parent relation stops being prose and becomes a relation the tool can
+enforce and answer questions about. No new edge type, no new kind, no version 3:
+this is a rule and a derivation over records the schema already allows.
+
+- **An objective derives from at most one objective, and never in a circle.**
+  The parent relation is `derives_from` with an **objective at both ends** —
+  positional rather than typed, so a decision deriving from the objective it was
+  taken under, an objective deriving from a decision, and an ADR deriving from
+  several decisions all keep meaning what they meant. `link` refuses a second
+  parent, naming the parent already on disk, and refuses an edge that would close
+  a cycle, naming the whole path. Several roots stay legal; nothing requires a
+  parent. REJECTED: a `child_of` type, which would be unambiguous and would widen
+  a closed set a second time to leave two edges asserting one relation.
+- **On the write path and nowhere else**, beside `CheckJustification` and for the
+  same reasons: a version's rule set judges one record in isolation and cannot
+  see either endpoint's kind, and the read sweep stays tolerant so a record on
+  disk is never condemned by a rule that arrived after it. A log holding a cycle
+  or an objective with two parents — hand-edited, or arrived through `promote`,
+  which passes no gate — is read rather than refused: the first parent edge in
+  the file wins, every walk carries a visited set, and what was met is reported
+  under `anomalies`. `validate` is unchanged and still calls none of it a
+  problem.
+- **The state precedence rule is a function at last.** The README has stated it
+  normatively since the state edges shipped and nothing computed it. `memory
+  state` resolves a record's state as the most recent state edge by `at`, ties
+  broken by the later line in the file, with no state edge at all resolving to
+  `planned`. `approved_for_execution` → `blocked` → `approved_for_execution` →
+  `met` resolves to `met`, and the stale edges under it stay on disk. Answers
+  open question `01KZ4ZY74599MBM6VEHW65GES1`.
+- **Open is everything but `met` and `cancelled`**, and `separated` sitting on the
+  open side is a decision rather than an omission: it says the work continues
+  somewhere other than under the parent it was lifted out of, not that it
+  stopped. So a separated objective is still returned by `--current` and is still
+  a candidate for the current one, while counting toward no parent and blocking
+  none.
+- **`query --kind objective --current` returns every open objective.** Depth
+  removes nothing, and neither does having an open child. Every other kind's
+  `--current` is untouched — the terminal-state drop applies to objectives alone.
+- **Which objective is being worked on is one answer, in `current_objective`.**
+  The open objective carrying the latest `approved_for_execution` edge, or — when
+  none does — the open objective with the most recent activity, where activity is
+  the latest `at` among the objective itself and every edge with it at either
+  endpoint, **ties broken by the later line in the file** — and, where an edge
+  ties two objectives to one line by touching both of them, by the later entry.
+  The rule that resolved it is reported with it, so it is never a guess presented
+  as a fact. A field of its own, because `hint` means truncation and must go on
+  meaning only that. REJECTED: deepest-open as a forced rule, which
+  would make every urgent fix and every sideways move a fight with the tool;
+  activity alone, which cannot be pinned; the mark alone, which costs a decision
+  and an edge on every context switch. **Depth is reported and nothing filters on
+  it.**
+- **The derivation reads the whole log and the filter applies afterwards.** A
+  `--plan` that puts the current objective out of view still gets told which one
+  it is, with `outside_filter`, rather than being handed the runner-up.
+- **`Query` and `NewTree` take the log's lines rather than the entries and edges
+  split out of them.** Both views are still needed and both are still taken —
+  but so is a third thing the split throws away, the order of the file itself.
+  Two slices each ordered internally cannot say which of one's members came
+  before one of the other's, and the current-objective tie-break is stated in
+  terms of exactly that. It is not a corner case: `at` is written to the second
+  and this loop appends a batch of adds and links at the end of a turn, so most
+  lines of a live log share their second with another record, and some of those
+  seconds mix an entry with an edge. `runQuery` and `cmdState` both already held
+  the lines and were splitting them one step before the order was needed.
+- **A parent's completion is computed**: `met` and superseded children counted
+  done, `cancelled` and `separated` not counted, everything else outstanding.
+  Superseded counting is decision `01KZ30RRADAT4FM5DF3QJRCT55` — absorbed work
+  exists, someone else did it.
+- **Blocked by an open child is derived from the tree and never written.** No
+  edge expresses it and `link --type blocked` pointing at another objective is
+  still refused, which is what keeps "blocked on a sibling" and "blocked by my
+  own child" from becoming indistinguishable on disk. It is informational:
+  nothing filters on it.
+- **`memory state` is the command the README said did not exist.** It reports
+  every objective's resolved state, parent, children, depth, blocking children
+  and completion tally, plus the resolved current objective and any anomalies;
+  `--id` narrows to one. A superseded or answered objective is listed under
+  `excluded` with its reason rather than dropped, since silence is
+  indistinguishable from a record that was never there. `--plan` is accepted and
+  ignored, like everywhere but `query` and `search`: narrowing the derivation
+  would change the answers rather than the view.
+- **State and parentage are resolved from the edge list directly**, never by
+  walking `Graph`, which deduplicates by node and reports only the first edge
+  that reaches one — so a typed edge can be shadowed by an older `relates_to`
+  between the same pair. That is wont-fix `01KZ4ZXEPR07E7VH06JTG8E6J0`, left
+  as it is, and reading the edges rather than the walk is how this side of it
+  stays correct.
+
 ### State is an edge, and an edge has to be justified
 
 Five edge types join the six that were already here: `approved_for_execution`,

@@ -156,10 +156,147 @@ And one honest limit: **returning to bare `planned` is not expressible.**
 In practice nothing wants to: a record leaves `approved_for_execution` for
 `blocked` or `cancelled`, not for `planned`.
 
-This rule is written down and nothing computes it yet. There is no `memory
-state` command, and `query` and `graph` report edges rather than a resolved
-state — deliberately, since a derivation belongs with the read path that needs
-it. Whoever builds that reads this section first.
+`memory state` is what computes it. `query` and `graph` still report edges —
+`graph` deliberately, since walking relations is a different question from
+resolving one record's state.
+
+## The objective tree
+
+**An objective may derive from another, and that is the parent relation.** It is
+a `derives_from` edge with an **objective at both ends**: positional, not a type
+of its own. The same edge type also points a decision at the objective it was
+taken under and an ADR at the decisions it came from, and both go on meaning
+exactly that — only objective → objective is parentage. A `child_of` type would
+have been unambiguous and was rejected anyway: it would widen a closed set a
+second time and leave two edges asserting one relation.
+
+**Two rules, enforced by `link`:**
+
+- **One parent.** An objective that already derives from an objective cannot
+  derive from a second, and the refusal names the parent it has.
+- **No cycles.** The refusal names the whole path.
+
+Both refusals carry the code `not_a_tree`.
+
+Several roots are normal — nothing requires an objective to have a parent.
+
+**A self-edge is refused earlier, and differently.** `derives_from X → X` is a
+cycle of length one, but it never reaches the tree rule: an edge pointing at its
+own source is refused by the current version's rule set first, so it comes back
+as `invalid_edge` — *"an edge must not point at its own source"* — and names
+neither a path nor a parent. That is the order on purpose. The refusal is what
+mattered; a path reading `X -> X` adds nothing to a message that already says
+exactly this; and running a graph rule over an edge that has not been validated
+yet would be the worse trade.
+
+So there are three refusals and they do not all read alike:
+
+| Edge | Code | What the message names |
+|---|---|---|
+| would give an objective a second parent | `not_a_tree` | the parent already on disk |
+| would close a cycle | `not_a_tree` | the whole path |
+| points at its own source | `invalid_edge` | neither |
+
+Written down because nothing branches on the code today and something might.
+
+Like the justification allowlist, both live on the **write path only**. The read
+path stays tolerant, so a log that already holds a cycle or an objective with two
+parents — hand-edited, or arrived through `promote`, which passes no gate — is
+read rather than condemned: `memory state` terminates, uses the first parent edge
+in the file, and reports what it met under `anomalies`. `validate` does not apply
+the rules and does not call a malformed tree a problem.
+
+### Open and terminal
+
+| Open | Terminal |
+|---|---|
+| `planned` · `approved_for_execution` · `blocked` · `separated` | `met` · `cancelled` |
+
+**`separated` is open, and that is the one worth stating.** It says the work
+continues but no longer under the parent it was lifted out of — not that it
+stopped. So a separated objective is still returned by `--current` and is still a
+candidate for the current one, while counting toward no parent's completion and
+blocking none. `blocked` is open for the plainer reason that waiting is not
+finishing.
+
+`query --kind objective --current` drops the two terminal states and — as it
+already does for every kind — whatever is superseded or answered. Nothing else
+removes an objective: **not its depth, and not having an open child.**
+
+### Which objective is being worked on
+
+A different question from `--current`, with a single answer. It is reported
+beside every query that admits objectives, as `current_objective` — a field of
+its own, because `hint` means truncation and nothing else.
+
+> **The open objective whose most recent `approved_for_execution` edge is the
+> latest in the log. If no open objective carries one, the open objective with
+> the most recent activity — the latest `at` among the objective itself and every
+> edge with it at either endpoint — ties broken by the later line in the file,
+> and a tie on the line too by the later entry in the file.**
+
+The rule that resolved it comes back with it, as `rule`, so the answer is never a
+guess presented as a fact. With nothing open, the field says so rather than
+naming one anyway.
+
+**The tie-break is not a corner case, and it is the real line number.** `at` is
+written to the second and this loop appends a batch of adds and links at the end
+of a turn, so most lines of a live log share their second with another record,
+and some of those seconds mix an entry with an edge. That is why the derivation
+reads the log's *lines* rather than the entries and edges split out of them: two
+slices each ordered internally cannot say which of one's members came before one
+of the other's, so the tie would have had to be guessed.
+
+**And the line runs out too, in one place.** An edge touches two records, so it
+bumps *both* of its endpoints to the same line — which means a `derives_from`
+between two objectives leaves them tied on `at` and tied on the line as well, and
+"the later line" has nothing left to separate them with. The tie then falls to
+the order the objectives' own entries sit in: **the later entry wins.** It is
+deterministic and stable, the same log always giving the same answer, and it
+decides anything at all only when those two objectives are the two most recently
+touched open ones. It is documented rather than fixed on purpose — any rule that
+separated them would have to invent a reason to prefer the parent or the child,
+and the edge is one fact about both of them, written once.
+
+Hybrid, because neither half is enough alone. Activity is free but implicit: it
+moves on its own and cannot be pinned. The mark is deliberate but costs a
+`decision` plus an edge on every context switch, which is the ceremony this loop
+exists to stop paying — and it is already available at the moment you are writing
+a decision, which is what the allowlist demands behind any state edge. There is
+no command for switching: pinning the focus is `add --kind decision` plus
+`link --type approved_for_execution`, and both already exist.
+
+**Depth suggests; it does not decide.** It is reported by `memory state` and
+nothing filters on it. Every open objective is potentially the current one — an
+urgent fix arrives, or a sibling suddenly matters more, or the draft you are
+editing turns out to be the real work, and a rule forcing the deepest node would
+make every one of those a fight with the tool.
+
+The derivation reads the **whole log**, and `--plan` applies afterwards. When the
+resolved objective falls outside the filter it is named anyway, with
+`outside_filter`, instead of being replaced by the runner-up.
+
+### How far along a parent is
+
+`memory state --id <parent>` sorts that objective's children into three buckets:
+
+| Bucket | Children |
+|---|---|
+| counted done | state `met`, or the target of a `supersedes` edge |
+| not counted | state `cancelled` or `separated` |
+| outstanding | everything else |
+
+**Superseded counts toward the parent.** Absorbed work exists — someone else did
+it — and refusing to count it would leave the parent permanently short of a child
+nobody is ever going to do again.
+
+**Blocked by an open child is derived, never written.** An objective with at
+least one open, unseparated child is reported as blocked by it, with the ids of
+the children. No edge says so, and `link --type blocked` pointing at another
+objective is still refused — which is what keeps "blocked on a sibling" and
+"blocked by my own child" from becoming indistinguishable on disk. It is
+informational and nothing acts on it: such an objective is still returned by
+`--current` and is still eligible to be the current one.
 
 ## Changing the schema
 
@@ -287,10 +424,14 @@ memory add   --plan jwt-migration --kind decision \
 
 memory link  --type supersedes --from <new-id> --to <old-id>
 memory link  --type met --from <objective-id> --to <decision-id>
+memory link  --type derives_from --from <child-objective> --to <parent-objective>
 
 memory query --plan jwt-migration --about auth --kind decision --current
 memory search --plan jwt-migration "key rotation"
 memory graph --from <id> --depth 2
+
+memory state                     # every objective: state, tree, blocking, tally
+memory state --id <objective-id> # just that one
 
 memory promote --ids <id>,<id> --to user
 memory render  --as adr
@@ -304,8 +445,10 @@ refused, and the JSON says why.
 `--scope` is `repo` by default, and `user` is the only other value. `--plan` is a
 *stamp* on `add`, which refuses without one, and a *bound* on `query` and
 `search`; other commands accept it and read the whole log, since `link` and
-`graph` are the operations the collapse exists to let cross plans. With no
-`--plan`, `AI_KIT_PLAN` is used.
+`graph` are the operations the collapse exists to let cross plans. `state` is in
+that second group on purpose — an objective's parent, its children and which
+objective is current are properties of the log, so narrowing the derivation would
+change the answers rather than the view. With no `--plan`, `AI_KIT_PLAN` is used.
 
 `--about` matches by exact tag or by path prefix: a tag ending in `/` catches
 everything under it, so `--about pkg/auth/` finds a record tagged
@@ -353,6 +496,34 @@ everything under it, so `--about pkg/auth/` finds a record tagged
 - Promotion preserves ids, does not mutate the source, is idempotent, never
   copies an edge whose other end stayed behind, and never restamps the version a
   record was written under.
+- A state resolves to the most recent state edge by `at`; a later line carrying
+  an older `at` loses, and two edges sharing an `at` are separated by which is
+  later in the file. `approved_for_execution` → `blocked` →
+  `approved_for_execution` → `met` resolves to `met`, and the stale edges under
+  it are still on disk.
+- `link` refuses a second parent for an objective and refuses an edge that would
+  close a cycle, naming the parent it already has and the whole cycle path
+  respectively; a self-edge is refused too, by the edge rules before the tree
+  rule is reached. `derives_from` with anything other than an objective at both
+  ends is untouched, including an ADR deriving from several decisions.
+- A log holding a cycle and an objective with two parents is still read: `state`
+  terminates within a deadline the test enforces, reports both anomalies, uses
+  the first parent edge in the file, and `validate` still reports `ok`.
+- `--current` over objectives returns every open one, a chain of three included,
+  and drops one the moment it is `met`; every other kind's `--current` returns
+  what it returned before, and gets no `current_objective` field at all.
+- The current objective is the most recently approved open one, or the most
+  recently touched when none is approved, and the reported rule changes with it.
+  It is derived from the whole log and says `outside_filter` when `--plan` puts
+  it out of view.
+- Four records sharing one `at`, laid out as objective, objective, an edge
+  touching both, objective, resolve the current objective to the *last line* —
+  not to the source of the edge — and moving that edge to the end moves the
+  answer with it.
+- Two objectives an edge ties to the same line fall back to entry order, and
+  swapping their two entries swaps the answer while the edge points the same way.
+- A parent's tally counts `met` and superseded children as done, leaves
+  `cancelled` and `separated` out, and reports the rest outstanding.
 
 ```bash
 go test ./...

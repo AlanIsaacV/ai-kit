@@ -31,6 +31,7 @@ Usage:
   memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--current] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
   memory graph     --from ID [--depth N]
+  memory state     [--id ID]
   memory render    --as KIND
   memory promote   --ids ID[,ID...] --to user
   memory validate  [--all]
@@ -72,6 +73,8 @@ func main() {
 		err = cmdSearch(os.Args[2:])
 	case "graph":
 		err = cmdGraph(os.Args[2:])
+	case "state":
+		err = cmdState(os.Args[2:])
 	case "render":
 		err = cmdRender(os.Args[2:])
 	case "promote":
@@ -343,6 +346,14 @@ func cmdLink(args []string) error {
 		return fail("unjustified_state", "%s", err.Error())
 	}
 
+	// And the objective tree: one parent per objective, no cycles. Same place
+	// and same reasoning as the rule above — a graph-wide question the version
+	// rule sets cannot ask, answered where every entry is already in hand, at the
+	// one moment it can still be answered at all.
+	if err := memory.CheckParent(edge.Type, edge.From, edge.To, known, memory.Edges(lines)); err != nil {
+		return fail("not_a_tree", "%s", err.Error())
+	}
+
 	if err := memory.Open(loc.Path).Append(edge); err != nil {
 		return fail("write_failed", "%s", err.Error())
 	}
@@ -408,7 +419,7 @@ func runQuery(c *common, f memory.Filter) error {
 	if err != nil {
 		return err
 	}
-	res := memory.Query(memory.Entries(lines), memory.Edges(lines), f)
+	res := memory.Query(lines, f)
 	out := map[string]any{
 		"path": loc.Path, "scope": loc.Scope, "plan": f.Plan,
 		"count": res.Count, "returned": res.Returned, "truncated": res.Truncated,
@@ -417,7 +428,73 @@ func runQuery(c *common, f memory.Filter) error {
 	if res.Hint != "" {
 		out["hint"] = res.Hint
 	}
+	// Only when the query admits objectives. A key that appeared on every read
+	// would be answering a question `query --kind decision` did not ask.
+	//
+	// `search` always admits them: it has no --kind flag, so it has no way to
+	// exclude an objective, and it therefore always carries the field. That is
+	// the invariant holding rather than an exception to it — carving `search`
+	// out would be a rule with nothing behind it.
+	if res.CurrentObjective != nil {
+		out["current_objective"] = res.CurrentObjective
+	}
 	emit(out)
+	return nil
+}
+
+// cmdState is the derivation the README used to say did not exist: what state
+// the edges put a record in, where it sits in the objective tree, what is
+// holding it up and how far along it is.
+//
+// A read command over the whole log. `--plan` is accepted and ignored here, like
+// everywhere but `query` and `search`, because narrowing the derivation would
+// change the answers rather than the view: an objective's parent, its children
+// and the current objective are properties of the log, not of the question.
+func cmdState(args []string) error {
+	fs := flag.NewFlagSet("state", flag.ExitOnError)
+	var c common
+	c.bind(fs)
+	id := fs.String("id", "", "report one objective instead of every one")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	loc, lines, err := c.load()
+	if err != nil {
+		return err
+	}
+
+	rep := memory.NewTree(lines).Report()
+
+	if *id != "" {
+		objectives := []memory.ObjectiveState{}
+		for _, o := range rep.Objectives {
+			if o.ID == *id {
+				objectives = append(objectives, o)
+			}
+		}
+		excluded := []memory.ExcludedObjective{}
+		for _, e := range rep.Excluded {
+			if e.ID == *id {
+				excluded = append(excluded, e)
+			}
+		}
+		if len(objectives)+len(excluded) == 0 {
+			return fail("unknown_objective", "no objective with id %s in %s", *id, loc.Path)
+		}
+		// The current objective and the anomalies stay as they are. Both are
+		// answers about the whole log, and narrowing to one record does not make
+		// a different objective current.
+		rep.Objectives, rep.Excluded = objectives, excluded
+	}
+
+	emit(map[string]any{
+		"path": loc.Path, "scope": loc.Scope,
+		"count":      len(rep.Objectives),
+		"objectives": rep.Objectives,
+		"excluded":   rep.Excluded,
+		"current":    rep.Current,
+		"anomalies":  rep.Anomalies,
+	})
 	return nil
 }
 

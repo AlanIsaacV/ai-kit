@@ -31,11 +31,18 @@ type Filter struct {
 // of matches; Records may be empty even when Count is large, and Truncated
 // says which of those two situations you are in.
 type Result struct {
-	Count     int      `json:"count"`
-	Returned  int      `json:"returned"`
-	Truncated bool     `json:"truncated"`
-	Hint      string   `json:"hint,omitempty"`
-	Records   []*Entry `json:"records"`
+	Count     int  `json:"count"`
+	Returned  int  `json:"returned"`
+	Truncated bool `json:"truncated"`
+	// Hint means truncation and nothing else. It says why records were withheld
+	// and what to do about it, and anything else put here would be read as that.
+	Hint string `json:"hint,omitempty"`
+	// CurrentObjective is which objective is being worked on, set only when the
+	// filter admits objectives at all. A field of its own rather than more text
+	// in Hint, because the two are unrelated answers and one is not a caveat on
+	// the other.
+	CurrentObjective *CurrentObjective `json:"current_objective,omitempty"`
+	Records          []*Entry          `json:"records"`
 }
 
 // SupersededIDs returns the set of entry ids that some later entry replaces.
@@ -76,7 +83,16 @@ func targetsOf(edges []*Edge, t EdgeType) map[string]bool {
 }
 
 // Query applies a filter and enforces the count-before-dump contract.
-func Query(entries []*Entry, edges []*Edge, f Filter) Result {
+//
+// It takes the log's lines rather than the entries and edges split out of them.
+// Both views are needed and both are taken here — but so is a third thing, the
+// order of the file itself, which the split throws away: two slices each ordered
+// internally cannot say which of one's members came before one of the other's,
+// and the current-objective tie-break is stated in terms of exactly that. See
+// Tree.recordActivity.
+func Query(lines []Line, f Filter) Result {
+	entries, edges := Entries(lines), Edges(lines)
+
 	settled := map[string]bool{}
 	if f.CurrentOnly {
 		settled = SettledIDs(edges)
@@ -88,6 +104,21 @@ func Query(entries []*Entry, edges []*Edge, f Filter) Result {
 	}
 	text := strings.ToLower(strings.TrimSpace(f.Text))
 
+	// The tree, the states and the resolved current objective are derived from
+	// every entry and every edge that reached here, and the filter applies
+	// afterwards. Deriving from the filtered subset would let --plan silently
+	// change which objective is current, and "what am I working on" must not
+	// depend on what you happened to ask about.
+	//
+	// Built only when the query admits objectives at all, since it answers
+	// nothing otherwise — which is also what keeps every other kind's --current
+	// exactly where it was.
+	var tree *Tree
+	wantsObjectives := len(kinds) == 0 || kinds[KindObjective]
+	if wantsObjectives {
+		tree = NewTree(lines)
+	}
+
 	var matched []*Entry
 	for _, e := range entries {
 		if f.CurrentOnly && settled[e.ID] {
@@ -97,6 +128,24 @@ func Query(entries []*Entry, edges []*Edge, f Filter) Result {
 			continue
 		}
 		if len(kinds) > 0 && !kinds[e.Kind] {
+			continue
+		}
+		// --current over objectives means what it means everywhere else: drop
+		// what is settled, return the rest. Settled for an objective is one
+		// state further — `met` or `cancelled` — and nothing else removes it.
+		// Neither depth nor an open child, and not `separated` either, which
+		// says the work continues elsewhere rather than that it stopped.
+		//
+		// Objectives only. Every other kind's --current returns exactly what it
+		// returned before this existed.
+		//
+		// The nil check is belt and braces, not a live case: an objective that
+		// got past the kind filter above means the query admits objectives, which
+		// is the same condition that built the tree. Keep it anyway. This is the
+		// read path, whose whole discipline is that it survives what it meets,
+		// and one future filter that lets an objective through without setting
+		// wantsObjectives would turn a query into a panic.
+		if f.CurrentOnly && e.Kind == KindObjective && tree != nil && !tree.State(e.ID).Open() {
 			continue
 		}
 		if f.Slug != "" && e.Slug != f.Slug {
@@ -138,7 +187,29 @@ func Query(entries []*Entry, edges []*Edge, f Filter) Result {
 		res.Records = matched
 	}
 	res.Returned = len(res.Records)
+
+	if wantsObjectives {
+		cur := tree.Current()
+		// Against the matches rather than the returned records: over the
+		// threshold nothing comes back at all, and "the current objective is
+		// outside your filter" would then be false of every query that asked too
+		// broadly.
+		if cur.ID != "" && !containsID(matched, cur.ID) {
+			cur.OutsideFilter = true
+			cur.Why += "; it falls outside this query's filter, so it is named here rather than replaced by the runner-up"
+		}
+		res.CurrentObjective = &cur
+	}
 	return res
+}
+
+func containsID(entries []*Entry, id string) bool {
+	for _, e := range entries {
+		if e.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // planOf is the plan a record says it came from, or "" when it says nothing.
