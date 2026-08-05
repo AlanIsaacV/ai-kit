@@ -42,9 +42,13 @@ run, and invoke `plan` for the one that is.
    against.
 5. **Verification runs in a different subagent than implementation**, with
    fresh context.
-6. **State changes go through the `memory` CLI.** Never hand-edit the log. A
-   state is an appended edge pointing at the record that justifies it, so
-   nothing already written is ever rewritten to change one.
+6. **State changes go through the `memory` CLI, and at the close it is the
+   `record` subagent that runs it.** Never hand-edit the log. A state is an
+   appended edge pointing at the record that justifies it, so nothing already
+   written is ever rewritten to change one. This thread writes the freeze at
+   step 4 and the blocker at step 5; everything the close records is written by
+   the subagent, and this thread's job afterwards is to read the log back and
+   confirm it landed.
 7. **Conversation in the user's language; everything written to disk in
    English.**
 
@@ -416,19 +420,23 @@ in a few minutes and to leave them able to navigate the code themselves.
 
 Put the findings, the risks, the assumptions and the unverified criteria in
 front of the user in one pass, ranked by how plausible they are. For each, the
-options are: fix now, record for later, or **not worth it**.
+options are: fix now, record for later, or **not worth it** — and when what they
+want kept for later is a path tried and abandoned or a place reality differed
+from the objective, say it will be a `dead-end` or a `deviation` and carry it to
+step 9 as `on_demand_kinds`, because the close writes neither unless asked.
 
 Take "not worth it" seriously. A verification pass that keeps raising scenarios
 the user knows cannot happen burns time and trains everyone to skim the
 findings. When they say a risk is not real — the gateway serializes it, the
 data can't be negative here, we'll tell the team instead — that is a decision
-worth keeping:
+worth keeping, and it gets kept as a `wont-fix`.
 
-```bash
-$MEMORY add --plan <tree-slug> --kind wont-fix \
-  --title "<the risk, stated plainly>" \
-  --body "<the user's reason>" --about <area>
-```
+This conversation happens here, with the user, and it does not move. What moves
+is the writing: the `wont-fix` records are written in step 9 by the `record`
+subagent, along with everything else this close puts on disk. So while you are
+here, **keep the user's own words** for anything they call not worth fixing —
+their reason is the body of that record, and a reason you paraphrased after the
+fact is worth much less to the session that finds it.
 
 Before raising anything in a future turn, check `--kind wont-fix` for that
 area. Re-raising something already dismissed is exactly the waste this record
@@ -436,43 +444,91 @@ exists to prevent.
 
 ### 9 — Close the objective, then look up at its parent
 
-Record what this turn actually produced:
+Hand the close to the `record` subagent. It writes every record and every edge
+this close needs — including the closing `review-finding` and the state edge —
+and **this thread writes none of them.** You have been holding the objective, the
+diff, verification's report and review's walkthrough since the session started,
+and the tail of that turn is the worst place left to be composing titles and
+choosing `--about` tags. That is the whole reason this step delegates.
 
-```bash
-$MEMORY add --plan <tree-slug> --kind decision  --title "..." --about <area>   # choices made mid-flight
-$MEMORY add --plan <tree-slug> --kind deviation --title "..." --about <area>   # where reality differed from the objective
-$MEMORY add --plan <tree-slug> --kind assumption --title "..." --about <area>  # what had to be assumed
-$MEMORY add --plan <tree-slug> --kind open-question --title "..." --about <area>
-$MEMORY add --plan <tree-slug> --kind dead-end   --title "..." --about <area>  # a path tried and abandoned
+```
+objective_draft: <absolute path to draft-objective.md>
+repo_root: <absolute path>
+objective_id: <the executable objective's id>
+plan_slug: <tree-slug>
+memory_cmd: <absolute path to the memory binary>
+verify_result: <the verify subagent's returned JSON>
+review_result: <the review subagent's returned JSON>
+triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing>
+closing_state: <met | cancelled | separated>
+on_demand_kinds:
+existing_closing_record:
+missing:
 ```
 
-`dead-end` is worth the keystrokes: without it, a future session cheerfully
-tries the thing that already failed.
+Pass pointers, not prose. `objective_draft` and `repo_root` are paths because the
+subagent opens them itself, and there is deliberately **no field for a summary of
+what happened this turn** — that synthesis is the expensive thing being moved, and
+writing it here to hand over would mean paying for it anyway.
 
-Answer an open question or an assumption by linking the record that settles it,
-rather than by editing anything:
+The last three carry **nothing after the colon on purpose**, and copying them
+exactly like that is correct. On the ordinary path their right value is no value:
+`on_demand_kinds` is empty unless step 8 produced one, and
+`existing_closing_record` and `missing` belong to the relaunch at the end of this
+step. They are in the block anyway, because a field the subagent declares and this
+thread never passes is exactly the parameter drift that gets discovered the one
+time it matters — but the subagent branches on whether they are empty, so a
+description of the field substituted where the value goes reads to it as a value.
+An `existing_closing_record` holding a sentence about being empty is how a `met`
+edge gets pointed at a sentence.
+
+What it records by default is three kinds: `decision`, `assumption`,
+`open-question`. Those are the three that anything ever reads — step 1's
+carried-in round reads the last two, and `implement` receives decisions as
+`constraints`. On top of that it writes what this turn produced rather than
+synthesised: the `wont-fix` records from step 8's triage, in the user's own words;
+an `answers` edge for anything the turn actually settled; and the closing record
+with the state edge on it.
+
+`deviation` and `dead-end` are still valid kinds in `memory`, available **on
+demand**: name one in `on_demand_kinds` when the user asks for it. Nothing at the
+close prompts for them.
+
+Closing is an edge, never an edit, and it points at the record that justifies it.
+Which state it is remains yours to decide with the user and the subagent's to
+write, which is what `closing_state` carries: `met` is the state that counts
+toward the parent; an objective that is not going to happen closes `cancelled`,
+and one whose work continues outside this parent `separated`. Those two point at
+a `decision` instead, and neither counts toward the parent's completion.
+
+#### Confirm the close landed, do not trust the report
 
 ```bash
-$MEMORY link --type answers --from <new-id> --to <question-id>
+$MEMORY state --id <objective-id>
 ```
 
-Then close the objective. Closing is an edge, never an edit: `met` is the state
-that counts toward the parent, and it points at the record that justifies it — a
-`decision` or a `review-finding`:
+Read the objective's `state` out of what comes back rather than out of the
+subagent's report. A `link` that refused inside a subagent still printed JSON and
+still exited, so "closed" in a report is a claim and this is the evidence.
 
-```bash
-CLOSE=$($MEMORY add --plan <tree-slug> --kind review-finding \
-  --title "<what verification and review actually established>" \
-  --body "<criteria met, criteria unverified, what the user accepted>" \
-  --about <areas> \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
-
-$MEMORY link --type met --from <objective-id> --to "$CLOSE"
-```
-
-An objective that is not going to happen closes with `cancelled` instead, and
-one whose work continues outside this parent with `separated`. Both point at the
-`decision` that says so, and neither counts toward the parent's completion.
+- It reads the state you asked for — `met`, `cancelled` or `separated`. The close
+  landed. Before step 10, give the user the subagent's `failures` and
+  `not_recorded` in one line: a state edge that landed says the objective closed,
+  not that everything this turn agreed to write got written. Anything the user
+  triaged **record for later** that comes back in `not_recorded` is a
+  disagreement to put to them, not a call the subagent got to make — they were
+  offered that option and are owed the news that it did not happen. Nothing in
+  either list and one line says so.
+- It still reads `approved_for_execution`, or anything else from before the
+  close: **the close did not land.** The objective is open whatever the report
+  said. Say so to the user in one line, show the subagent's `failures`, and
+  relaunch `record` with the same handover — `missing` naming exactly what did
+  not land, and `existing_closing_record` carrying the closing record's id when
+  one already exists, so nothing is written twice. Do not write the edge from
+  this thread. Do not report the objective closed, and do not move to step 10 as
+  though it were. A second failure is a stop: bring it to the user with the CLI's
+  own error, because an objective that reads closed in the conversation and open
+  in the log is the one failure this check exists to catch.
 
 Then, before anything else is chosen, look up at the parent:
 

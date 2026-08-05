@@ -36,7 +36,7 @@ implementation.
 ```
 skills/plan    turn a request into a written objective, reviewable in full
 skills/work    run one objective: pick, gate, implement, verify, review, record
-agents/        explore · implement · verify · review
+agents/        explore · implement · verify · review · record
 tools/memory   the append-only knowledge log everything writes to
 ```
 
