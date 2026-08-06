@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -608,8 +609,15 @@ func TestTheUnitRecordsOnDiskAreJudgedByTheVersionTheyDeclare(t *testing.T) {
 // Version 3 narrowed the kinds and took nothing else away — the same guard
 // version 2 gets, in the direction a bump can silently overreach.
 func TestVersion3TookNothingAwayButTheUnitKind(t *testing.T) {
-	if len(entryKindsV3) != 10 {
-		t.Errorf("version 3 knows version 1's eleven minus `unit`: %v", sortedKinds(entryKindsV3))
+	// Version 1's eleven minus `unit`, and every kind added to this set since. The
+	// count is written as that sum rather than as a number, because the number has
+	// already moved once — `hypothesis` was widened in afterwards — and a literal
+	// would have made an additive change look like a regression in the test that
+	// guards the narrowing.
+	widenedIn := []Kind{KindHypothesis}
+	if want := len(entryKindsV1) - 1 + len(widenedIn); len(entryKindsV3) != want {
+		t.Errorf("version 3 knows version 1's eleven minus `unit`, plus %d widened in since: %v",
+			len(widenedIn), sortedKinds(entryKindsV3))
 	}
 	if entryKindsV3[Kind("unit")] {
 		t.Error("version 3 exists to drop the `unit` kind")
@@ -645,6 +653,58 @@ func TestVersion3TookNothingAwayButTheUnitKind(t *testing.T) {
 	}
 	if len(EntryKinds()) != len(entryKindsV3) {
 		t.Errorf("the advertised set is version 3's: %v", EntryKinds())
+	}
+}
+
+// `hypothesis` was added to version 3's kinds in place, the way version 2 gained
+// the state edges: a widening makes no record already on disk illegal, so there
+// is nothing for a bump to protect and the current version does not move.
+//
+// The claim has two halves and both are worth a check. The kind is writable
+// today — the write gate is version 3's rules, so a set widened without the gate
+// following would advertise a value `add` refuses. And the widening did not leak
+// backwards: entryKindsV1 is its own map, and if entryKindsV3 had ever been an
+// alias of it, `hypothesis` would now be legal at version 1 and 2 as well, which
+// would quietly rewrite what those frozen rule sets say.
+func TestTheHypothesisKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T) {
+	if CurrentSchemaVersion != SchemaVersion3 {
+		t.Fatalf("widening a closed set does not bump the version, and this one is now %d", CurrentSchemaVersion)
+	}
+
+	if ps := validateEntryV3(newTestEntry(t, func(e *Entry) { e.Kind = KindHypothesis })); len(ps) != 0 {
+		t.Errorf("version 3's rules must accept `hypothesis`: %v", ps)
+	}
+	if ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = KindHypothesis })); len(ps) != 0 {
+		t.Errorf("the write gate must accept `hypothesis`: %v", ps)
+	}
+	if !slices.Contains(EntryKinds(), KindHypothesis) {
+		t.Errorf("`memory kinds` must advertise the kind the gate accepts: %v", EntryKinds())
+	}
+
+	if entryKindsV1[KindHypothesis] {
+		t.Error("the widening reached version 1's frozen set")
+	}
+	for name, ps := range map[string][]Problem{
+		"version 1": validateEntryV1(newV1Entry(t, func(e *Entry) { e.Kind = KindHypothesis })),
+		"version 2": validateEntryV2(newV2Entry(t, func(e *Entry) { e.Kind = KindHypothesis })),
+	} {
+		if problemFields(ps) != "kind" {
+			t.Errorf("%s never knew `hypothesis` and must go on refusing it, on the kind and nothing else: %v", name, ps)
+		}
+	}
+
+	// And the record a widening must never make illegal: one written before it,
+	// judged by the version it declares, still sweeps clean.
+	rep := ValidateLog("test.jsonl", []Line{
+		{Num: 1, Entry: newV1Entry(t, nil)},
+		{Num: 2, Entry: newV2Entry(t, nil)},
+		{Num: 3, Entry: newTestEntry(t, func(e *Entry) { e.Kind = KindHypothesis })},
+	})
+	if !rep.OK || len(rep.Problems) != 0 {
+		t.Fatalf("the widening must leave every record already on disk valid: %v", rep.Problems)
+	}
+	if len(rep.Unjudged) != 0 {
+		t.Fatalf("no version moved, so nothing should go unjudged: %v", rep.Unjudged)
 	}
 }
 

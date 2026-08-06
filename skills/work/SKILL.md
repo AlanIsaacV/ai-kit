@@ -461,6 +461,7 @@ verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON>
 triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing>
 closing_state: <met | cancelled | separated>
+confirmed_hypothesis:
 on_demand_kinds:
 existing_closing_record:
 missing:
@@ -471,16 +472,31 @@ subagent opens them itself, and there is deliberately **no field for a summary o
 what happened this turn** — that synthesis is the expensive thing being moved, and
 writing it here to hand over would mean paying for it anyway.
 
-The last three carry **nothing after the colon on purpose**, and copying them
+`confirmed_hypothesis` is filled **only** when this objective came out of a
+`debug` investigation, and then with the hypothesis record's id and its claim —
+nothing else, and never a note explaining that `debug` did not run. Read the id
+off the objective's own record rather than off your memory of the conversation:
+`plan` linked the two with a `caused_by` edge, and `$MEMORY graph --from
+<objective-id> --depth 1` shows it. What the subagent needs the claim for is
+deciding whether the lesson generalizes past this bug, which is the one judgment
+at the close that cannot be reconstructed from the diff.
+
+Leave it blank on every other objective. Blank is what says "no investigation
+behind this", and the subagent writes no postmortem — which for work that started
+from a request is correct, because there is nothing to derive one from.
+
+The last four carry **nothing after the colon on purpose**, and copying them
 exactly like that is correct. On the ordinary path their right value is no value:
-`on_demand_kinds` is empty unless step 8 produced one, and
-`existing_closing_record` and `missing` belong to the relaunch at the end of this
-step. They are in the block anyway, because a field the subagent declares and this
-thread never passes is exactly the parameter drift that gets discovered the one
-time it matters — but the subagent branches on whether they are empty, so a
-description of the field substituted where the value goes reads to it as a value.
-An `existing_closing_record` holding a sentence about being empty is how a `met`
-edge gets pointed at a sentence.
+`confirmed_hypothesis` is empty unless `debug` ran, `on_demand_kinds` is empty
+unless step 8 produced one, and `existing_closing_record` and `missing` belong to
+the relaunch at the end of this step. They are in the block anyway, because a
+field the subagent declares and this thread never passes is exactly the parameter
+drift that gets discovered the one time it matters — but the subagent branches on
+whether they are empty, so a description of the field substituted where the value
+goes reads to it as a value. An `existing_closing_record` holding a sentence about
+being empty is how a `met` edge gets pointed at a sentence, and a
+`confirmed_hypothesis` holding one is how a postmortem gets derived from an
+investigation that never happened.
 
 What it records by default is three kinds: `decision`, `assumption`,
 `open-question`. Those are the three that anything ever reads — step 1's
@@ -488,7 +504,14 @@ carried-in round reads the last two, and `implement` receives decisions as
 `constraints`. On top of that it writes what this turn produced rather than
 synthesised: the `wont-fix` records from step 8's triage, in the user's own words;
 an `answers` edge for anything the turn actually settled; and the closing record
-with the state edge on it.
+with the state edge on it. When `confirmed_hypothesis` is set it also weighs one
+`postmortem`, derived from that hypothesis and written only if the lesson
+generalizes beyond this bug — a bug whose lesson does not closes without one.
+
+Let it make that call. Whether a lesson travels is a judgment about the artifacts
+this thread stopped being the cheap place to read three steps ago, and asking for
+a postmortem per fix is how the promotion pass at step 10 ends up offering a
+folder nobody wants.
 
 `deviation` and `dead-end` are still valid kinds in `memory`, available **on
 demand**: name one in `on_demand_kinds` when the user asks for it. Nothing at the

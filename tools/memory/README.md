@@ -75,11 +75,21 @@ can now be linked, whatever plan produced them.
 | Group | Kinds | What they are for |
 |---|---|---|
 | Core | `objective` `decision` `deviation` | Make the work loop run |
-| Learning | `assumption` `open-question` `wont-fix` `dead-end` | Stop verification theater and repeated work |
+| Learning | `assumption` `open-question` `wont-fix` `dead-end` `hypothesis` | Stop verification theater and repeated work |
 | Knowledge | `adr` `postmortem` `review-finding` | Outlive the plan, get promoted upward |
 
 `wont-fix` earns its place: once you decide a risk is not worth covering, that
 decision is recorded, and no later verification pass raises it again.
+
+`hypothesis` is a claim under test during an investigation, written with how it
+was tested, a verdict, the evidence and that evidence's fidelity. **A confirmed
+root cause is not a kind of its own** — it is the hypothesis whose verdict is
+`confirmed`, because a second kind would store one claim twice under two names.
+The rejected ones are what a later session most often lacks: the record of what
+has already been eliminated. It is not `dead-end`, which means an approach
+abandoned during implementation, and it is not `postmortem`, which is a closing
+artifact and a lesson that generalizes past the bug it came from. It was
+[widened into version 3](#the-versions) in place.
 
 There used to be a `unit` as well, for a piece of work under an objective, and
 removing it is what [schema version 3](#changing-the-schema) is. An objective may
@@ -387,7 +397,7 @@ rather than passed over in silence.
 |---|---|---|
 | 1 | eleven kinds; `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
 | 2 | eleven kinds; `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
-| 3 | ten kinds; `scope` and the edge types are version 2's | `unit` was removed from the entry kinds. Nothing else moved |
+| 3 | eleven kinds; `scope` and the edge types are version 2's | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis` |
 
 **Version 3 is the current version, and dropping the `unit` kind is what the bump
 bought.** `entryKindsV3` is version 1's eleven without it, and everything else is
@@ -412,6 +422,16 @@ already on disk declare version 1, most of them carrying `"scope": "plan"`, and
 `validateEntryV1` goes on judging them by the rules they were written against,
 where that value is valid. Not a byte of them was rewritten, and no legacy value
 entered the current validator.
+
+**The kinds widened afterwards, and stayed inside version 3.** `entryKindsV3`
+gained `hypothesis`, appended to the map literal, with `CurrentSchemaVersion`
+left at 3 — the same move version 2 made with the state edges, for the same
+reason: widening makes no record already written illegal, so a bump would protect
+nothing. `entryKindsV1` did not gain it, so an entry declaring version 1 or 2
+with kind `hypothesis` is refused by the rules it declares, which is what says
+the widening happened inside one version rather than everywhere at once. What it
+costs is the same false alarm the rule above names: a binary built before this
+reports `kind: unknown` where it would have reported an honest `unjudged`.
 
 **The edge types widened afterwards, and stayed inside version 2.**
 `edgeTypesV2` holds version 1's six plus the five [state
@@ -549,6 +569,10 @@ everything under it, so `--about pkg/auth/` finds a record tagged
   not leak backwards through a map two names shared. Through the sweep, the same
   three records produce exactly one problem, on the line that declares 3, and
   nothing goes unjudged.
+- `hypothesis` is accepted by version 3's validator and by the write gate,
+  advertised by `memory kinds`, refused by version 1's and version 2's rules on
+  the `kind` field, and `CurrentSchemaVersion` is still 3 — a widening does not
+  move the version, and it leaves every record already on disk valid.
 - Promotion preserves ids, does not mutate the source, is idempotent, never
   copies an edge whose other end stayed behind, and never restamps the version a
   record was written under.

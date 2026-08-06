@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### The `hypothesis` kind, widened into version 3 in place
+
+A claim under test during an investigation, written with how it was tested, a
+verdict, the evidence and that evidence's fidelity. It is what gives the loop's
+symptom-first route somewhere to put what it learns, and the rejected ones are
+the point as much as the confirmed one: they are the record of what has already
+been eliminated, which is what a later session most often lacks.
+
+- **No version 4.** `entryKindsV3` gained a member and `CurrentSchemaVersion`
+  stayed at 3, because widening a closed set makes no record already written
+  illegal and so has nothing for a bump to protect — the same move version 2 made
+  when it gained the five state edges. `entryKindsV1` did not gain it, so an entry
+  declaring version 1 or 2 with this kind is refused by the rules it declares, and
+  the widening is inside one version rather than everywhere at once. The cost is
+  the one the compatibility rule names: a binary built before this reports
+  `kind: unknown` — a false problem — where an unknown version would have given an
+  honest `unjudged`.
+- **A confirmed root cause is not a kind of its own.** It is the hypothesis whose
+  verdict is `confirmed`. REJECTED: a separate `root-cause` kind, which stores one
+  claim twice under two names and leaves a reader to work out which copy is
+  authoritative; and reusing `dead-end`, which means an approach abandoned during
+  implementation and would split "what was already tried" across two kinds.
+- **No new edge type and no change to the justification map.** A `hypothesis`
+  justifies no state edge — it is evidence about the system, not a decision about
+  an objective — and the objective a confirmed one produces is tied to it with the
+  `caused_by` edge version 1 already shipped.
+
 ### Schema version 3
 
 The `unit` kind is gone. An objective may derive from an objective, so the work

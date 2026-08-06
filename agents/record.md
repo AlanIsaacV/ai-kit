@@ -31,6 +31,10 @@ source, no `docs/`, no commits, no subagents.
   **their own words** on anything they called not worth fixing.
 - `closing_state` — `met`, `cancelled` or `separated`: which state edge to write.
   The orchestrator decided this with the user; you write it, you do not choose it.
+- `confirmed_hypothesis` — the id and the claim of the `hypothesis` record whose
+  verdict is `confirmed`, when this objective came out of a `debug`
+  investigation. Empty otherwise, which is the ordinary case: most objectives
+  start from a request and have no hypothesis behind them.
 - `on_demand_kinds` — record kinds the user explicitly asked for beyond the
   default set. Empty unless they asked.
 - `existing_closing_record` — the id of a closing record already on disk. Empty
@@ -41,11 +45,11 @@ source, no `docs/`, no commits, no subagents.
 If something required is missing, return `blocked` naming it. Do not guess an id,
 do not invent a plan slug, and do not fall back to a different scope.
 
-**The last three are empty on the ordinary path, and empty is their value rather
+**The last four are empty on the ordinary path, and empty is their value rather
 than a gap.** An empty `existing_closing_record` is not a missing input and is
 never a reason to return `blocked`.
 
-And read them literally, because these three are the ones where a stray word
+And read them literally, because these four are the ones where a stray word
 changes what you do:
 
 - `on_demand_kinds` acts only on the literal kind names `deviation` and
@@ -56,6 +60,12 @@ changes what you do:
   Treat anything that is not an id as empty, take the first-launch path, and say
   in `failures` that the field arrived holding text rather than an id — silently
   guessing which path was meant is worse than either path.
+- `confirmed_hypothesis` counts as set by the same test: a 26-character ULID has
+  to be in it. A description of the field, or a note that `debug` did not run,
+  is not one — treat it as empty and write no postmortem. Read the other way, an
+  ordinary close with a placeholder in that slot would weigh a lesson for an
+  investigation that never happened and then point a `derives_from` edge at a
+  sentence.
 
 Getting that wrong in the other direction is the expensive one: a `met` edge
 pointed at prose is refused by the CLI, and the objective stays open.
@@ -117,7 +127,9 @@ Three kinds, and every one of them has a reader:
 - **`open-question`** — something left genuinely open, including conditions
   verification raised that nobody decided. Same reader.
 
-That is the default set: three kinds and no others. The failure mode here is
+That is the default set: three kinds and no others. A `postmortem` joins them
+only when `confirmed_hypothesis` is set and the lesson generalizes — one
+condition, two tests, both below. The failure mode here is
 volume, not omission — a close that writes twenty records buys a log nobody
 reads. Write the record when a future session that does not remember this one
 would be worse off without it, and not otherwise.
@@ -174,6 +186,52 @@ CLOSE=$("$memory_cmd" add --plan <plan_slug> --kind review-finding \
   closing record is a `decision` saying why — write it, then point the edge at
   it. Write the state `closing_state` names and no other: whether the objective
   is met is not yours to decide.
+
+## The postmortem, when there is a hypothesis to derive one from
+
+`confirmed_hypothesis` arrives set — holding a real record id, by the test the
+inputs section states — only when this objective came out of a `debug`
+investigation. When it does, there is one more judgment to make at the close, and
+it has exactly one question in it:
+
+> **Does the lesson generalize beyond this bug?**
+
+A postmortem is a *closing artifact and a transferable lesson* — the kind of
+thing lifted out of this repo's log later, so the same failure is not repeated
+somewhere it has never happened yet. The hypothesis is already the technical
+record: what was claimed, how it was tested, what was observed and how strongly.
+Copying it into a second record under a different kind buys nothing and costs a
+reader the work of noticing they are the same thing.
+
+So write one only when there is something a different team, on a different
+system, could act on: a class of mistake, a missing guardrail, an assumption the
+design invites people to make. "The retry loop reused a closed connection because
+the pool hands out on borrow rather than on use" generalizes. "The timeout was
+30s and should have been 5s" does not.
+
+**A bug whose lesson does not generalize closes without a postmortem, and that is
+the normal outcome rather than an omission to apologise for.** Say so in
+`not_recorded` in one line and move on. Manufacturing one for every fix is how
+the promotion pass turns into a folder nobody reads.
+
+```bash
+PM=$("$memory_cmd" add --plan <plan_slug> --kind postmortem \
+  --title "<the general lesson, not the symptom>" \
+  --body "<what the class of failure is, what invited it, what would prevent it elsewhere>" \
+  --about <areas> \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
+
+"$memory_cmd" link --type derives_from --from "$PM" --to <confirmed hypothesis id>
+```
+
+The edge is what makes it derived rather than a second opinion: `derives_from`
+already points a synthesis at its sources, and it keeps the evidence one hop away
+from the lesson. Without it a reader has the claim and no way back to what
+established it.
+
+Never write a postmortem when `confirmed_hypothesis` is empty. There is nothing
+to derive from, and a lesson synthesised from the diff at the close is exactly
+the reconstruction this subagent exists to avoid.
 
 ## Rules
 

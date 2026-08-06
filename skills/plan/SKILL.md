@@ -1,6 +1,6 @@
 ---
 name: plan
-description: "Author an objective before any code is written — explore the problem, clarify what is genuinely ambiguous, weigh the real options with the user, and produce a reviewable draft, with acceptance criteria and the fidelity each one demands, that they can read in full and correct. Use this whenever the user describes something they want built, changed, migrated or fixed and the shape of the work is not already settled between you. Use it again at any depth: opening a more specific objective underneath one that already exists is this skill's job, and it will keep descending until it reaches one a single session can deliver. Triggers on: 'plan this', 'planeá esto', 'quiero hacer X', 'necesito implementar', 'how should we approach', 'armemos un plan', 'ayudame a pensar', 'vamos a refactorizar', 'necesito migrar', 'quiero agregar la feature', 'me gustaría que el sistema haga X', 'esto es más grande de lo que pensábamos', 'abramos algo más chico debajo', 'define the acceptance criteria'. Use it for small work too — a two-file fix gets the same structure, just one objective instead of a tree, so never skip it because the task looks small. To move an objective that already exists and already carries fidelity-annotated criteria forward, use the `work` skill instead; `plan` authors, `work` executes."
+description: "Author an objective before any code is written — explore the problem, clarify what is genuinely ambiguous, weigh the real options with the user, and produce a reviewable draft, with acceptance criteria and the fidelity each one demands, that they can read in full and correct. Use this whenever the user describes something they want built, changed, migrated or fixed and the shape of the work is not already settled between you. Use it again at any depth: opening a more specific objective underneath one that already exists is this skill's job, and it will keep descending until it reaches one a single session can deliver. Triggers on: 'plan this', 'planeá esto', 'quiero hacer X', 'necesito implementar', 'how should we approach', 'armemos un plan', 'ayudame a pensar', 'vamos a refactorizar', 'necesito migrar', 'quiero agregar la feature', 'me gustaría que el sistema haga X', 'esto es más grande de lo que pensábamos', 'abramos algo más chico debajo', 'define the acceptance criteria'. Use it for small work too — a two-file fix gets the same structure, just one objective instead of a tree, so never skip it because the task looks small. To move an objective that already exists and already carries fidelity-annotated criteria forward, use the `work` skill instead; `plan` authors, `work` executes. When what arrived is a symptom whose cause nobody has established, this skill invokes `debug` before writing any criterion, and authors against what it finds."
 ---
 
 # plan
@@ -140,6 +140,54 @@ evidence intact: a parent objective's draft carries them under `## Findings`, an
 a paraphrase that drops the anchors is what makes the next level down pay for the
 same exploration twice.
 
+#### When the cause is not established, `debug` runs first
+
+This is the check to make here, with `explore`'s findings in hand and before step
+2 asks anything, because it is the last cheap moment: from step 5 onward you are
+writing criteria, and criteria written against a cause nobody has established
+freeze a guess into the thing every later step is graded against.
+
+The test is narrow, and it is **not** "the request mentions a bug":
+
+- **The work turns on *why* something is failing, and nobody can say why** — the
+  symptom is known, the cause is not, and what to build depends on which it turns
+  out to be. That goes to `debug`.
+- **The cause is understood and what is left is to build the fix** — somebody can
+  state it in a sentence and point at where it happens, whether they found it
+  five minutes ago or six months ago. That is an ordinary objective and it is
+  yours. A bug being the subject changes nothing about the shape of the work.
+
+The line is whether the criteria you are about to write depend on an answer
+nobody has. When they do, say so and **invoke the `debug` skill in this same
+conversation** — the Skill tool, skill `debug`, or `ai-kit:debug` where the plugin
+namespace is in play — with three things: the symptom as the user stated it, the
+tree slug you resolved above, and whatever `explore` established, its claims and
+`path:line` anchors intact. It takes all three as given rather than paying for
+them again — the slug is the one its hypotheses get written under and the one you
+will pass to `add` in step 7, and the findings go into its own `explore` call as
+`prior_findings`. It narrows the cause, writes each hypothesis it tests to the
+log, and comes back here with a confirmed one, or with an honest "I don't know"
+and the list of what it ruled out. Then start this step again against what it
+found.
+
+All three of its findings are things you can author against, and the third one is
+the one worth naming. An investigation that **confirmed a cause** gives you the
+thing to write criteria about. One that **ran out of hypotheses** gives you the
+objective that makes the thing observable, which is real work with real criteria.
+One that concluded **nothing is broken** — a misread output, an expectation that
+was never true, a difference between two environments — is not a wasted trip and
+not an input to refuse: it is a finding, and what follows from it is a question
+for you and the user, whose honest answer is sometimes a small objective (a
+guard, a clearer error, a line of documentation) and sometimes none at all. Say
+so plainly when it is none; a `plan` that concludes there is nothing to build has
+done its job. What no finding gives you is permission to guess.
+
+**When you were invoked *from* `debug`, this check is already answered** and
+sending it back would be a loop between two skills each waiting for the other.
+The finding it handed you — the confirmed hypothesis with its fidelity, or the
+list of what was ruled out — is what you author against, and step 7 links the
+objective to it.
+
 #### Show the immediate parent, and say what it is not
 
 When the objective you are about to write has a parent, show it to the user
@@ -178,6 +226,12 @@ Ask when the answer changes what gets built:
 
 Ask those in one `AskUserQuestion` call, multiple choice where the options are
 discrete. Do not ask a question whose every answer leads to the same next step.
+
+One answer sends you backwards rather than forwards: **"we don't actually know
+why it does that."** An unknown cause surfaces here at least as often as it does
+in step 1, because it is a question's answer more often than it is a request's
+wording. Go back to step 1's `debug` check with it — the criteria have not been
+written yet, and that is the only reason this is still cheap.
 
 Everything you did **not** ask — every judgment call you made to keep moving —
 goes on the table in step 4 and then in the draft under Assumptions. That is the
@@ -468,7 +522,10 @@ record.
 `--plan` names the **objective tree**, not this objective. For a child, take it
 from the parent's own record — `origin.plan`, which `state` reports as `plan` —
 rather than coining a slug out of the new objective's name. For a root, coin one
-for the tree. And never run `memory init` for a child: one log holds one
+for the tree — unless `debug` ran, in which case it already resolved or coined
+that slug and wrote its hypotheses under it, and using a second one would put the
+investigation and the objective it produced behind two different queries. And
+never run `memory init` for a child: one log holds one
 objective tree, `init` is for a repo that has no log at all, and `link` refuses
 an endpoint it cannot see in the same log, so a child written into a log of its
 own could not be attached to its parent at all.
@@ -495,6 +552,25 @@ An objective derives from at most one objective, and the second `derives_from`
 is refused naming the parent it already has. There is no taking a parent back
 afterwards, so link it to the one it is actually under. A root gets no edge at
 all.
+
+```bash
+# When you were invoked from `debug`: point the objective at the hypothesis whose
+# verdict is `confirmed`, using the record id `debug` handed you.
+$MEMORY link --type caused_by --from "$OBJ" --to <confirmed-hypothesis-id>
+```
+
+Write it now, in the same breath as the objective, because this is the last
+moment anybody knows which hypothesis this work came out of. Left to a later
+step, the investigation and the work it produced are associated only by sharing a
+plan slug — which is to say by a string, findable by nobody who does not already
+know to look. `caused_by` already exists and points a record at what led to it;
+there is no new edge type here.
+
+Only when `debug` ran. An objective planned from a request has nothing to point
+at, and inventing an endpoint for the edge is worse than not having it. When the
+investigation ended without a confirmed hypothesis, there is no target either:
+the objective you just wrote is the one that makes the thing observable, and it
+caused nothing yet.
 
 ```bash
 # One record per surviving assumption — these are open until something answers

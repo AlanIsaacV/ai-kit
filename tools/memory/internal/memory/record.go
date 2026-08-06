@@ -56,6 +56,13 @@ const SchemaVersion2 = 2
 // and validateEdgeV3 names edgeTypesV2 rather than declaring sets of their own.
 // `implements` in particular stays valid: six edges on disk use it.
 //
+// The kinds have since gained `hypothesis`, in place and without a version 4,
+// the way version 2 gained the state edges: widening a closed set makes no
+// record already written illegal, so there is nothing for a bump to protect.
+// What it costs is a binary built before the widening, which has rules for
+// version 3 and so reports the new kind as a problem rather than as an honest
+// unjudged. See entryKindsV3.
+//
 // The bump is what makes this safe rather than tidy. Six entries on disk carry
 // kind `unit` — two reading as version 1, four declaring version 2 — and both of
 // those versions' validators name entryKindsV1. Narrowing that map in place
@@ -101,6 +108,14 @@ const (
 	KindOpenQuestion Kind = "open-question"
 	KindWontFix      Kind = "wont-fix"
 	KindDeadEnd      Kind = "dead-end"
+	// KindHypothesis is a claim under test during an investigation, written with
+	// the evidence that tested it and a verdict. A confirmed root cause is not a
+	// kind of its own: it is the hypothesis whose verdict is `confirmed`, which
+	// is what keeps one claim from being stored twice under two names. A rejected
+	// one is the record of what has already been eliminated — the thing a later
+	// session most often lacks. It is not `dead-end`, which means an approach
+	// abandoned during implementation.
+	KindHypothesis Kind = "hypothesis"
 
 	// Knowledge — what is meant to outlive the plan and be promoted upward.
 	KindADR           Kind = "adr"
@@ -130,8 +145,13 @@ var entryKindsV1 = map[Kind]bool{
 }
 
 // entryKindsV3 is the closed set of entry kinds as schema version 3 defines it:
-// version 1's eleven without `unit`. Ten kinds, and the whole of what the bump
-// changed.
+// version 1's eleven without `unit`, plus `hypothesis`. Dropping `unit` is the
+// whole of what the bump changed; `hypothesis` arrived afterwards, appended to
+// this set in place, because widening takes nothing back from any record on disk
+// and so needs no version of its own. The two edits are listed apart here on
+// purpose — a reader asking what version 3 *bought* is asking about the
+// narrowing, and a widening folded into that sentence would look like part of
+// the price.
 //
 // Every member is written out rather than copied from entryKindsV1 or aliased to
 // it, and that is not ceremony — it is the trap this version had to walk around.
@@ -144,6 +164,7 @@ var entryKindsV3 = map[Kind]bool{
 	KindObjective: true, KindDecision: true, KindDeviation: true,
 	KindAssumption: true, KindOpenQuestion: true, KindWontFix: true, KindDeadEnd: true,
 	KindADR: true, KindPostmortem: true, KindReviewFinding: true,
+	KindHypothesis: true,
 }
 
 // entryKinds is the current schema's set: what `memory kinds` prints and what

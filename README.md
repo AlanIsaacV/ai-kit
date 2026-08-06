@@ -35,6 +35,7 @@ implementation.
 
 ```
 skills/plan    turn a request into a written objective, reviewable in full
+skills/debug   turn a symptom into a stated cause, with the evidence that established it
 skills/work    run one objective: pick, gate, implement, verify, review, record
 agents/        explore · implement · verify · review · record
 tools/memory   the append-only knowledge log everything writes to
@@ -44,6 +45,13 @@ tools/memory   the append-only knowledge log everything writes to
 `work` runs one objective per turn and is resumable in a fresh session. Small
 work takes the same path — one turn of the loop instead of many — so there is no
 second door to pick and no escalation path to get wrong.
+
+`debug` is the second front-end onto the same vocabulary, not a second loop. It
+runs when what arrived is a symptom rather than a request: it narrows the cause
+one hypothesis at a time, writes every hypothesis it tests to the log with the
+fidelity of the evidence behind it, never touches the repository it is
+investigating, and hands its finding to `plan` — which sizes the resulting work
+and writes the objective, exactly as it would from any other starting point.
 
 ## How the drafts work
 
