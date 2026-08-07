@@ -38,6 +38,7 @@ skills/plan    turn a request into a written objective, reviewable in full
 skills/debug   turn a symptom into a stated cause, with the evidence that established it
 skills/work    run one objective: pick, gate, implement, verify, review, record
 skills/ask     answer a question about a repo from its code and its log, every claim cited
+skills/bootstrap  give an unseen repo a README.md and a CLAUDE.md in one invocation
 agents/        explore · implement · verify · review · record
 tools/memory   the append-only knowledge log everything writes to
 ```

@@ -107,8 +107,11 @@ session can ever check. `memory anchors` is what checks it, and a `gotcha` whose
 code was rewritten is the case that has to reach a human.
 
 Which surface writes one: `implement` does, inline, at the moment the constraint
-is discovered. The rule that decides when a *why* is written as a `gotcha` at all
-is stated in `agents/implement.md` and nowhere else.
+is discovered, and `bootstrap` does from its interview, for a repository the loop
+has not worked in yet and whose traps are only in its owner's head. The rule that
+decides when a *why* is written as a `gotcha` at all is stated in
+`agents/implement.md`, and `skills/bootstrap/SKILL.md` states it for that one
+interview case and for no other.
 
 There used to be a `unit` as well, for a piece of work under an objective, and
 removing it is what [schema version 3](#changing-the-schema) is. An objective may
