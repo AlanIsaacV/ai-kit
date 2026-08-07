@@ -37,6 +37,7 @@ implementation.
 skills/plan    turn a request into a written objective, reviewable in full
 skills/debug   turn a symptom into a stated cause, with the evidence that established it
 skills/work    run one objective: pick, gate, implement, verify, review, record
+skills/ask     answer a question about a repo from its code and its log, every claim cited
 agents/        explore · implement · verify · review · record
 tools/memory   the append-only knowledge log everything writes to
 ```
@@ -52,6 +53,14 @@ one hypothesis at a time, writes every hypothesis it tests to the log with the
 fidelity of the evidence behind it, never touches the repository it is
 investigating, and hands its finding to `plan` — which sizes the resulting work
 and writes the objective, exactly as it would from any other starting point.
+
+`ask` is not part of the loop at all: it changes nothing and only a human invokes
+it. It answers a question about a repository from the two places an answer can be
+checked — mechanism read off the code, rationale read out of the log — in one
+narrative where every claim carries a `path:line` or a record id and date. The
+answer is ephemeral unless somebody says to keep it, and what gets kept is
+anchored, so the next ask over the same ground checks those anchors instead of
+reading everything again.
 
 ## How the drafts work
 

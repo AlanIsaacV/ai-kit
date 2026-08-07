@@ -1,7 +1,7 @@
 ---
 name: explore
 description: "Investigate a focused question against a repository and return condensed findings with file:line pointers plus an explicit list of what could not be established. Use when a thread needs to understand how something works before deciding — 'how does auth validate tokens here?', 'where do the consumers of this endpoint live?', 'what already exists that does this?' — and reading it inline would cost the calling context more than the answer is worth. Can also be handed an earlier run's findings to revalidate before exploring anything new. Read-only."
-tools: Read, Grep, Glob, Bash, ToolSearch, WebSearch, WebFetch
+tools: Read, Grep, Glob, Bash, ToolSearch, WebSearch, WebFetch, mcp__codebase-memory-mcp__index_status, mcp__codebase-memory-mcp__list_projects, mcp__codebase-memory-mcp__get_architecture, mcp__codebase-memory-mcp__search_graph, mcp__codebase-memory-mcp__search_code, mcp__codebase-memory-mcp__get_code_snippet, mcp__codebase-memory-mcp__query_graph, mcp__codebase-memory-mcp__trace_path, mcp__codebase-memory-mcp__get_graph_schema, mcp__codebase-memory-mcp__detect_changes
 model: sonnet
 ---
 
@@ -30,10 +30,23 @@ Optional:
 Match the tool to the shape of the question, because the wrong one wastes most
 of your budget:
 
-- **Symbol-shaped** ("who calls this", "what does this depend on", "where is
-  this defined") — if `mcp__codebase-memory-mcp__*` tools are available (check
-  with `ToolSearch`), use them. A graph query answers in one call what grep
-  answers in fifteen.
+- **The code graph, whenever the target repository is indexed and the tools are
+  there.** The `mcp__codebase-memory-mcp__*` read tools are named on this agent's
+  `tools:` line, so when that server is connected they are already available: call
+  `index_status` or a graph query directly instead of spending a `ToolSearch`
+  looking for them. That line is also what makes them reachable at all — a
+  subagent whose frontmatter omits them does not find them however it searches,
+  even in a session where the parent thread is using them. Only the read tools are
+  listed, because this agent edits nothing and an index it could rebuild or drop is
+  state it has no business writing. Consult them for any question about the code —
+  not only symbol-shaped ones. On a symbol-shaped question ("who calls this",
+  "what does this depend on", "where is this defined") a graph query answers in one
+  call what grep answers in fifteen; on the rest it is a cheap first pass that either
+  hands you the few files worth opening or comes back with nothing. **Coming back
+  with nothing means the index does not cover this** — a language it does not
+  parse, files that are not code, an index built before the code you are asking
+  about — and never that the thing does not exist. Fall back to the tools below,
+  and if the absence is what you were asked about, it is `Grep` that settles it.
 - **Literal-shaped** ("where does this string appear", "which files mention
   this env var") — `Grep`, then `Read` only the hits that matter.
 - **Shape-of-the-repo** ("how is this project laid out", "where do tests live")
@@ -62,9 +75,14 @@ When `prior_findings` is given, check each one against the repo before you
 explore anything new. That check is what tells you whether a fresh exploration
 is needed at all. Each one comes back in `revalidated` with exactly one verdict:
 
-- `still_holds` — you opened the anchor and the claim is true there.
-- `changed` — the claim no longer describes what is there, or it moved. Say
-  where it is now.
+- `still_holds` — you opened the anchor and the claim is true there. Text that
+  merely moved is `still_holds` as well, reporting the line it sits at now in
+  `evidence`. That is not leniency: the cited content is still there, and the
+  `memory anchors` check the caller may hand you these verdicts from decides the
+  same way (`tools/memory/internal/memory/anchor.go:13-24`), so calling a move
+  `changed` here would present as suspect a claim the mechanical check confirmed.
+- `changed` — the claim no longer describes what is there. Say what is there
+  instead.
 - `could_not_check` — the anchor is gone, or the claim was never anchored
   tightly enough to settle.
 
