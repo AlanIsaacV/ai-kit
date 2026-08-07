@@ -82,9 +82,24 @@ without stating it is the one thing the diff does not show:
 ```bash
 "$memory_cmd" add --plan <plan_slug> --kind gotcha \
   --title "<the constraint, stated so a later session can check it>" \
-  --body "<why the code is shaped this way, and the path:line it constrains>" \
-  --about <area>
+  --body "<why the code is shaped this way>" \
+  --about <area> \
+  --anchor <repo-relative path>:<line> \
+  --anchor <repo-relative path>:<first>-<last>
 ```
+
+**The code it constrains goes in `--anchor`, not in the body.** `add` refuses a
+`gotcha` with no anchor, and it refuses one whose file or line range does not
+exist — so a citation you fumbled is a failed command here rather than a claim
+nobody can check months from now. The flag repeats; cite every place the
+constraint reaches. Lines are 1-based and the range covers both ends.
+
+That is what makes the record readable by something other than a person:
+`memory anchors` hashes those exact lines and says whether they are still there,
+so a later session is told which gotchas went stale instead of trusting all of
+them. Write the citation tight — the lines the constraint actually binds, not the
+whole function — because everything inside it is what a rewrite is measured
+against.
 
 ## Return this
 

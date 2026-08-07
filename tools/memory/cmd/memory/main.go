@@ -26,10 +26,11 @@ const usage = `memory — append-only knowledge log
 
 Usage:
   memory init      [--scope repo|user]
-  memory add       --plan SLUG --kind KIND --title TEXT --about TAG[,TAG...] [--body TEXT] [--slug SLUG]
+  memory add       --plan SLUG --kind KIND --title TEXT --about TAG[,TAG...] [--body TEXT] [--slug SLUG] [--anchor PATH:LINE] [--repo-root PATH]
   memory link      --type TYPE --from ID --to ID
   memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--current] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
+  memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--current] [--repo-root PATH]
   memory graph     --from ID [--depth N]
   memory state     [--id ID]
   memory render    --as KIND
@@ -71,6 +72,8 @@ func main() {
 		err = cmdQuery(os.Args[2:])
 	case "search":
 		err = cmdSearch(os.Args[2:])
+	case "anchors":
+		err = cmdAnchors(os.Args[2:])
 	case "graph":
 		err = cmdGraph(os.Args[2:])
 	case "state":
@@ -218,6 +221,9 @@ func cmdAdd(args []string) error {
 	body := fs.String("body", "", "free text")
 	slug := fs.String("slug", "", "kebab-case label; derived from --title when omitted")
 	about := fs.String("about", "", "comma-separated tags: areas, paths, topics")
+	var anchors anchorSpecs
+	fs.Var(&anchors, "anchor", "code this record rests on, as repo-relative path:line or path:first-last; repeat for more than one")
+	anchorRoot := fs.String("repo-root", "", "repository the --anchor paths are relative to (default: the repo the log lives in)")
 	unit := fs.String("unit", "", "id of the unit of work this came out of")
 	author := fs.String("author", "", "who recorded it; defaults to git config user.name")
 	repo := fs.String("repo", "", "repo label; defaults to the repo directory name")
@@ -247,8 +253,29 @@ func cmdAdd(args []string) error {
 		s = deriveSlug(*title)
 	}
 
+	// The anchors are resolved against the working tree before the record exists,
+	// so a citation that names nothing refuses the whole write. The alternative is
+	// an anchor nobody can check sitting in an append-only log.
+	//
+	// --repo-root is what makes an anchored record writable at user scope, where
+	// the log resolves to a home directory and loc.Repo is empty. The requirement
+	// itself never bends: a `gotcha` is refused without an anchor in every scope,
+	// so what this flag changes is that the root can be supplied rather than only
+	// inferred.
+	anchorRepo := firstNonEmpty(*anchorRoot, loc.Repo)
+	built, err := buildAnchors(anchorRepo, anchors)
+	if err != nil {
+		return err
+	}
+
 	origin := &memory.Origin{
-		Repo:   firstNonEmpty(*repo, filepath.Base(loc.Repo)),
+		// The repository the anchors were read out of is the repository this
+		// record came from, and at user scope it is the only one there is:
+		// loc.Repo is empty there, and filepath.Base("") is ".", which names
+		// nothing. An anchor's path says where in a repository and never which
+		// one, so a user-scope record whose origin.repo read "." would carry a
+		// citation nobody could resolve.
+		Repo:   firstNonEmpty(*repo, repoLabel(loc.Repo), repoLabel(anchorRepo)),
 		Plan:   plan,
 		Author: firstNonEmpty(*author, os.Getenv("AI_KIT_AUTHOR"), gitUserName(loc.Repo)),
 		Unit:   *unit,
@@ -268,6 +295,7 @@ func cmdAdd(args []string) error {
 		About:   splitList(*about),
 		Title:   strings.TrimSpace(*title),
 		Body:    strings.TrimSpace(*body),
+		Anchors: built,
 		Origin:  origin,
 	}
 
@@ -412,6 +440,80 @@ func cmdSearch(args []string) error {
 	return runQuery(&c, memory.Filter{
 		Plan: plan, Text: text, CurrentOnly: *current, Limit: *limit, Threshold: *threshold,
 	})
+}
+
+// cmdAnchors is `gotcha`'s reader, and the only mechanical check in this tool of
+// whether a record's claim about code still stands.
+//
+// It takes the same filter the read commands take, because the question "is what
+// we wrote about this area still true" is asked by area, by kind and by plan the
+// same way every other question here is. What it returns is one verdict per
+// anchored record and never the record's body: this answers whether to go and
+// look, not what the record said.
+//
+// Exit 0 whatever the verdicts are. `changed` is an answer, not a refusal, and
+// the exit code in this CLI says whether the command ran.
+func cmdAnchors(args []string) error {
+	fs := flag.NewFlagSet("anchors", flag.ExitOnError)
+	var c common
+	c.bind(fs)
+	about := fs.String("about", "", "comma-separated tags; a tag ending in / matches by path prefix")
+	kinds := fs.String("kind", "", "comma-separated kinds")
+	slug := fs.String("slug", "", "exact slug")
+	text := fs.String("text", "", "case-insensitive substring over title and body")
+	current := fs.Bool("current", false, "drop entries something else supersedes")
+	limit := fs.Int("limit", 0, "check at most N, most recent first")
+	repoRoot := fs.String("repo-root", "", "repository to check against (default: the repo the log lives in)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	plan, err := c.planFilter()
+	if err != nil {
+		return err
+	}
+	loc, lines, err := c.load()
+	if err != nil {
+		return err
+	}
+
+	abs, err := resolveRepoRoot(firstNonEmpty(*repoRoot, loc.Repo))
+	if err != nil {
+		return err
+	}
+
+	// The count-before-dump threshold is off here and only here. It exists to stop
+	// a broad query from spending the caller's context on record bodies, and this
+	// command returns no bodies — withholding the verdicts would leave the check
+	// unrunnable over a whole log, which is the one way anybody wants to run it.
+	res := memory.Query(lines, memory.Filter{
+		Plan:        plan,
+		About:       splitList(*about),
+		Kinds:       toKinds(splitList(*kinds)),
+		Slug:        *slug,
+		Text:        *text,
+		CurrentOnly: *current,
+		Limit:       *limit,
+		Threshold:   -1,
+	})
+
+	checks := memory.CheckEntries(abs, res.Records)
+	counts := map[memory.Verdict]int{}
+	for _, v := range memory.Verdicts() {
+		counts[v] = 0
+	}
+	for _, r := range checks {
+		counts[r.Verdict]++
+	}
+
+	emit(map[string]any{
+		"path": loc.Path, "scope": loc.Scope, "plan": plan,
+		"repo_root": abs,
+		"matched":   res.Count,
+		"checked":   len(checks),
+		"counts":    counts,
+		"records":   checks,
+	})
+	return nil
 }
 
 func runQuery(c *common, f memory.Filter) error {
@@ -694,6 +796,8 @@ func cmdKinds(args []string) error {
 		"scopes":         memory.Scopes(),
 		"threshold":      memory.DefaultThreshold,
 		"justifications": justifications,
+		"anchored_kinds": memory.AnchoredKinds(),
+		"verdicts":       memory.Verdicts(),
 	})
 	return nil
 }
@@ -725,12 +829,87 @@ func splitList(s string) []string {
 	return out
 }
 
+// resolveRepoRoot turns whatever names the working tree into an absolute path,
+// and refuses one that is not a directory.
+//
+// The refusal is the point. Every anchor resolves under this path, so a typo in
+// it would otherwise come back as `could_not_check` on every record at once —
+// and that verdict is read as "the claim could not be verified", which is a
+// sentence about the code rather than about the flag. One refusal says which of
+// the two it is.
+func resolveRepoRoot(root string) (string, error) {
+	if root == "" {
+		return "", fail("no_repo_root", "no repository to work against: pass --repo-root <path>")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", fail("no_repo_root", "%s", err.Error())
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fail("no_repo_root", "--repo-root %s: %s", root, err.Error())
+	}
+	if !info.IsDir() {
+		return "", fail("no_repo_root", "--repo-root %s is not a directory", root)
+	}
+	return abs, nil
+}
+
+// anchorSpecs collects a repeatable --anchor. Repeatable rather than
+// comma-separated like --about and --ids: those take single tokens, and a path
+// is the one value here that could plausibly contain the separator.
+type anchorSpecs []string
+
+func (a *anchorSpecs) String() string { return strings.Join(*a, " ") }
+
+func (a *anchorSpecs) Set(v string) error {
+	*a = append(*a, v)
+	return nil
+}
+
+func buildAnchors(repoRoot string, specs anchorSpecs) ([]memory.Anchor, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	if repoRoot == "" {
+		return nil, fail("no_repo_root", "--anchor needs a repository to read the cited lines out of, "+
+			"and --scope user resolves to a log outside any repo: pass --repo-root <path>")
+	}
+	root, err := resolveRepoRoot(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]memory.Anchor, 0, len(specs))
+	for _, spec := range specs {
+		path, line, height, err := memory.ParseAnchorSpec(spec)
+		if err != nil {
+			return nil, fail("bad_anchor", "%s", err.Error())
+		}
+		a, err := memory.NewAnchor(root, path, line, height)
+		if err != nil {
+			return nil, fail("bad_anchor", "%s", err.Error())
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
 func toKinds(ss []string) []memory.Kind {
 	out := make([]memory.Kind, 0, len(ss))
 	for _, s := range ss {
 		out = append(out, memory.Kind(s))
 	}
 	return out
+}
+
+// repoLabel is the directory name a repo root is known by, and empty for a root
+// that is empty — where filepath.Base would answer ".", a label that names no
+// repository and reads like one.
+func repoLabel(root string) string {
+	if strings.TrimSpace(root) == "" {
+		return ""
+	}
+	return filepath.Base(filepath.Clean(root))
 }
 
 func firstNonEmpty(vals ...string) string {

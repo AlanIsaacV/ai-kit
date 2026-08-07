@@ -667,6 +667,8 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 		Scopes         []string            `json:"scopes"`
 		Threshold      int                 `json:"threshold"`
 		Justifications map[string][]string `json:"justifications"`
+		AnchoredKinds  []string            `json:"anchored_kinds"`
+		Verdicts       []string            `json:"verdicts"`
 	}
 	if err := json.Unmarshal(stdout, &out); err != nil {
 		t.Fatal(err)
@@ -743,6 +745,18 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 			t.Errorf("%q carries no rule and must not be listed as though it did", relation)
 		}
 	}
+
+	// Same obligation, second rule: which kinds are refused without an anchor is
+	// enforced by the write gate, so a caller who cannot read it here only ever
+	// learns it by being refused.
+	if strings.Join(out.AnchoredKinds, ",") != "gotcha" {
+		t.Errorf("`gotcha` is the one kind that owes an anchor, advertised as %v", out.AnchoredKinds)
+	}
+	// And the vocabulary `anchors` answers in, which agents/explore.md fixes at
+	// exactly these three. A fourth would be two vocabularies for one idea.
+	if strings.Join(out.Verdicts, ",") != "still_holds,changed,could_not_check" {
+		t.Errorf("the three verdicts are published as they are documented, got %v", out.Verdicts)
+	}
 }
 
 // What `kinds` publishes has to be what `link` enforces. Read out of the CLI on
@@ -792,9 +806,15 @@ func TestTheAdvertisedAllowlistIsTheOneLinkEnforces(t *testing.T) {
 // addKind is `add` with the kind spelled out. The justification rule is a
 // question about the *target's* kind, so a test of it needs a log holding one
 // entry of each.
+//
+// Every one of them gets an anchor, not only the kinds that are refused without
+// one. Any record may carry anchors, and a helper that branched on which kinds
+// require them would be a second copy of the rule its own tests are meant to
+// catch drifting.
 func addKind(t *testing.T, r repo, kind, title string) string {
 	t.Helper()
-	res := runBare(t, r, "add", "--plan", "demo", "--kind", kind, "--title", title, "--about", "auth")
+	res := runBare(t, r, "add", "--plan", "demo", "--kind", kind, "--title", title,
+		"--about", "auth", "--anchor", anchorSpec(t, r))
 	if res.code != 0 {
 		t.Fatalf("add --kind %s: exit %d\n%s%s", kind, res.code, res.stdout, res.stderr)
 	}

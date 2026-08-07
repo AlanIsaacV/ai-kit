@@ -713,15 +713,19 @@ func TestTheHypothesisKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testi
 // test above states in full and it is not repeated here; what a second widening
 // adds is a claim about the pair of them, which is that two of them still do not
 // amount to a bump.
+//
+// The kind has since gained a requirement — an anchor — so the fixture carries
+// one. What that costs and why it did not need a version 4 either is the test
+// below.
 func TestTheGotchaKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T) {
 	if CurrentSchemaVersion != SchemaVersion3 {
 		t.Fatalf("two widenings and no narrowing since, so the version is still 3, not %d", CurrentSchemaVersion)
 	}
 
-	if ps := validateEntryV3(newTestEntry(t, func(e *Entry) { e.Kind = KindGotcha })); len(ps) != 0 {
+	if ps := validateEntryV3(newTestEntry(t, asGotcha)); len(ps) != 0 {
 		t.Errorf("version 3's rules must accept `gotcha`: %v", ps)
 	}
-	if ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = KindGotcha })); len(ps) != 0 {
+	if ps := ValidateEntry(newTestEntry(t, asGotcha)); len(ps) != 0 {
 		t.Errorf("the write gate must accept `gotcha`: %v", ps)
 	}
 	if !slices.Contains(EntryKinds(), KindGotcha) {
@@ -732,8 +736,8 @@ func TestTheGotchaKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T
 		t.Error("the widening reached version 1's frozen set")
 	}
 	for name, ps := range map[string][]Problem{
-		"version 1": validateEntryV1(newV1Entry(t, func(e *Entry) { e.Kind = KindGotcha })),
-		"version 2": validateEntryV2(newV2Entry(t, func(e *Entry) { e.Kind = KindGotcha })),
+		"version 1": validateEntryV1(newV1Entry(t, asGotcha)),
+		"version 2": validateEntryV2(newV2Entry(t, asGotcha)),
 	} {
 		if problemFields(ps) != "kind" {
 			t.Errorf("%s never knew `gotcha` and must go on refusing it, on the kind and nothing else: %v", name, ps)
@@ -744,13 +748,91 @@ func TestTheGotchaKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T
 		{Num: 1, Entry: newV1Entry(t, nil)},
 		{Num: 2, Entry: newV2Entry(t, nil)},
 		{Num: 3, Entry: newTestEntry(t, func(e *Entry) { e.Kind = KindHypothesis })},
-		{Num: 4, Entry: newTestEntry(t, func(e *Entry) { e.Kind = KindGotcha })},
+		{Num: 4, Entry: newTestEntry(t, asGotcha)},
 	})
 	if !rep.OK || len(rep.Problems) != 0 {
 		t.Fatalf("both widenings must leave every record already on disk valid: %v", rep.Problems)
 	}
 	if len(rep.Unjudged) != 0 {
 		t.Fatalf("no version moved, so nothing should go unjudged: %v", rep.Unjudged)
+	}
+}
+
+// The anchor requirement is the one rule in version 3 that takes something back
+// instead of widening, and it stayed inside the version because it condemns no
+// record on disk — there are zero `gotcha` records in either log. What has to
+// hold is that it reaches exactly as far as it was meant to: this kind, this
+// version, and nothing else.
+func TestOnlyGotchaIsRefusedWithoutAnAnchorAndOnlyUnderVersion3(t *testing.T) {
+	if CurrentSchemaVersion != SchemaVersion3 {
+		t.Fatalf("a tightening that condemns no record still does not move the version, and this one is now %d",
+			CurrentSchemaVersion)
+	}
+
+	ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = KindGotcha }))
+	if problemFields(ps) != "anchors" {
+		t.Fatalf("an unanchored gotcha is refused on the anchors field and nothing else: %v", ps)
+	}
+	if !strings.Contains(ps[0].Message, "--anchor") {
+		t.Errorf("the refusal must say how to satisfy it, got %q", ps[0].Message)
+	}
+
+	// Every other kind is written without one. The field is on Entry, so any of
+	// them may carry anchors; none of them owes one.
+	for _, k := range EntryKinds() {
+		if anchoredKindsV3[k] {
+			continue
+		}
+		if p := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = k })); len(p) != 0 {
+			t.Errorf("kind %q must still be writable with no anchor: %v", k, p)
+		}
+		if p := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = k; e.Anchors = testAnchors() })); len(p) != 0 {
+			t.Errorf("and must still be writable with one: %v", p)
+		}
+	}
+
+	// The rule exists in version 3's rule set and nowhere else, which is what
+	// dispatching per version buys: a record declaring 1 or 2 is never asked for
+	// an anchor, on any kind, however this version's rules move.
+	for name, ps := range map[string][]Problem{
+		"version 1": validateEntryV1(newV1Entry(t, nil)),
+		"version 2": validateEntryV2(newV2Entry(t, nil)),
+	} {
+		if len(ps) != 0 {
+			t.Errorf("%s was written before anchors existed and must go on being judged as it was: %v", name, ps)
+		}
+	}
+}
+
+// An anchor nobody can resolve is not an anchor, so the shape is judged whatever
+// kind carries it. The hash is the exception worth naming: what is required is
+// that it names its algorithm, not that the algorithm is one this binary
+// computes — a digest a later binary wrote is a record this one cannot check,
+// which `memory anchors` reports as could_not_check rather than as a lie.
+func TestAMalformedAnchorIsRefusedButAnUnknownAlgorithmIsNot(t *testing.T) {
+	cases := map[string]struct {
+		anchor Anchor
+		field  string
+	}{
+		"no path":        {Anchor{Line: 4, Lines: 2, Hash: testHash}, "anchors[0].path"},
+		"absolute path":  {Anchor{Path: "/etc/passwd", Line: 4, Lines: 2, Hash: testHash}, "anchors[0].path"},
+		"climbing path":  {Anchor{Path: "../elsewhere/token.go", Line: 4, Lines: 2, Hash: testHash}, "anchors[0].path"},
+		"line zero":      {Anchor{Path: "pkg/auth/token.go", Line: 0, Lines: 2, Hash: testHash}, "anchors[0].line"},
+		"no height":      {Anchor{Path: "pkg/auth/token.go", Line: 4, Hash: testHash}, "anchors[0].lines"},
+		"no hash":        {Anchor{Path: "pkg/auth/token.go", Line: 4, Lines: 2}, "anchors[0].hash"},
+		"unnamed digest": {Anchor{Path: "pkg/auth/token.go", Line: 4, Lines: 2, Hash: strings.TrimPrefix(testHash, "sha256:")}, "anchors[0].hash"},
+	}
+	for name, tc := range cases {
+		ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Anchors = []Anchor{tc.anchor} }))
+		if problemFields(ps) != tc.field {
+			t.Errorf("%s: expected a %q problem, got %v", name, tc.field, ps)
+		}
+	}
+
+	future := Anchor{Path: "pkg/auth/token.go", Line: 4, Lines: 2,
+		Hash: "blake3:" + strings.Repeat("ab", 32)}
+	if ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Anchors = []Anchor{future} })); len(ps) != 0 {
+		t.Errorf("an algorithm this binary does not compute is unjudgeable, not invalid: %v", ps)
 	}
 }
 

@@ -98,10 +98,13 @@ already happened. It is not `decision`, which presupposes an option was taken an
 says what it displaced; what gets written here often had no alternative. **A
 `gotcha` is written because the code cannot be asked the question**, so nothing
 regenerates it — which is what separates it from anything stored merely because
-asking the code twice is expensive. What should happen to one whose code has moved
-is undecided, and so is whether the path:line it constrains — body text today —
-ever becomes a field: both wait on what an anchor check turns out to be. It was
-[widened into version 3](#the-versions) in place, after `hypothesis`.
+asking the code twice is expensive. It was [widened into version 3](#the-versions)
+in place, after `hypothesis`.
+
+**It is the one kind that is refused without an [anchor](#anchors).** Nothing
+regenerates a `gotcha`, so an unanchored one is a claim about code that no later
+session can ever check. `memory anchors` is what checks it, and a `gotcha` whose
+code was rewritten is the case that has to reach a human.
 
 Which surface writes one: `implement` does, inline, at the moment the constraint
 is discovered. The rule that decides when a *why* is written as a `gotcha` at all
@@ -113,6 +116,91 @@ derive from an objective, so the work under one is another objective and the kin
 named a distinction the tool no longer draws. The records already on disk that
 carry it declare version 1 or version 2 and are still judged by the rules those
 versions state, where the kind is valid.
+
+## Anchors
+
+A record may cite the code its claim rests on, as a field rather than as a
+`path:line` in the body:
+
+```json
+"anchors": [{"path": "pkg/auth/token.go", "line": 41, "lines": 3,
+             "hash": "sha256:6afeb2dc…"}]
+```
+
+`path` is repo-relative, `line` is 1-based, `lines` counts the line it starts on,
+and `hash` is a digest of those lines exactly as they were. It is a field so that
+nothing depends on every body being written the same way, and it is optional on
+every kind — only [`gotcha`](#record-kinds) is refused without one.
+
+`memory add --anchor pkg/auth/token.go:41-43` builds it, reading the file at that
+moment. **A citation that names nothing is refused at write time**, because the
+log is append-only and this is the only place a typo can still be caught; left to
+the check it would surface months later as a `could_not_check` indistinguishable
+from a file somebody deleted. The flag repeats for more than one anchor.
+
+**A path says where in a repository, never which repository.** The only thing on
+the record that says which one is `origin.repo`, stamped by `add`. That is enough
+at repo scope, where the log and the code live together — and it is *not* enough
+at user scope, where the log is `~/.ai-kit/memory.jsonl` and the promoted records
+in it came from anywhere. So `memory anchors --scope user` checks those paths
+against whatever repository the caller happens to be standing in, which is a
+different question from the one the record was written to answer. Read the
+verdicts there against `origin.repo` yourself; checking a log's anchors in a
+repository other than its own is not something this command does for you.
+
+At user scope `add` also has no repo to read the cited lines out of, so
+`--repo-root` supplies one. The requirement does not bend for the scope: a
+`gotcha` with no anchor is refused in every scope, and what the flag changes is
+that the root can be given rather than only inferred.
+
+### Checking one
+
+```bash
+memory anchors --kind gotcha --about pkg/auth/
+```
+
+It reports, for each anchored record the filter matched, **exactly one verdict** —
+the same three `agents/explore.md` states for a revalidated finding:
+
+| Verdict | What it means |
+|---|---|
+| `still_holds` | the cited text is in the file; `found_at` says where, and `moved` says whether that is still the line the record wrote |
+| `changed` | the file was read and the cited text is not in it anywhere |
+| `could_not_check` | the file could not be read, or the anchor is not one this binary can resolve |
+
+A record's verdict is its worst anchor's — `changed` over `could_not_check` over
+`still_holds` — because a record with one rewritten anchor is one to look at
+whatever its others say, and a partly checkable one must not read as checked.
+
+**How it works, in full:** it hashes the cited lines and compares that against
+every window of the same height in the file. That is the entire mechanism. No
+git, no AST, no symbol lookup, no fuzzy matching — so movement is detected
+without any history, which matters because the repo it is pointed at may be a
+shallow clone or not a git repository at all.
+
+**Nothing is normalized, and a reformat therefore reports `changed`.** Not
+whitespace, not case, not indentation. That false positive is deliberate: it
+costs a human one glance, and the tolerance that would suppress it also
+suppresses the rewrites the check exists to catch. A false `still_holds` is worse
+than having no record at all.
+
+Three consequences worth stating, because each looks like an omission:
+
+- **Text that moved is `still_holds`, not a fourth verdict.** The cited content
+  is still there; the check names the line it is at now. `moved` as a verdict
+  would give the system two vocabularies for one idea.
+- **Text that appears more than once is `still_holds` with every match named.**
+  Choosing one of them would be the check guessing which occurrence the record
+  meant, and guessing is the one thing a mechanical check must not do.
+- **The check never rewrites the record.** No `--fix`, no auto-updated line. The
+  log is append-only and this reports only. `--repo-root` says which working tree
+  to read and defaults to the repo the log lives in; a value that is not a
+  directory is one refusal rather than `could_not_check` on every record, since a
+  typo in the flag is a fact about the command and that verdict reads as a fact
+  about the code.
+
+It makes no language-model call and no network call, opens files read-only, and
+exits 0 whatever the verdicts are — `changed` is an answer, not a refusal.
 
 ## Edge types
 
@@ -413,7 +501,7 @@ rather than passed over in silence.
 |---|---|---|
 | 1 | eleven kinds; `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
 | 2 | eleven kinds; `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
-| 3 | twelve kinds; `scope` and the edge types are version 2's | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis` and then `gotcha` |
+| 3 | twelve kinds; `scope` and the edge types are version 2's; entries may carry `anchors` | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis` and then `gotcha`, and the optional `anchors` field arrived the same way — with one rule that tightens: a `gotcha` without one is refused |
 
 **Version 3 is the current version, and dropping the `unit` kind is what the bump
 bought.** `entryKindsV3` started as version 1's eleven without it — the two kinds
@@ -451,6 +539,30 @@ rather than everywhere at once. What it costs is the same false alarm the rule
 above names: a binary built before this reports `kind: unknown` where it would
 have reported an honest `unjudged`. Two widenings do not add up to a bump: the
 direction is what decides, not the count.
+
+**The `anchors` field arrived inside version 3, and it brought the one rule here
+that takes something back.** The field itself is the easy half: optional, so every
+record written before it stays legal, which is what the compatibility rule calls
+free. The rule is not — **a `gotcha` with no anchor is refused**, and that makes a
+record shape that was legal yesterday illegal today, which is what the rule above
+says needs a bump.
+
+It stayed inside version 3 on one ground, and the ground is a fact rather than an
+argument: **it condemned no record on disk.** When the rule landed there were zero
+`gotcha` records in either log — the kind had been widened into this same version
+and never written — so a version 4 would have protected nothing and would have
+cost every record a stamp nobody could read. Checked at the time rather than
+assumed, and stated in the past tense on purpose: gotchas are being written now,
+and every one of them was written under the rule. A later reader should not have
+to re-run that count to trust this paragraph, because the count that matters is
+the one taken the day the rule arrived.
+
+The rule lives in `validateEntryV3` and in `anchoredKindsV3`, so a record
+declaring version 1 or 2 is never asked for an anchor whatever this version does
+next. **Adding a second kind to that set now is a bump**, and that is the line:
+what made this one affordable is the empty set that was behind it, not the size
+of the change. `hypothesis` and `review-finding` are the obvious candidates, and
+both have records on disk — so neither can be added the way `gotcha` was.
 
 **The edge types widened afterwards, and stayed inside version 2.**
 `edgeTypesV2` holds version 1's six plus the five [state
@@ -513,8 +625,15 @@ memory link  --type supersedes --from <new-id> --to <old-id>
 memory link  --type met --from <objective-id> --to <decision-id>
 memory link  --type derives_from --from <child-objective> --to <parent-objective>
 
+memory add   --plan jwt-migration --kind gotcha \
+             --title "The lock is taken before the write, not after" \
+             --body "A deadlock in March; the order is not derivable from this file." \
+             --about auth,pkg/auth/ \
+             --anchor pkg/auth/token.go:41-43
+
 memory query --plan jwt-migration --about auth --kind decision --current
 memory search --plan jwt-migration "key rotation"
+memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
 memory graph --from <id> --depth 2
 
 memory state                     # every objective: state, tree, blocking, tally
@@ -594,6 +713,30 @@ everything under it, so `--about pkg/auth/` finds a record tagged
   move the version, and it leaves every record already on disk valid.
 - `gotcha` clears the same six checks, and the version is still 3 with both
   widenings in: two of them do not add up to a bump.
+- Anchors survive a round trip through the log field for field, on a record
+  carrying two of them, and the log still sweeps clean afterwards.
+- `add --kind gotcha` with no anchor is refused on the `anchors` field, the
+  refusal says how to satisfy it, and nothing reaches the log; the same record
+  with an anchor is written. Every other kind is still written without one, and
+  every other kind may still carry one.
+- An anchor whose file does not exist, whose range runs past the end of it, whose
+  lines run backwards, or whose path climbs out of the repo is refused by `add`,
+  not recorded and reported later.
+- A record written before anchors existed, declaring version 1 or 2, is never
+  asked for one — the rule is in version 3's rule set and nowhere else.
+- Cited text that moved reports `still_holds` with the line it is at now and
+  `moved`, while the stored line and the record's bytes on disk are untouched.
+- Cited text that was rewritten reports `changed`; a file that cannot be read
+  reports `could_not_check` and the note names the file. Cited text appearing
+  twice reports `still_holds` with both lines and a match count, never a choice.
+- A record's verdict is its worst anchor's, and a record with no anchors is
+  skipped rather than counted as holding.
+- `anchors` checks every match rather than withholding above the threshold, over
+  a log well past it, in under a second; `--repo-root` moves which working tree
+  is read without moving the log.
+- Whitespace, case and indentation all move an anchor's hash — the check
+  normalizes nothing, on purpose — and checking writes nothing to the file it
+  read.
 - Promotion preserves ids, does not mutate the source, is idempotent, never
   copies an edge whose other end stayed behind, and never restamps the version a
   record was written under.

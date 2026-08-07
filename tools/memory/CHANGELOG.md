@@ -2,6 +2,67 @@
 
 ## Unreleased
 
+### Anchors, and `memory anchors` to check them
+
+A record may now cite the code its claim rests on as a structured field —
+`{path, line, lines, hash}` on `anchors` — and one subcommand says, for each
+anchored record, whether the cited code is still there. It is what gives `gotcha`
+a reader: the kind had a writer and nothing anywhere read one back.
+
+```bash
+memory add --kind gotcha --title "…" --about auth --anchor pkg/auth/token.go:41-43
+memory anchors --kind gotcha --about pkg/auth/
+```
+
+- **The check is the simplest thing that tells moved from changed.** It hashes
+  the cited lines and compares that against every window of the same height in
+  the file. No git, no AST, no symbol extraction, no fuzzy matching — so it needs
+  no history and works against a shallow clone or a directory that is not a
+  repository at all. REJECTED: a normalized fingerprint and a git pre-filter,
+  both of which give little more information, guarantee nothing, and would have
+  been guessed at before anybody had used the simple one.
+- **Nothing is normalized, so a reformat reports `changed`.** Deliberate, and the
+  reasoning is the whole design: a false `changed` costs a human one glance, and
+  a false `still_holds` launders an unchecked claim into a confirmed one. Whether
+  that noise is tolerable in real use is the thing to find out by using it.
+- **Three verdicts, the ones `agents/explore.md` already states** —
+  `still_holds`, `changed`, `could_not_check`. Text that moved is `still_holds`
+  naming the line it is at now. REJECTED: a fourth verdict `moved`, which would
+  give the system two vocabularies for one idea and two places to keep in step.
+- **Text appearing more than once is `still_holds` with every match named**,
+  because choosing one would be the check guessing what the record meant.
+- **The check never rewrites a record.** No `--fix`, no auto-updated line. The
+  log is append-only and this reports only. `--repo-root` chooses the working
+  tree; cross-repo use is out of scope until something asks for it.
+- **No language-model call and no network call**, and read-only over the
+  repository it is pointed at. Its cost is a process, not tokens: it swept this
+  repo's whole log in under 20ms when it landed, and the work is one file read
+  per anchor rather than one per record, so the log's length is not what it
+  scales with.
+- **An unresolvable citation is refused by `add`**, not stored and reported
+  later. The log is append-only, so write time is the only place a typo can be
+  caught, and a `could_not_check` months later is indistinguishable from a file
+  somebody deleted.
+- **The field is a widening; the `gotcha` rule is not, and stayed inside version
+  3 anyway.** `anchors` is optional, so every record already written stays legal
+  and `CurrentSchemaVersion` is still 3. Requiring one on `gotcha` does make a
+  record shape that was legal illegal — the direction that normally needs a bump
+  — and it stayed because it condemned nothing: **when the rule landed there were
+  zero `gotcha` records in either log**, counted rather than assumed. Past tense
+  on purpose — gotchas are being written now, and every one of them was written
+  under the rule, so the count that justifies this is the one taken the day it
+  arrived and not one a later reader can reproduce. The rule is in
+  `validateEntryV3` and in `anchoredKindsV3`; `validateEntryV1` and
+  `validateEntryV2` were not touched, so a record declaring an older version is
+  never asked for an anchor. Adding a second kind to that set is now a bump:
+  `hypothesis` and `review-finding` both have records on disk.
+- **`memory kinds` publishes `anchored_kinds` and `verdicts`**, for the reason it
+  publishes the justification allowlist: a rule the tool enforces but does not
+  advertise is a rule a caller only ever meets as a refusal.
+- **`memory anchors` is the one read command with the count-before-dump
+  threshold off.** It returns a verdict per record and no bodies, and a check
+  that withheld its answers above 25 records could not be run over a log.
+
 ### The `gotcha` kind, widened into version 3 in place
 
 A *why* that reading the code will never recover: a constraint the code obeys
@@ -25,12 +86,14 @@ none.
   justifies no state edge — it is a constraint on the code, not a decision about
   an objective — so `internal/memory/justification.go` is untouched and the eleven
   edge types are the eleven that were there.
-- **The anchor is body text, not a field.** The path:line a `gotcha` constrains is
-  written into the body. REJECTED, for now: a structured anchor field, which
-  presumes an answer to what an anchor check is — a question this repo has open and
-  which a schema field written here would settle from outside the objective that
-  owns it. If it is ever promoted to a field, the records written under this
-  widening are what has to migrate.
+- **The anchor is body text, not a field.** ~~The path:line a `gotcha` constrains
+  is written into the body. REJECTED, for now: a structured anchor field, which
+  presumes an answer to what an anchor check is — a question this repo has open
+  and which a schema field written here would settle from outside the objective
+  that owns it.~~ Reversed by the anchors work above, in the objective that owned
+  the question: it is a field, and a `gotcha` without one is refused. The
+  migration this bullet anticipated cost nothing, because no `gotcha` was ever
+  written between the two changes.
 - **Nothing already on disk is re-kinded.** Not by this widening, and not by `adr`
   becoming a kind the close writes — which needed no schema change at all, since
   `adr` has been in the set since version 1 and only lacked an authored path to it.

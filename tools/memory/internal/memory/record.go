@@ -51,10 +51,10 @@ const SchemaVersion2 = 2
 // objective, and a separate kind for it named a distinction the tool no longer
 // draws.
 //
-// It narrows nothing else, and no field changed. The scopes are version 2's and
-// the edge types are version 2's, which is why validateEntryV3 names scopesV2
-// and validateEdgeV3 names edgeTypesV2 rather than declaring sets of their own.
-// `implements` in particular stays valid: six edges on disk use it.
+// It narrows nothing else. The scopes are version 2's and the edge types are
+// version 2's, which is why validateEntryV3 names scopesV2 and validateEdgeV3
+// names edgeTypesV2 rather than declaring sets of their own. `implements` in
+// particular stays valid: six edges on disk use it.
 //
 // The kinds have since gained `hypothesis` and then `gotcha`, in place and
 // without a version 4, the way version 2 gained the state edges: widening a
@@ -62,6 +62,12 @@ const SchemaVersion2 = 2
 // bump to protect. What it costs is a binary built before a widening, which has
 // rules for version 3 and so reports the newer kind as a problem rather than as
 // an honest unjudged. See entryKindsV3.
+//
+// One field arrived the same way — `anchors`, optional on every entry, which
+// leaves every record written before it legal — and with it the one rule in this
+// version that takes something back rather than widening: a `gotcha` without an
+// anchor is refused. See anchoredKindsV3 for why that did not need a version 4
+// and what would make the next such rule need one.
 //
 // The bump is what makes this safe rather than tidy. Six entries on disk carry
 // kind `unit` — two reading as version 1, four declaring version 2 — and both of
@@ -128,6 +134,9 @@ const (
 	// option was taken and says what it displaced; what gets written here often
 	// had no alternative. It is not `dead-end`, which is an approach abandoned
 	// during implementation.
+	//
+	// It is the one kind version 3 refuses to write without an Anchor. See
+	// anchoredKindsV3.
 	KindGotcha Kind = "gotcha"
 
 	// Structural.
@@ -176,6 +185,13 @@ var entryKindsV3 = map[Kind]bool{
 	KindHypothesis: true, KindGotcha: true,
 }
 
+// anchoredKindsV3 is the kinds version 3 will not write without at least one
+// Anchor. It is the one rule here that narrows, and it stayed inside version 3
+// because no record of this kind existed when it landed. Adding a kind to this
+// set is a bump: every candidate now has records on disk that it would condemn.
+// The README's Anchors and versions sections carry the argument.
+var anchoredKindsV3 = map[Kind]bool{KindGotcha: true}
+
 // entryKinds is the current schema's set: what `memory kinds` prints and what
 // the write gate enforces. Whoever adds a version repoints this at the new
 // version's set — that is one of the three obligations the README names.
@@ -191,6 +207,17 @@ var entryKinds = entryKindsV3
 // by the CLI's help and error messages so the closed set is stated in exactly
 // one place.
 func EntryKinds() []Kind { return sortedKinds(entryKinds) }
+
+// AnchoredKinds returns the kinds the current schema refuses without an anchor,
+// sorted. Published by `memory kinds` for the same reason the justification
+// allowlist is: a rule the tool enforces but does not advertise is a rule a
+// caller only ever meets as a refusal.
+//
+// It names version 3's set directly rather than going through a current-schema
+// alias the way entryKinds does, because there is one set and no second caller
+// to keep in step. A version 4 that changes which kinds owe an anchor repoints
+// this function, and that is the whole of the obligation.
+func AnchoredKinds() []Kind { return sortedKinds(anchoredKindsV3) }
 
 func sortedKinds(set map[Kind]bool) []Kind {
 	out := make([]Kind, 0, len(set))
@@ -376,6 +403,30 @@ type Origin struct {
 	Unit string `json:"unit,omitempty"`
 }
 
+// Anchor is a place in the code a record's claim rests on, kept structured so
+// the claim can be re-checked by a process instead of by a reader. What checking
+// one means is in anchor.go; `memory anchors` is what runs it.
+//
+// It is a field rather than a `path:line` parsed back out of the body, because a
+// regex over prose ties the whole mechanism to nobody ever writing a body
+// differently.
+type Anchor struct {
+	// Path is repo-relative and slash-separated, so the record still resolves in
+	// a clone checked out somewhere else. *Which* repo it is relative to is
+	// `origin.repo` and nothing else — the path itself does not carry it.
+	Path string `json:"path"`
+	// Line is 1-based, and it is where the cited text was when the record was
+	// written. The check never rewrites it: text that moved is reported at the
+	// line it is at now, and this one stays as the record wrote it.
+	Line int `json:"line"`
+	// Lines is how many lines the citation covers, counting Line itself.
+	Lines int `json:"lines"`
+	// Hash names its algorithm — `sha256:<hex>` — rather than leaving it assumed,
+	// so a digest some later binary computed differently is recognisable as one
+	// this binary cannot check instead of being reported as text that changed.
+	Hash string `json:"hash"`
+}
+
 // Entry is one recorded thing. Written once, never modified: a correction is a
 // new entry with a supersedes edge pointing at this one.
 //
@@ -395,6 +446,10 @@ type Entry struct {
 	About   []string `json:"about"`
 	Title   string   `json:"title"`
 	Body    string   `json:"body,omitempty"`
+	// Anchors sits on Entry rather than on the one kind that requires it, so any
+	// record that happens to cite code can be checked. Which kinds are *refused*
+	// without one is a validation rule; see anchoredKindsV3.
+	Anchors []Anchor `json:"anchors,omitempty"`
 	Origin  *Origin  `json:"origin,omitempty"`
 }
 

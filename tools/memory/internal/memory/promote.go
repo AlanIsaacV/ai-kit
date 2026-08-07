@@ -61,13 +61,17 @@ func PlanPromotion(src []*Entry, srcEdges []*Edge, dst []*Entry, dstEdges []*Edg
 		// writing a literal 0 to the target log would put a version on disk
 		// that never existed.
 		cp.Version = s.SchemaVersion()
-		// Origin is deep-copied rather than shared, so the copy and its source
-		// can never be two names for one struct: nothing here mutates it today,
-		// and a promotion that started to would otherwise reach back into the
-		// log it was reading.
+		// Origin and Anchors are deep-copied rather than shared, so the copy and
+		// its source can never be two names for one value: nothing here mutates
+		// either today, and a promotion that started to would otherwise reach back
+		// into the log it was reading. A struct copy is shallow, so a pointer and
+		// a slice both need saying.
 		if cp.Origin != nil {
 			o := *cp.Origin
 			cp.Origin = &o
+		}
+		if cp.Anchors != nil {
+			cp.Anchors = append([]Anchor(nil), cp.Anchors...)
 		}
 		p.Records = append(p.Records, &cp)
 		p.Promoted = append(p.Promoted, id)

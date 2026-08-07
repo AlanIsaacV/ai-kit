@@ -79,12 +79,71 @@ $MEMORY state
 $MEMORY query --plan <tree-slug> --kind open-question,assumption --current
 ```
 
-That is the whole start-up read, and it is bounded by the tree's shape rather
-than its age. Pull anything else on demand and by area — `--about <area>` for
-the surface this turn will touch, `--kind wont-fix` before proposing work that
-someone already decided was not worth doing, `--kind adr` for that same surface
-before building on it, because an ADR outlives the objective that wrote it and one
-written elsewhere can still bind what this turn changes.
+Those three are where the turn starts, and they are bounded by the tree's shape
+rather than by its age. The gotcha block below them is the rest of the start-up
+read: a `gotcha` is loaded and checked every turn, because a constraint nobody
+loaded is a constraint this turn breaks. Nothing else runs unasked.
+
+Pull anything else on demand and by area — `--about <area>` for the surface this
+turn will touch, `--kind wont-fix` before proposing work that someone already
+decided was not worth doing, `--kind adr` for that same surface before building
+on it, because an ADR outlives the objective that wrote it and one written
+elsewhere can still bind what this turn changes.
+
+#### Read the gotchas for this turn's surface, and check they still point at code
+
+```bash
+$MEMORY query   --plan <tree-slug> --kind gotcha --about <area> --current
+$MEMORY anchors --plan <tree-slug> --kind gotcha --about <area> --current
+```
+
+A `gotcha` is a constraint the code obeys without stating it, written because
+reading the code will never recover it. Nothing regenerates one, so a session
+that does not load them is a session that breaks them — and the second command is
+what says whether each one still describes the code it was written about. It is
+one Go process and no tokens: no model call, no network, milliseconds.
+
+**The two lines carry the same filter, and that identity is the point.** A query
+narrower than the check reports on records the check never saw, and a check wider
+than the query verdicts records nobody loaded — either way the round would be
+describing two sets while reading as one. Change one line's filter and change the
+other with it.
+
+`--current` drops what something else supersedes, and for a gotcha that is not
+tidiness: **a re-anchored constraint supersedes the record it replaces**, so the
+stale citation is meant to stop being checked the moment the replacement exists.
+Both are in the log, only the current one is loaded, and a `changed` verdict on a
+record somebody already fixed would send this round back to the user every turn
+for work that is done.
+
+`--plan` leaves out the gotchas *other* objective trees wrote about this same
+area, and that filter answers to the rule below under **Put the carried-in
+questions and assumptions in front of the user**: name what it dropped in one
+line, with its count, on exactly the grounds stated there. The same query without
+`--plan` and with `--threshold 1` is where the count comes from: it reports the
+true number and withholds the records once there is more than one, so naming what
+was dropped does not cost the round the thing the bound was there to save.
+
+Every anchored record comes back with one verdict:
+
+- `still_holds` — the cited lines are still there. `moved: true` means they are at
+  a different line now, which is not a problem and needs nothing from you.
+- `changed` — the cited lines were rewritten. **Put it in front of the user in
+  this same round**, with the gotcha's title and its `path:line`. Nobody can tell
+  from here whether the constraint still binds: either the rewrite respected it
+  and the record wants re-anchoring, or the rewrite broke it and this turn is
+  about to build on something that is no longer true. That is a question for the
+  user, not a call to make quietly.
+- `could_not_check` — the file is gone or the anchor cannot be resolved. Say so
+  with the same weight; an unchecked claim must never be reported as a confirmed
+  one.
+
+Never say a gotcha holds because the check said `still_holds` about *some* of the
+records — the count is per record, and `checked` next to `matched` says how many
+carried anchors at all. Nothing is rewritten by this. The check only reports: a
+constraint the user says still binds is re-anchored by writing a **new** `gotcha`
+against the code as it is now, which `implement` does with `--anchor` in step 5,
+and the stale one is superseded rather than edited.
 
 **Read the `current_objective` field, not just the records.** The objective
 query returns it as `current_objective` and `state` returns the same answer as
@@ -356,12 +415,18 @@ repo_root: <absolute path>
 memory_cmd: <absolute path to the memory binary>
 plan_slug: <tree-slug>
 objective_id: <the executable objective's id>
-constraints: <anything from memory that binds this surface — decisions, adr, wont-fix>
+constraints: <anything from memory that binds this surface — decisions, adr, wont-fix, and the gotchas step 1 loaded for this area with their anchor verdicts>
 ```
 
 `objective_draft` is the executable objective's draft file and `objective_id` its
 record id. `objective` is the parent's title and body — orienting context, not
 the thing being built — which is why the draft carries a name of its own.
+
+The gotchas go in `constraints` because that is what they are: a constraint the
+code obeys without stating it is exactly what a subagent about to edit that code
+cannot derive and will otherwise undo. Pass each one's verdict with it — a
+`gotcha` whose anchor came back `changed` is a constraint that may already have
+been broken, and `implement` should be told which of the two it is holding.
 
 When it returns: if it is `blocked` or `partial`, stop and bring it to the
 user. Do not chain another attempt at the same wall.

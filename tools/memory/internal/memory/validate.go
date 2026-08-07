@@ -2,6 +2,7 @@ package memory
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -9,6 +10,11 @@ import (
 )
 
 var slugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// hashRE is the shape of an anchor's fingerprint, not the algorithm. Pinning
+// sha256 here would turn a digest a later binary wrote into a problem, which is
+// the one thing this schema's versioning is careful never to do.
+var hashRE = regexp.MustCompile(`^[a-z0-9]+:[0-9a-f]{32,}$`)
 
 // Problem is one thing wrong with the log, always anchored to a line number so
 // it can be found and fixed by hand.
@@ -143,6 +149,43 @@ func (c *checks) tags(field string, v []string) {
 	}
 }
 
+// anchors judges the code locations a record cites, and whether it had to cite
+// any at all.
+//
+// The two halves are one rule because they answer one question — an anchor that
+// cannot be resolved is not an anchor, so requiring one that is malformed would
+// require nothing. `required` is the caller's to decide, since which kinds owe an
+// anchor is a property of the version's rule set rather than of an anchor.
+//
+// What it does not check is whether the hash is one this binary can compute. A
+// digest from a later binary is a record this one cannot judge, not a record that
+// is wrong, and `memory anchors` reports exactly that as `could_not_check`.
+func (c *checks) anchors(field string, as []Anchor, required bool) {
+	if required && len(as) == 0 {
+		c.add(field, "at least one anchor is required: pass --anchor path:line or --anchor path:first-last")
+	}
+	for i, a := range as {
+		at := fmt.Sprintf("%s[%d]", field, i)
+		switch {
+		case strings.TrimSpace(a.Path) == "":
+			c.add(at+".path", "required")
+		case filepath.IsAbs(a.Path):
+			c.add(at+".path", "%q must be repo-relative; an absolute path names a machine rather than a repository", a.Path)
+		case a.Path == ".." || strings.HasPrefix(filepath.ToSlash(filepath.Clean(a.Path)), "../"):
+			c.add(at+".path", "%q climbs out of the repository", a.Path)
+		}
+		if a.Line < 1 {
+			c.add(at+".line", "must be 1 or more; line numbers are 1-based")
+		}
+		if a.Lines < 1 {
+			c.add(at+".lines", "must be 1 or more; a citation covers at least the line it starts on")
+		}
+		if !hashRE.MatchString(a.Hash) {
+			c.add(at+".hash", "%q must be <algorithm>:<hex digest>", a.Hash)
+		}
+	}
+}
+
 // distinct refuses a relation that points at its own source.
 func (c *checks) distinct(field, from, to string) {
 	if from != "" && from == to {
@@ -252,11 +295,18 @@ func validateEdgeV2(e *Edge) []Problem {
 // version 3 — the whole list, like the two before it, so that reading this one
 // function tells you everything a v3 entry has to satisfy.
 //
-// The difference is entryKindsV3, which no longer holds `unit`. Every other rule
-// is the same rule with the same set: scopesV2, because version 3 did not touch
-// where a log lives, and naming version 2's set here is deliberate for the reason
-// validateEntryV2 gives for naming entryKindsV1 — a version states its rules in
-// full, not a private copy of every value they close over.
+// It differs from version 2 in two rules. entryKindsV3 no longer holds `unit`,
+// which is what the bump bought. And the anchors rule arrived later, inside this
+// version: every entry may carry code anchors, they have to be resolvable if it
+// does, and anchoredKindsV3 says which kinds are refused without one. That rule
+// exists nowhere in version 1 or version 2, so a record declaring either of those
+// is never asked for an anchor — which is the point of dispatching per version
+// and the reason those two validators were not touched to add it.
+//
+// Everything else is the same rule with the same set: scopesV2, because version 3
+// did not touch where a log lives, and naming version 2's set here is deliberate
+// for the reason validateEntryV2 gives for naming entryKindsV1 — a version states
+// its rules in full, not a private copy of every value they close over.
 func validateEntryV3(e *Entry) []Problem {
 	var c checks
 	c.version("version", e.Version, SchemaVersion3)
@@ -267,6 +317,7 @@ func validateEntryV3(e *Entry) []Problem {
 	c.timestamp("at", e.At)
 	c.tags("about", e.About)
 	c.text("title", e.Title)
+	c.anchors("anchors", e.Anchors, anchoredKindsV3[e.Kind])
 	return c.ps
 }
 
