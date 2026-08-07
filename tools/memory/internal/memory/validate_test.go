@@ -611,10 +611,10 @@ func TestTheUnitRecordsOnDiskAreJudgedByTheVersionTheyDeclare(t *testing.T) {
 func TestVersion3TookNothingAwayButTheUnitKind(t *testing.T) {
 	// Version 1's eleven minus `unit`, and every kind added to this set since. The
 	// count is written as that sum rather than as a number, because the number has
-	// already moved once — `hypothesis` was widened in afterwards — and a literal
-	// would have made an additive change look like a regression in the test that
-	// guards the narrowing.
-	widenedIn := []Kind{KindHypothesis}
+	// already moved twice — `hypothesis`, then `gotcha`, widened in afterwards —
+	// and a literal would have made an additive change look like a regression in
+	// the test that guards the narrowing.
+	widenedIn := []Kind{KindHypothesis, KindGotcha}
 	if want := len(entryKindsV1) - 1 + len(widenedIn); len(entryKindsV3) != want {
 		t.Errorf("version 3 knows version 1's eleven minus `unit`, plus %d widened in since: %v",
 			len(widenedIn), sortedKinds(entryKindsV3))
@@ -702,6 +702,52 @@ func TestTheHypothesisKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testi
 	})
 	if !rep.OK || len(rep.Problems) != 0 {
 		t.Fatalf("the widening must leave every record already on disk valid: %v", rep.Problems)
+	}
+	if len(rep.Unjudged) != 0 {
+		t.Fatalf("no version moved, so nothing should go unjudged: %v", rep.Unjudged)
+	}
+}
+
+// A second in-place widening is where the version-4 question gets asked again,
+// and answered the same way. The argument for why that is safe is the one the
+// test above states in full and it is not repeated here; what a second widening
+// adds is a claim about the pair of them, which is that two of them still do not
+// amount to a bump.
+func TestTheGotchaKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T) {
+	if CurrentSchemaVersion != SchemaVersion3 {
+		t.Fatalf("two widenings and no narrowing since, so the version is still 3, not %d", CurrentSchemaVersion)
+	}
+
+	if ps := validateEntryV3(newTestEntry(t, func(e *Entry) { e.Kind = KindGotcha })); len(ps) != 0 {
+		t.Errorf("version 3's rules must accept `gotcha`: %v", ps)
+	}
+	if ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = KindGotcha })); len(ps) != 0 {
+		t.Errorf("the write gate must accept `gotcha`: %v", ps)
+	}
+	if !slices.Contains(EntryKinds(), KindGotcha) {
+		t.Errorf("`memory kinds` must advertise the kind the gate accepts: %v", EntryKinds())
+	}
+
+	if entryKindsV1[KindGotcha] {
+		t.Error("the widening reached version 1's frozen set")
+	}
+	for name, ps := range map[string][]Problem{
+		"version 1": validateEntryV1(newV1Entry(t, func(e *Entry) { e.Kind = KindGotcha })),
+		"version 2": validateEntryV2(newV2Entry(t, func(e *Entry) { e.Kind = KindGotcha })),
+	} {
+		if problemFields(ps) != "kind" {
+			t.Errorf("%s never knew `gotcha` and must go on refusing it, on the kind and nothing else: %v", name, ps)
+		}
+	}
+
+	rep := ValidateLog("test.jsonl", []Line{
+		{Num: 1, Entry: newV1Entry(t, nil)},
+		{Num: 2, Entry: newV2Entry(t, nil)},
+		{Num: 3, Entry: newTestEntry(t, func(e *Entry) { e.Kind = KindHypothesis })},
+		{Num: 4, Entry: newTestEntry(t, func(e *Entry) { e.Kind = KindGotcha })},
+	})
+	if !rep.OK || len(rep.Problems) != 0 {
+		t.Fatalf("both widenings must leave every record already on disk valid: %v", rep.Problems)
 	}
 	if len(rep.Unjudged) != 0 {
 		t.Fatalf("no version moved, so nothing should go unjudged: %v", rep.Unjudged)

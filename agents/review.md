@@ -51,6 +51,9 @@ Ordinary code review over the changed code:
 - Diverging from local convention without a reason.
 - Error and edge handling that is absent rather than deliberate.
 - Left-behind debris: TODOs, debug prints, commented-out blocks.
+- A comment that restates the code under it — severity `low`. The condition it
+  fails is `agents/implement.md`'s comment rule; cite it and name where the
+  comment is, rather than restating the rule here.
 - Anything unsafe: secrets, injection, unbounded growth.
 
 Two things to hold to. **Judge against this repository's conventions, not your

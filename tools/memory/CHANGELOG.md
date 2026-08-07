@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### The `gotcha` kind, widened into version 3 in place
+
+A *why* that reading the code will never recover: a constraint the code obeys
+without stating it, fixed by something the file cannot show — a retry count set by
+somebody else's rate limit, a lock order set by a deadlock that already happened.
+
+The gap it fills is a destination. A comment survives only if it says something
+the signature and the code do not, which leaves the non-obvious *why* needing
+somewhere to go; `agents/implement.md` states which of those go to the log, and
+nothing in the log held the shape. `decision` is an option taken and what it
+displaced, which presupposes there was a choice, and what arrives here often had
+none.
+
+- **No version 4.** `entryKindsV3` gained a member and `CurrentSchemaVersion`
+  stayed at 3, for the reason the `hypothesis` widening below states in full.
+  `entryKindsV1` did not gain it, so an entry declaring version 1 or 2 with this
+  kind is refused by the rules it declares. Two widenings inside one version do
+  not add up to a bump: only narrowing takes something back from a record already
+  written, and neither of these narrowed anything.
+- **No new edge type and no change to the justification map.** A `gotcha`
+  justifies no state edge — it is a constraint on the code, not a decision about
+  an objective — so `internal/memory/justification.go` is untouched and the eleven
+  edge types are the eleven that were there.
+- **The anchor is body text, not a field.** The path:line a `gotcha` constrains is
+  written into the body. REJECTED, for now: a structured anchor field, which
+  presumes an answer to what an anchor check is — a question this repo has open and
+  which a schema field written here would settle from outside the objective that
+  owns it. If it is ever promoted to a field, the records written under this
+  widening are what has to migrate.
+- **Nothing already on disk is re-kinded.** Not by this widening, and not by `adr`
+  becoming a kind the close writes — which needed no schema change at all, since
+  `adr` has been in the set since version 1 and only lacked an authored path to it.
+  Re-kinding a record would mean a new one with `supersedes` pointing at the old,
+  and `supersedes` asserts the old was replaced, which is false for a record that
+  was merely filed under the wrong kind. No edge type means "reclassified" and none
+  was added.
+
 ### The `hypothesis` kind, widened into version 3 in place
 
 A claim under test during an investigation, written with how it was tested, a

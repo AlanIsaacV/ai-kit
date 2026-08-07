@@ -56,12 +56,12 @@ const SchemaVersion2 = 2
 // and validateEdgeV3 names edgeTypesV2 rather than declaring sets of their own.
 // `implements` in particular stays valid: six edges on disk use it.
 //
-// The kinds have since gained `hypothesis`, in place and without a version 4,
-// the way version 2 gained the state edges: widening a closed set makes no
-// record already written illegal, so there is nothing for a bump to protect.
-// What it costs is a binary built before the widening, which has rules for
-// version 3 and so reports the new kind as a problem rather than as an honest
-// unjudged. See entryKindsV3.
+// The kinds have since gained `hypothesis` and then `gotcha`, in place and
+// without a version 4, the way version 2 gained the state edges: widening a
+// closed set makes no record already written illegal, so there is nothing for a
+// bump to protect. What it costs is a binary built before a widening, which has
+// rules for version 3 and so reports the newer kind as a problem rather than as
+// an honest unjudged. See entryKindsV3.
 //
 // The bump is what makes this safe rather than tidy. Six entries on disk carry
 // kind `unit` — two reading as version 1, four declaring version 2 — and both of
@@ -121,6 +121,14 @@ const (
 	KindADR           Kind = "adr"
 	KindPostmortem    Kind = "postmortem"
 	KindReviewFinding Kind = "review-finding"
+	// KindGotcha is a why that reading the code will never recover: a constraint
+	// the code obeys without stating it, fixed by something the file cannot show —
+	// a retry count set by somebody else's rate limit, a lock order set by a
+	// deadlock that already happened. It is not `decision`, which presupposes an
+	// option was taken and says what it displaced; what gets written here often
+	// had no alternative. It is not `dead-end`, which is an approach abandoned
+	// during implementation.
+	KindGotcha Kind = "gotcha"
 
 	// Structural.
 	KindEdge Kind = "edge"
@@ -145,10 +153,11 @@ var entryKindsV1 = map[Kind]bool{
 }
 
 // entryKindsV3 is the closed set of entry kinds as schema version 3 defines it:
-// version 1's eleven without `unit`, plus `hypothesis`. Dropping `unit` is the
-// whole of what the bump changed; `hypothesis` arrived afterwards, appended to
-// this set in place, because widening takes nothing back from any record on disk
-// and so needs no version of its own. The two edits are listed apart here on
+// version 1's eleven without `unit`, plus the kinds widened in since —
+// `hypothesis`, then `gotcha`. Dropping `unit` is the whole of what the bump
+// changed; both widenings came afterwards, appended to this set in place,
+// because widening takes nothing back from any record on disk and so needs no
+// version of its own. The narrowing and the widenings are listed apart here on
 // purpose — a reader asking what version 3 *bought* is asking about the
 // narrowing, and a widening folded into that sentence would look like part of
 // the price.
@@ -164,7 +173,7 @@ var entryKindsV3 = map[Kind]bool{
 	KindObjective: true, KindDecision: true, KindDeviation: true,
 	KindAssumption: true, KindOpenQuestion: true, KindWontFix: true, KindDeadEnd: true,
 	KindADR: true, KindPostmortem: true, KindReviewFinding: true,
-	KindHypothesis: true,
+	KindHypothesis: true, KindGotcha: true,
 }
 
 // entryKinds is the current schema's set: what `memory kinds` prints and what

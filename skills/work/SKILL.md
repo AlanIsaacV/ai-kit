@@ -82,7 +82,9 @@ $MEMORY query --plan <tree-slug> --kind open-question,assumption --current
 That is the whole start-up read, and it is bounded by the tree's shape rather
 than its age. Pull anything else on demand and by area — `--about <area>` for
 the surface this turn will touch, `--kind wont-fix` before proposing work that
-someone already decided was not worth doing.
+someone already decided was not worth doing, `--kind adr` for that same surface
+before building on it, because an ADR outlives the objective that wrote it and one
+written elsewhere can still bind what this turn changes.
 
 **Read the `current_objective` field, not just the records.** The objective
 query returns it as `current_objective` and `state` returns the same answer as
@@ -354,7 +356,7 @@ repo_root: <absolute path>
 memory_cmd: <absolute path to the memory binary>
 plan_slug: <tree-slug>
 objective_id: <the executable objective's id>
-constraints: <anything from memory that binds this surface — decisions, wont-fix>
+constraints: <anything from memory that binds this surface — decisions, adr, wont-fix>
 ```
 
 `objective_draft` is the executable objective's draft file and `objective_id` its
@@ -506,7 +508,9 @@ synthesised: the `wont-fix` records from step 8's triage, in the user's own word
 an `answers` edge for anything the turn actually settled; and the closing record
 with the state edge on it. When `confirmed_hypothesis` is set it also weighs one
 `postmortem`, derived from that hypothesis and written only if the lesson
-generalizes beyond this bug — a bug whose lesson does not closes without one.
+generalizes beyond this bug — a bug whose lesson does not closes without one. An
+`adr` joins conditionally in the same way, on a test the subagent states and
+applies to each choice it was going to file as a `decision`.
 
 Let it make that call. Whether a lesson travels is a judgment about the artifacts
 this thread stopped being the cheap place to read three steps ago, and asking for

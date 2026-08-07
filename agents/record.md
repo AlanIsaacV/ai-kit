@@ -117,22 +117,30 @@ recall it.
 Three kinds, and every one of them has a reader:
 
 - **`decision`** — a choice made mid-flight that a later turn would otherwise
-  have to re-litigate: an option taken and what it displaced. Read by
-  `implement`, which receives decisions as `constraints`, and read in
-  chronological order as the account of how this project came to be shaped the
-  way it is.
+  have to re-litigate: an option taken and what it displaced, and the account of
+  how this turn got shaped. Read by `implement`, which receives decisions as
+  `constraints`, and read in chronological order as the account of how this
+  project came to be shaped the way it is. Not every choice belongs here: the
+  condition below routes some of them to `adr` instead.
 - **`assumption`** — something this turn had to assume rather than establish.
   Read by `work` step 1, which puts carried-in assumptions in front of the user
   before the next objective is chosen.
 - **`open-question`** — something left genuinely open, including conditions
   verification raised that nobody decided. Same reader.
 
-That is the default set: three kinds and no others. A `postmortem` joins them
-only when `confirmed_hypothesis` is set and the lesson generalizes — one
-condition, two tests, both below. The failure mode here is
-volume, not omission — a close that writes twenty records buys a log nobody
-reads. Write the record when a future session that does not remember this one
-would be worse off without it, and not otherwise.
+That is the default set: three kinds and no others. Two kinds join it
+conditionally, and each condition is a test that can fail:
+
+- A **`postmortem`** joins only when `confirmed_hypothesis` is set and the lesson
+  generalizes — one condition, two tests, both below.
+- An **`adr`** joins only when the choice would still bind had this objective
+  never existed — the test is whether you can name a file this objective never
+  touched where the choice could be violated, and a choice that fails that test
+  is a `decision`.
+
+The failure mode here is volume, not omission — a close that writes twenty
+records buys a log nobody reads. Write the record when a future session that does
+not remember this one would be worse off without it, and not otherwise.
 
 ## Beyond the default: on demand only
 
@@ -232,6 +240,24 @@ established it.
 Never write a postmortem when `confirmed_hypothesis` is empty. There is nothing
 to derive from, and a lesson synthesised from the diff at the close is exactly
 the reconstruction this subagent exists to avoid.
+
+## The ADR, when the condition above holds
+
+Nothing about writing one is special; what is easy to get wrong is who reads it.
+An `adr` reaches a later `implement` as part of its `constraints`, pulled by area
+rather than by plan, so the `--about` tags are what decide whether the objective
+it was written for ever sees it.
+
+```bash
+"$memory_cmd" add --plan <plan_slug> --kind adr \
+  --title "<the constraint the choice imposes, stated so a later session can check it>" \
+  --body "<what was chosen, what it displaced, and what it binds from here on>" \
+  --about <the areas the constraint reaches, not only the files this turn edited>
+```
+
+No edge is required, which is why no id is captured above. When the choice came
+out of something already on disk — a `decision`, a rejected `hypothesis` — point
+a `derives_from` at that record, written like any other link.
 
 ## Rules
 

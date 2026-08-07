@@ -76,7 +76,7 @@ can now be linked, whatever plan produced them.
 |---|---|---|
 | Core | `objective` `decision` `deviation` | Make the work loop run |
 | Learning | `assumption` `open-question` `wont-fix` `dead-end` `hypothesis` | Stop verification theater and repeated work |
-| Knowledge | `adr` `postmortem` `review-finding` | Outlive the plan, get promoted upward |
+| Knowledge | `adr` `postmortem` `review-finding` `gotcha` | Outlive the plan, get promoted upward |
 
 `wont-fix` earns its place: once you decide a risk is not worth covering, that
 decision is recorded, and no later verification pass raises it again.
@@ -90,6 +90,22 @@ has already been eliminated. It is not `dead-end`, which means an approach
 abandoned during implementation, and it is not `postmortem`, which is a closing
 artifact and a lesson that generalizes past the bug it came from. It was
 [widened into version 3](#the-versions) in place.
+
+`gotcha` is a *why* that reading the code will never recover: a constraint the
+code obeys without stating it, fixed by something the file cannot show — a retry
+count set by somebody else's rate limit, a lock order set by a deadlock that
+already happened. It is not `decision`, which presupposes an option was taken and
+says what it displaced; what gets written here often had no alternative. **A
+`gotcha` is written because the code cannot be asked the question**, so nothing
+regenerates it — which is what separates it from anything stored merely because
+asking the code twice is expensive. What should happen to one whose code has moved
+is undecided, and so is whether the path:line it constrains — body text today —
+ever becomes a field: both wait on what an anchor check turns out to be. It was
+[widened into version 3](#the-versions) in place, after `hypothesis`.
+
+Which surface writes one: `implement` does, inline, at the moment the constraint
+is discovered. The rule that decides when a *why* is written as a `gotcha` at all
+is stated in `agents/implement.md` and nowhere else.
 
 There used to be a `unit` as well, for a piece of work under an objective, and
 removing it is what [schema version 3](#changing-the-schema) is. An objective may
@@ -397,13 +413,14 @@ rather than passed over in silence.
 |---|---|---|
 | 1 | eleven kinds; `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
 | 2 | eleven kinds; `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
-| 3 | eleven kinds; `scope` and the edge types are version 2's | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis` |
+| 3 | twelve kinds; `scope` and the edge types are version 2's | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis` and then `gotcha` |
 
 **Version 3 is the current version, and dropping the `unit` kind is what the bump
-bought.** `entryKindsV3` is version 1's eleven without it, and everything else is
-a set version 3 names rather than declares: `validateEntryV3` names `scopesV2` and
-`validateEdgeV3` names `edgeTypesV2`, so `implements` and both scopes go on
-meaning what they meant.
+bought.** `entryKindsV3` started as version 1's eleven without it — the two kinds
+widened in since are further down — and everything else is a set version 3 names
+rather than declares: `validateEntryV3` names `scopesV2` and `validateEdgeV3`
+names `edgeTypesV2`, so `implements` and both scopes go on meaning what they
+meant.
 
 **It is also the first time a narrowing had records on disk to condemn**, which is
 the case the version stamp was built for and had not yet been asked to handle. Six
@@ -424,14 +441,16 @@ where that value is valid. Not a byte of them was rewritten, and no legacy value
 entered the current validator.
 
 **The kinds widened afterwards, and stayed inside version 3.** `entryKindsV3`
-gained `hypothesis`, appended to the map literal, with `CurrentSchemaVersion`
-left at 3 — the same move version 2 made with the state edges, for the same
-reason: widening makes no record already written illegal, so a bump would protect
-nothing. `entryKindsV1` did not gain it, so an entry declaring version 1 or 2
-with kind `hypothesis` is refused by the rules it declares, which is what says
-the widening happened inside one version rather than everywhere at once. What it
-costs is the same false alarm the rule above names: a binary built before this
-reports `kind: unknown` where it would have reported an honest `unjudged`.
+gained `hypothesis` and then `gotcha`, appended to the map literal, with
+`CurrentSchemaVersion` left at 3 — the same move version 2 made with the state
+edges, for the same reason: widening makes no record already written illegal, so
+a bump would protect nothing. `entryKindsV1` gained neither, so an entry
+declaring version 1 or 2 with kind `hypothesis` or `gotcha` is refused by the
+rules it declares, which is what says the widening happened inside one version
+rather than everywhere at once. What it costs is the same false alarm the rule
+above names: a binary built before this reports `kind: unknown` where it would
+have reported an honest `unjudged`. Two widenings do not add up to a bump: the
+direction is what decides, not the count.
 
 **The edge types widened afterwards, and stayed inside version 2.**
 `edgeTypesV2` holds version 1's six plus the five [state
@@ -573,6 +592,8 @@ everything under it, so `--about pkg/auth/` finds a record tagged
   advertised by `memory kinds`, refused by version 1's and version 2's rules on
   the `kind` field, and `CurrentSchemaVersion` is still 3 — a widening does not
   move the version, and it leaves every record already on disk valid.
+- `gotcha` clears the same six checks, and the version is still 3 with both
+  widenings in: two of them do not add up to a bump.
 - Promotion preserves ids, does not mutate the source, is idempotent, never
   copies an edge whose other end stayed behind, and never restamps the version a
   record was written under.
