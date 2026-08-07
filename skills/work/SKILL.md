@@ -276,14 +276,34 @@ tree up front turns it back into the phase list this shape exists to avoid.
 
 ### 3 — Confirm the objective is executable, or send it back to `plan`
 
-Drafts live at `plans/<objective-slug>/draft-objective.md`: one directory per
-objective. Take that slug from the objective record step 1 loaded — its own
+Drafts live at `.ai-kit/plans/<objective-slug>/draft-objective.md`: one directory
+per objective. Take that slug from the objective record step 1 loaded — its own
 `slug` field, which `state` and `query` both report, not the `origin.plan` that
 names the tree — rather than deriving one from the title yourself. `plan` named
 the directory after that same field when it recorded the objective, and a
 derived name that lands one character off finds no draft and sends this step down
-the no-draft branch for an objective that has one. `plan` wrote that file. Open
-it and check two things, and nothing else:
+the no-draft branch for an objective that has one.
+
+Look in **both** locations, the new one first, because `plans/<slug>/` at the
+repository root is where drafts were written before this moved and the ones already
+there are not migrated:
+
+```bash
+sh -c 'for p in .ai-kit/plans/<objective-slug>/draft-objective.md plans/<objective-slug>/draft-objective.md; do
+  [ -f "$p" ] && { echo "$p"; exit 0; }
+done; exit 1'
+```
+
+It prints the first path that exists, so `.ai-kit/` wins when both do — a slug can
+exist in both places, and the newer file is the one `plan` last wrote to. **Exit 1
+is the no-draft branch and exit 0 is not**, which is why this is not an `ls` over
+both paths: `ls` exits 1 whenever either argument is missing, so an objective whose
+draft sits in exactly one location looks found and failed at once, and the next edit
+that chains it with `&&` sends a draft that exists down the no-draft branch. The
+`sh -c` wrapper is not decoration either — the session's shell may be `fish`, where
+this loop does not parse.
+
+`plan` wrote that file. Open it and check two things, and nothing else:
 
 - `## Acceptance criteria` is there.
 - Every criterion under it carries its own `fidelity required:` line.
@@ -332,7 +352,7 @@ that is why, and go straight to the freeze:
 **When the criteria were approved in an earlier session** and nothing has frozen
 them yet, this is where rule 3's hard stop happens:
 
-> El objetivo está en `plans/<objective-slug>/draft-objective.md`. Leelo
+> El objetivo está en `<la ruta del draft que encontraste>`. Leelo
 > entero — sobre todo los **criterios de aceptación** y la fidelidad que pide
 > cada uno, porque son los únicos contra los que se va a verificar después y no
 > se pueden cambiar una vez que arrancamos. Decime por chat qué cambiarías y
@@ -383,12 +403,12 @@ $MEMORY link --type approved_for_execution --from <objective-id> --to "$FREEZE"
 That decision is the freeze as a record. The edge has to point at the record
 that justifies it — `approved_for_execution` accepts a `decision` and nothing
 else — so what was approved, and when, is on disk before any code is. What
-verification is read against is the draft file: `verify` opens
-`plans/<objective-slug>/draft-objective.md` and grades the criteria under
-`## Acceptance criteria` there. The decision is the append-only evidence of what
-that section said at approval, not a second copy that gets graded. Making the
-record the graded artifact would mean recutting `verify`, which has not happened
-yet.
+verification is read against is the draft file: `verify` opens the
+`draft-objective.md` step 3 found — it receives that path as `objective_draft`
+rather than deriving it — and grades the criteria under `## Acceptance criteria`
+there. The decision is the append-only evidence of what that section said at
+approval, not a second copy that gets graded. Making the record the graded
+artifact would mean recutting `verify`, which has not happened yet.
 
 A second `approved_for_execution` on an objective that already carries one is a
 **resumption, not a re-freeze**: it is how a session that stopped picks the

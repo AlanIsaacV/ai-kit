@@ -56,7 +56,14 @@ would read as "here is the answer" when it is a fragment of one.
 ~/.ai-kit/memory.jsonl        user   distilled across repos, promoted deliberately
 ```
 
-Both are gitignored. Promotion between them is always an explicit act.
+Both ignore themselves. The first command that resolves a location creates the
+`.ai-kit/` directory — on a read as much as on a write — and writes a
+`.gitignore` containing `*` inside it, which covers the log and everything else
+the loop puts there. So a repository that has never run this loop needs no setup,
+and its own `.gitignore` is never edited. On a read the creation is best-effort: a
+repository nobody can write to still answers `query` with what its log holds, and
+only a write refuses when the directory cannot be made. Promotion between the two
+scopes is always an explicit act.
 
 **One log per repo, and the plan lives in the record.** Every entry carries
 `origin.plan`, and `--plan <slug>` is a filter over that field — not a choice of
@@ -650,6 +657,13 @@ memory validate --all
 Every command prints JSON on stdout on success and on failure alike — except
 `render`, which prints markdown. Exit 0 means the command ran; exit 1 means it
 refused, and the JSON says why.
+
+`validate` is the one command where exit 1 is a verdict rather than a refusal. It
+exits 1 when a log fails validation (`ok: false`) and when a location it was asked
+to sweep could not be created (`init_failed`), and those two stay separate keys: a
+directory nobody can write to says nothing about whether the records in it are
+well-formed, but a sweep that covered fewer logs than requested has not passed
+either, and a caller reading only the exit code has to hear about it.
 
 `--scope` is `repo` by default, and `user` is the only other value. `--plan` is a
 *stamp* on `add`, which refuses without one, and a *bound* on `query` and

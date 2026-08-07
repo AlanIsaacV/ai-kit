@@ -411,9 +411,10 @@ func TestAMistypedFlagIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 // -------------------------------------------------------------- the sweep ---
 
 type validateOutput struct {
-	OK       bool `json:"ok"`
-	Unjudged int  `json:"unjudged"`
-	Reports  []struct {
+	OK         bool     `json:"ok"`
+	Unjudged   int      `json:"unjudged"`
+	InitFailed []string `json:"init_failed"`
+	Reports    []struct {
 		Path     string `json:"path"`
 		Entries  int    `json:"entries"`
 		Edges    int    `json:"edges"`
@@ -1004,8 +1005,11 @@ func TestAddRefusesWithoutAPlanAndTakesItFromTheEnvironment(t *testing.T) {
 	if code, _ := errorCode(t, res); code != "no_plan" {
 		t.Errorf("expected a no_plan refusal, got %q", code)
 	}
-	if _, err := os.Stat(r.log); !os.IsNotExist(err) {
-		t.Errorf("a refused add must not create the log: %v", err)
+	// The log itself is there — resolving a location creates it, and `add` resolves
+	// before it checks the plan — so what a refusal has to leave behind is an empty
+	// log rather than no log. The invariant is that no record was written.
+	if got := readFile(t, r.log); got != "" {
+		t.Errorf("a refused add must write nothing, got %q", got)
 	}
 
 	// AI_KIT_PLAN is the other way to say it, and it has to be enough on its own.
@@ -1286,5 +1290,270 @@ func TestValidateAllReportsRealCountsForEveryLog(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("--all never looked at %s: %+v", r.log, out.Reports)
+	}
+}
+
+// ------------------------------------------------------------ first contact ---
+
+// git runs one git command in root and returns its stdout.
+//
+// The real user's git configuration is deliberately out of reach: a global
+// core.excludesFile or a commit.gpgsign would change the answers this file reads
+// out of `git status`, and the question here is what the sentinel does, not what
+// the machine running the suite happens to be configured to ignore.
+func git(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(),
+		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull,
+		"GIT_AUTHOR_NAME=test-suite", "GIT_AUTHOR_EMAIL=test@example.invalid",
+		"GIT_COMMITTER_NAME=test-suite", "GIT_COMMITTER_EMAIL=test@example.invalid")
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git %v: %v\n%s%s", args, err, stdout.String(), stderr.String())
+	}
+	return stdout.String()
+}
+
+// gitBackedRepo is throwawayRepo with a real repository in it rather than an
+// empty .git directory. Only a claim about git's own behaviour needs it — the
+// tool never runs git to resolve a root, so everything else is cheaper without.
+func gitBackedRepo(t *testing.T) repo {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git is not installed: %v", err)
+	}
+	r := repo{root: t.TempDir(), home: t.TempDir()}
+	git(t, r.root, "init", "-q")
+	r.log = filepath.Join(r.root, ".ai-kit", "memory.jsonl")
+	r.user = filepath.Join(r.home, ".ai-kit", "memory.jsonl")
+	return r
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+// A read is first contact as much as a write is. `query` used to answer
+// `count: 0` against a path that did not exist and leave nothing behind, which
+// meant the directory — and the .gitignore that keeps it out of git — only
+// arrived with the first record somebody wrote.
+func TestAReadAgainstAFreshRepoCreatesTheLog(t *testing.T) {
+	r := throwawayRepo(t)
+	if _, err := os.Stat(r.log); !os.IsNotExist(err) {
+		t.Fatalf("the repo must start with no log: %v", err)
+	}
+
+	res := run(t, r, "query", "--kind", "hypothesis")
+	if res.code != 0 {
+		t.Fatalf("query: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	if _, err := os.Stat(r.log); err != nil {
+		t.Fatalf("a read must leave the log behind: %v", err)
+	}
+	if got := readFile(t, filepath.Join(r.root, ".ai-kit", ".gitignore")); got != "*\n" {
+		t.Errorf("the sentinel must be exactly `*`, got %q", got)
+	}
+}
+
+// The sentinel is checked against git itself, because "this makes the directory
+// invisible" is a claim about git's behaviour and nothing else. It covers what
+// the loop writes later — `plans/` under the log directory — and it does its job
+// from inside, so the repository's own .gitignore is never opened.
+func TestWhatTheLoopCreatesIsInvisibleToGitAndTouchesNoGitignore(t *testing.T) {
+	r := gitBackedRepo(t)
+	rootIgnore := filepath.Join(r.root, ".gitignore")
+	const committed = "node_modules/\ndist/\n"
+	if err := os.WriteFile(rootIgnore, []byte(committed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, r.root, "add", ".gitignore")
+	git(t, r.root, "commit", "-qm", "what this project ignores")
+	if out := git(t, r.root, "status", "--porcelain"); out != "" {
+		t.Fatalf("the repository should start clean, got %q", out)
+	}
+
+	if res := run(t, r, "query"); res.code != 0 {
+		t.Fatalf("query: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	draft := filepath.Join(r.root, ".ai-kit", "plans", "x", "draft-objective.md")
+	if err := os.MkdirAll(filepath.Dir(draft), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(draft, []byte("# Objective: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := readFile(t, filepath.Join(r.root, ".ai-kit", ".gitignore")); !strings.Contains(got, "*") {
+		t.Errorf("the sentinel must contain `*`, got %q", got)
+	}
+	if out := git(t, r.root, "status", "--porcelain"); out != "" {
+		t.Errorf("nothing the loop writes may reach git status, got %q", out)
+	}
+	if got := readFile(t, rootIgnore); got != committed {
+		t.Errorf("the repository's own .gitignore must not be touched:\nwant %q\ngot  %q", committed, got)
+	}
+}
+
+// Initialization runs on every command, so it runs over an existing directory far
+// more often than over a new one. Nothing it finds there is its to rewrite: the
+// log is append-only, and the sentinel may have been edited by whoever owns the
+// repository.
+func TestInitializationIsIdempotentAndClobbersNothing(t *testing.T) {
+	r := throwawayRepo(t)
+	if res := run(t, r, "query"); res.code != 0 {
+		t.Fatalf("query: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+
+	sentinel := filepath.Join(r.root, ".ai-kit", ".gitignore")
+	appendLine(t, sentinel, "!keep-me")
+	id := add(t, r, "RS256 over HS256")
+
+	if res := run(t, r, "query"); res.code != 0 {
+		t.Fatalf("the second query: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	if got := readFile(t, sentinel); !strings.Contains(got, "!keep-me") {
+		t.Errorf("an edited sentinel must survive, got %q", got)
+	}
+	if got := readFile(t, r.log); !strings.Contains(got, id) {
+		t.Errorf("the record %s is gone from the log:\n%s", id, got)
+	}
+
+	// User scope gets the sentinel too, with no conditional. ~/.ai-kit/ is
+	// usually in no repository at all, where `*` is inert rather than wrong — and
+	// a rule with an exception is a rule nobody can rely on.
+	if res := run(t, r, "init", "--scope", "user"); res.code != 0 {
+		t.Fatalf("init --scope user: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	if got := readFile(t, filepath.Join(r.home, ".ai-kit", ".gitignore")); !strings.Contains(got, "*") {
+		t.Errorf("the user-scope sentinel must contain `*`, got %q", got)
+	}
+}
+
+// unwritable makes a directory read-only for the rest of the test, and puts the
+// bits back afterwards so t.TempDir can still delete what is inside it.
+func unwritable(t *testing.T, dir string) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through the permission bits this test is about")
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+}
+
+// Creating the location is best-effort on the read path. A repository checked out
+// read-only answered `count: 0` before initialization moved onto that path, and it
+// has to go on answering: a read that refuses because it could not create a
+// directory it did not need would be this change breaking the command it exists to
+// make work. A write, where the failure is fatal a line later anyway, still
+// refuses — and says which of the two went wrong.
+func TestAReadAgainstAnUnwritableRepoStillAnswersAndAWriteRefuses(t *testing.T) {
+	r := throwawayRepo(t)
+	unwritable(t, r.root)
+
+	res := run(t, r, "query", "--kind", "decision")
+	if res.code != 0 {
+		t.Fatalf("a read must still answer: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	var out struct {
+		Count int `json:"count"`
+	}
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Count != 0 {
+		t.Errorf("expected count 0 from a repo with no log, got %d", out.Count)
+	}
+	if _, err := os.Stat(filepath.Dir(r.log)); !os.IsNotExist(err) {
+		t.Errorf("nothing could have been created here: %v", err)
+	}
+
+	res = runBare(t, r, "add", "--plan", "demo", "--kind", "decision",
+		"--title", "Nowhere to put this", "--about", "auth")
+	if res.code == 0 {
+		t.Fatal("a write into a repo whose log cannot be created must be refused")
+	}
+	if code, _ := errorCode(t, res); code != "init_failed" {
+		t.Errorf("expected an init_failed refusal, got %q", code)
+	}
+}
+
+// A location that could not be created is still validated, and the sweep still
+// says it fell short.
+//
+// Two claims that have to stay apart. The log may be sitting right there, records
+// and all — an .ai-kit/ nobody can write to reads fine — so `ok` keeps meaning what
+// it means everywhere else, whether the records are well-formed. But a sweep that
+// covered less than it was asked to has not passed, and a caller that reads only
+// the exit code has to hear that: a JSON key nobody parses is not a report.
+func TestValidateAllKeepsALocationItCouldNotCreateAndSaysItFellShort(t *testing.T) {
+	r := throwawayRepo(t)
+	id := add(t, r, "RS256 over HS256")
+	// A log directory an older binary left behind: it has the log but not the
+	// sentinel, so initialization has something to write and cannot.
+	if err := os.Remove(filepath.Join(r.root, ".ai-kit", ".gitignore")); err != nil {
+		t.Fatal(err)
+	}
+	unwritable(t, filepath.Dir(r.log))
+
+	out, code := validate(t, r, "--all")
+	if !out.OK {
+		t.Errorf("a log that reads must still be judged on its records alone: %+v", out.Reports)
+	}
+	if code == 0 {
+		t.Error("a sweep that could not create a location it was asked about must not exit 0")
+	}
+	var found bool
+	for _, rep := range out.Reports {
+		if rep.Path == r.log {
+			found = true
+			if rep.Entries != 1 {
+				t.Errorf("the record %s should have been counted, got %d entries", id, rep.Entries)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("--all dropped the log it could not create: %+v", out.Reports)
+	}
+	if len(out.InitFailed) == 0 {
+		t.Error("the failure to create must be reported rather than swallowed")
+	}
+}
+
+// And the ordinary case keeps its exit 0: the sweep that created everything it
+// resolved has nothing to report, so the key is absent rather than empty.
+func TestValidateAllExitsZeroWhenItCreatedEverythingItResolved(t *testing.T) {
+	r := throwawayRepo(t)
+	add(t, r, "RS256 over HS256")
+
+	out, code := validate(t, r, "--all")
+	if !out.OK || code != 0 {
+		t.Fatalf("a clean sweep must exit 0: ok=%v exit=%d %+v", out.OK, code, out.Reports)
+	}
+	if len(out.InitFailed) != 0 {
+		t.Errorf("nothing failed to be created here, got %v", out.InitFailed)
+	}
+}
+
+// promote resolves its destination outside the flag machinery, which made it the
+// one command that could reach a location without creating it.
+func TestPromoteCreatesItsDestination(t *testing.T) {
+	r := throwawayRepo(t)
+	id := add(t, r, "RS256 over HS256")
+
+	if res := run(t, r, "promote", "--ids", id, "--to", "user"); res.code != 0 {
+		t.Fatalf("promote: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	if got := readFile(t, filepath.Join(r.home, ".ai-kit", ".gitignore")); got != "*\n" {
+		t.Errorf("the destination must be created like any other location, got %q", got)
 	}
 }

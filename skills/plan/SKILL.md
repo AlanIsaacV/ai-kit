@@ -344,19 +344,44 @@ way too: fidelity lines under a `## Success criteria` heading, or acceptance
 criteria on an objective one session cannot deliver, promise a verification pass
 that has no honest way to run.
 
-Write `plans/<objective-slug>/draft-objective.md`. No record exists yet, so you
-coin the slug here — and it is the record's own `slug` too, because step 7 passes
-this same slug to `add --slug`, which takes it exactly as given. Derive it from
-the title the way the tool would if you left it out: lowercase, every run of
+Write `.ai-kit/plans/<objective-slug>/draft-objective.md`. No record exists yet,
+so you coin the slug here — and it is the record's own `slug` too, because step 7
+passes this same slug to `add --slug`, which takes it exactly as given. Derive it
+from the title the way the tool would if you left it out: lowercase, every run of
 characters outside `a-z0-9` collapsed to a single hyphen, no leading or trailing
 hyphen, at most 60 characters — truncate there and trim any hyphen the cut leaves
 behind. One directory per objective, flat, because the nesting lives in the log
 and a path that mirrored the tree would have to move every time a parent changed.
 
-If `plans/<slug>/draft-objective.md` already exists, that slug belongs to another
-objective — two objectives can legitimately derive the same one — and writing
-there would overwrite somebody else's draft: pick a slug that distinguishes this
-objective, and pass that same slug to `--slug` in step 7.
+Under `.ai-kit/` and not at the repository root, because that is the directory the
+`memory` CLI keeps out of git by itself — it writes a `.gitignore` containing `*`
+inside it when it creates it. A draft at the root needed somebody to add a line to
+the repository's own `.gitignore` by hand, which is why the drafts of this loop
+have only ever stayed out of a pull request in the one repository where somebody
+did.
+
+If a draft for that slug already exists, that slug belongs to another objective —
+two objectives can legitimately derive the same one — and writing there would
+overwrite somebody else's draft: pick a slug that distinguishes this objective, and
+pass that same slug to `--slug` in step 7. Look in **both** locations, the new one
+first:
+
+```bash
+sh -c 'for p in .ai-kit/plans/<slug>/draft-objective.md plans/<slug>/draft-objective.md; do
+  [ -f "$p" ] && { echo "$p"; exit 0; }
+done; exit 1'
+```
+
+`plans/<slug>/` at the repository root is where drafts were written before this
+moved, and the ones already there are not migrated — so the slug is taken if
+either path answers, while a new draft is always written under `.ai-kit/`.
+
+It prints the first path that exists and **exits 0 only when it found one**, which
+an `ls` over both paths does not: `ls` exits 1 whenever either argument is missing,
+so a draft that exists in one location comes back printed and failed at the same
+time, and the next edit that chains this with `&&` reads that as no draft. The
+`sh -c` wrapper is not decoration either — the session's shell may be `fish`, where
+this loop does not parse.
 
 #### A parent objective's draft
 
@@ -477,18 +502,19 @@ not ask again, so what they let through here is what gets built and graded.
 For an executable objective, the criteria and the fidelity each one demands are
 the thing to read:
 
-> Escribí el objetivo en `plans/<slug>/draft-objective.md`. Leelo entero — sobre
-> todo los **criterios de aceptación** y la fidelidad que pide cada uno, porque
-> son los únicos contra los que se va a verificar después y no se cambian una vez
-> que arrancamos. Después mirá **Assumptions I made** y **What I don't know**,
-> que es donde está lo que decidí sin preguntarte. Contame por chat qué está mal
-> — el archivo lo reescribo yo con lo que me digas, no hace falta que lo edites.
+> Escribí el objetivo en `.ai-kit/plans/<slug>/draft-objective.md`. Leelo entero
+> — sobre todo los **criterios de aceptación** y la fidelidad que pide cada uno,
+> porque son los únicos contra los que se va a verificar después y no se cambian
+> una vez que arrancamos. Después mirá **Assumptions I made** y **What I don't
+> know**, que es donde está lo que decidí sin preguntarte. Contame por chat qué
+> está mal — el archivo lo reescribo yo con lo que me digas, no hace falta que lo
+> edites.
 
 For a parent objective there is nothing to verify yet, so the scope and the
 judgment calls are what matter:
 
-> Escribí el objetivo en `plans/<slug>/draft-objective.md`. Abrilo y leelo
-> entero — sobre todo **Assumptions I made** y **What I don't know**, que es
+> Escribí el objetivo en `.ai-kit/plans/<slug>/draft-objective.md`. Abrilo y
+> leelo entero — sobre todo **Assumptions I made** y **What I don't know**, que es
 > donde está lo que decidí sin preguntarte. Contame por chat qué está mal — el
 > archivo lo reescribo yo con lo que me digas, no hace falta que lo edites.
 

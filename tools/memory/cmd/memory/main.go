@@ -49,9 +49,18 @@ There is one log per repo, at <repo>/.ai-kit/memory.jsonl. The plan a record
 belongs to lives in the record, as origin.plan, so any two records can be linked
 whatever plan produced them.
 
+The first command that resolves a location creates it, read or write, and writes
+a .gitignore containing '*' inside it — so nothing the loop leaves behind reaches
+a commit, and no repository's own .gitignore is ever edited. A read that cannot
+create it answers anyway; a write refuses with code 'init_failed'.
+
 Every command prints JSON on stdout, on success and on failure alike, except
 'render' which prints markdown. Exit 0 means the command ran; exit 1 means it
-refused, and the JSON says why.
+refused, and the JSON says why. 'validate' is the one command where exit 1 is a
+verdict rather than a refusal: it ran, and either a log failed validation
+(ok: false) or a location it was asked to sweep could not be created
+(init_failed). Those two are reported separately, because a directory nobody can
+write to says nothing about whether the records in it are well-formed.
 `
 
 func main() {
@@ -147,12 +156,65 @@ func (c *common) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.dir, "dir", "", "start directory for repo discovery")
 }
 
-func (c *common) resolve() (memory.Location, error) {
+// locate resolves a location without creating it. Nearly everything goes through
+// resolve or resolveForWrite instead; the two commands that call this directly,
+// `init` and `validate`, each have something of their own to say about the
+// creation.
+func (c *common) locate() (memory.Location, error) {
 	loc, err := memory.Resolve(memory.Scope(c.scope), c.dir)
 	if err != nil {
 		return loc, fail("bad_scope", "%s", err.Error())
 	}
 	return loc, nil
+}
+
+// Resolving a location also creates it, on a read as much as on a write.
+//
+// A repository that has never run this loop is the case that has to work on
+// first contact, and a read used to leave nothing behind: `query` reported
+// `count: 0` against a path that did not exist, so the .gitignore that keeps the
+// directory out of git only arrived with the first record. Whatever command
+// touches the repository first is the one that gets to make it ignorable.
+//
+// **Creating it is best-effort here, and that asymmetry with resolveForWrite is
+// deliberate.** The accepted cost of initializing on a read was a stray directory
+// in somebody else's repository — not a read that refuses to answer. A repository
+// checked out read-only, or an .ai-kit/ somebody chmod-ed, still answers `query`
+// with whatever its log holds, exactly as it did before initialization moved onto
+// the read path; turning that into exit 1 would be this change breaking the
+// command it was meant to make work on first contact.
+//
+// A scope that cannot be resolved creates nothing — the refusal comes first.
+func (c *common) resolve() (memory.Location, error) {
+	loc, err := c.locate()
+	if err != nil {
+		return loc, err
+	}
+	_ = materialize(loc) // discarded on purpose: see above
+	return loc, nil
+}
+
+// resolveForWrite is resolve for a command that is about to append, where a
+// location that cannot be created is a refusal rather than a shrug: the write
+// would fail on the next line anyway, and `init_failed` names which of the two
+// went wrong instead of leaving the caller with a dangling-edge or write error to
+// interpret.
+func (c *common) resolveForWrite() (memory.Location, error) {
+	loc, err := c.locate()
+	if err != nil {
+		return loc, err
+	}
+	if err := materialize(loc); err != nil {
+		return loc, err
+	}
+	return loc, nil
+}
+
+func materialize(loc memory.Location) error {
+	if _, err := memory.Open(loc.Path).Init(); err != nil {
+		return fail("init_failed", "%s", err.Error())
+	}
+	return nil
 }
 
 // planFilter is the plan a read command bounds itself to, empty when none was
@@ -184,11 +246,27 @@ func (c *common) load() (memory.Location, []memory.Line, error) {
 	if err != nil {
 		return loc, nil, err
 	}
+	lines, err := readLog(loc)
+	return loc, lines, err
+}
+
+// loadForWrite is load for `link`, which reads the whole log only so that it can
+// append to it. The difference is which resolve it goes through.
+func (c *common) loadForWrite() (memory.Location, []memory.Line, error) {
+	loc, err := c.resolveForWrite()
+	if err != nil {
+		return loc, nil, err
+	}
+	lines, err := readLog(loc)
+	return loc, lines, err
+}
+
+func readLog(loc memory.Location) ([]memory.Line, error) {
 	lines, err := memory.Open(loc.Path).Read()
 	if err != nil {
-		return loc, nil, fail("read_failed", "%s", err.Error())
+		return nil, fail("read_failed", "%s", err.Error())
 	}
-	return loc, lines, nil
+	return lines, nil
 }
 
 // ------------------------------------------------------------- subcommands ---
@@ -200,7 +278,12 @@ func cmdInit(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	loc, err := c.resolve()
+	// c.locate() and not c.resolve(): resolve initializes as a side effect, which
+	// would leave this command reporting created=false on the run that did the
+	// creating. Here the creation is the point, so it happens where its answer can
+	// be read — and a failure to create is this command's whole subject, so it is
+	// never best-effort.
+	loc, err := c.locate()
 	if err != nil {
 		return err
 	}
@@ -231,7 +314,7 @@ func cmdAdd(args []string) error {
 		return err
 	}
 
-	loc, err := c.resolve()
+	loc, err := c.resolveForWrite()
 	if err != nil {
 		return err
 	}
@@ -324,7 +407,7 @@ func cmdLink(args []string) error {
 		return err
 	}
 
-	loc, lines, err := c.load()
+	loc, lines, err := c.loadForWrite()
 	if err != nil {
 		return err
 	}
@@ -681,10 +764,17 @@ func cmdPromote(args []string) error {
 	if dstLoc.Path == srcLoc.Path {
 		return fail("same_scope", "source and target resolve to the same log")
 	}
+	// The destination is created like every location this tool resolves, and after
+	// the refusals above so that a promote that never happens creates nothing. It
+	// is a write, so the failure is a refusal: resolveForWrite's reasoning, applied
+	// to the one location that does not come from a --scope flag.
+	if err := materialize(dstLoc); err != nil {
+		return err
+	}
 
-	dstLines, err := memory.Open(dstLoc.Path).Read()
+	dstLines, err := readLog(dstLoc)
 	if err != nil {
-		return fail("read_failed", "%s", err.Error())
+		return err
 	}
 
 	plan := memory.PlanPromotion(
@@ -738,11 +828,27 @@ func cmdValidate(args []string) error {
 			locs = append(locs, l)
 		}
 	} else {
-		l, err := c.resolve()
+		l, err := c.locate()
 		if err != nil {
 			return err
 		}
 		locs = append(locs, l)
+	}
+
+	// The sweep creates what it resolved, like every other command, and it is a
+	// read, so failing to create is best-effort exactly as it is in resolve. What
+	// it must not do is drop the location: an .ai-kit/ nobody can write to still
+	// reads, records and all, and validating a smaller set than the caller asked
+	// about while answering ok=true is the failure --all already had once. The
+	// failures are reported instead, and they never touch `ok`: whether a directory
+	// could be created says nothing about whether the records inside it are
+	// well-formed, and collapsing the two would leave a caller unable to tell a
+	// corrupt log from a read-only one. They do move the exit code — see below.
+	notCreated := []string{}
+	for _, l := range locs {
+		if err := materialize(l); err != nil {
+			notCreated = append(notCreated, err.Error())
+		}
 	}
 
 	reports := make([]memory.Report, 0, len(locs))
@@ -768,8 +874,18 @@ func cmdValidate(args []string) error {
 	if unjudged > 0 {
 		out["unjudged"] = unjudged
 	}
+	if len(notCreated) > 0 {
+		out["init_failed"] = notCreated
+	}
 	emit(out)
-	if !ok {
+
+	// Two independent failures, one non-zero exit, and the JSON says which. A
+	// caller that reads only the exit code — which is every caller in a shell
+	// pipeline — must not be told that a sweep succeeded when it covered less than
+	// it was asked to cover; a JSON key nobody parsed is not a report. `ok` stays
+	// the narrower claim it always was, about the records, so the two remain
+	// distinguishable for whoever does read the output.
+	if !ok || len(notCreated) > 0 {
 		os.Exit(1)
 	}
 	return nil

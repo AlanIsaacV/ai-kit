@@ -21,10 +21,46 @@ type Store struct {
 
 func Open(path string) *Store { return &Store{Path: path} }
 
-// Init creates the log and its parent directory if they do not exist. It never
-// touches an existing file.
+// gitignoreSentinel is the whole content of the .gitignore written inside the
+// log directory.
+const gitignoreSentinel = "*\n"
+
+// ensureDir creates the log's directory and, with it, the .gitignore that keeps
+// the directory out of git.
+//
+// The sentinel goes *inside* the directory rather than as a line appended to the
+// repository's own .gitignore: that file belongs to the repository and is not
+// this tool's to edit, and a `*` from within covers everything the loop later
+// puts here — the log, and the drafts under plans/ — without a second line ever
+// being needed. It is written with no check for whether there is a git
+// repository above it, because outside one it is inert rather than wrong.
+func (s *Store) ensureDir() error {
+	dir := filepath.Dir(s.Path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	name := filepath.Join(dir, ".gitignore")
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return err
+	}
+	if _, err := f.WriteString(gitignoreSentinel); err != nil {
+		f.Close()
+		// Leave nothing behind. An empty .gitignore ignores nothing, and O_EXCL
+		// means no later run would ever get the chance to repair it.
+		os.Remove(name)
+		return err
+	}
+	return f.Close()
+}
+
+// Init creates the log, its parent directory and that directory's .gitignore if
+// they do not exist. It never touches an existing file.
 func (s *Store) Init() (created bool, err error) {
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
+	if err := s.ensureDir(); err != nil {
 		return false, err
 	}
 	f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
@@ -46,7 +82,7 @@ func (s *Store) Append(records ...any) error {
 	if len(records) == 0 {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
+	if err := s.ensureDir(); err != nil {
 		return err
 	}
 

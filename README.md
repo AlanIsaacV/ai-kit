@@ -66,7 +66,8 @@ reading everything again.
 ## How the drafts work
 
 Both skills negotiate through a markdown file rather than through chat. Every
-objective is written to `plans/<objective-slug>/` — one directory per objective —
+objective is written to `.ai-kit/plans/<objective-slug>/` — one directory per
+objective, beside the log and inside the directory that keeps itself out of git —
 and the user reads and edits the file directly.
 
 This is deliberate. Being shown a three-bullet summary and asked "look right?"

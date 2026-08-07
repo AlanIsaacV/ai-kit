@@ -55,8 +55,9 @@ four things that cannot be read are asked once in step 3.
 
 1. **Read-only over the target repository except for exactly three writes.**
    `README.md`, `CLAUDE.md`, and records appended through the `memory` CLI. That
-   is the whole list. No new directories beyond the `.ai-kit/` that the log's
-   first write creates, no `docs/`, no scratch file "just to hold the inventory",
+   is the whole list. No new directories beyond the `.ai-kit/` that the first
+   `memory` command creates, no `docs/`, no scratch file "just to hold the
+   inventory",
    no reformatting a file you happened to read, no fixing a typo you noticed.
    Anything you need to write for yourself goes to scratch outside the target
    repo.
@@ -147,7 +148,9 @@ Then take the answer, confirm the path printed, and use it. **What must never
 happen is a `memory` call with `--dir` empty**, because an empty `--dir` is not a
 refusal — it resolves the log from the current directory instead, which on step 4
 means `add` creating or appending to `.ai-kit/memory.jsonl` in a different
-repository, at exit 0, with nothing in the output saying which one. The refusal
+repository, at exit 0, with nothing in the output saying which one. And not only on
+step 4: every command creates the location it resolves, so even step 1's reads
+leave an `.ai-kit/` in whatever repository the flag pointed at. The refusal
 below covers a path that *is* passed and is not a repo; it never fires on the
 empty string, so this stop is the only thing standing between a mistyped path and
 another repository's tree gaining a directory it never asked for.
@@ -179,10 +182,14 @@ Two measured behaviours, so neither surprises you:
 - **A directory that is not inside a git repository is refused**: exit 1 with
   `code: bad_scope`, "not inside a git repository". That is a stop, and the honest
   response is to say the path is not a repo and ask for the right one.
-- **A git repository with no log at all returns `count: 0` at exit 0 and creates
-  nothing.** So `count: 0` cannot distinguish *nobody wrote anything here* from
-  *there is no log here*, which is why step 1 tests for the file itself rather
-  than reading it out of a count.
+- **A git repository with no log yet returns `count: 0` at exit 0, and creates the
+  log while answering** — `<repo>/.ai-kit/`, an empty `memory.jsonl` and a
+  `.gitignore` containing `*` that keeps the whole directory out of `git status`.
+  Any command that resolves a location creates it, a read as much as a write, so
+  neither the directory nor the file says anything about whether anything was ever
+  written there. `count` does, and it is what step 1 reads: the number of records
+  the CLI can parse out of the log, which is 0 for a log that does not exist yet and
+  0 for one that exists holding nothing.
 
 ### What this skill writes, and under what
 
@@ -231,7 +238,8 @@ rest of the run does:
 ls -a "$TARGET"
 [ -f "$TARGET/README.md" ] && echo readme-exists
 [ -f "$TARGET/CLAUDE.md" ] && echo claude-exists
-[ -f "$TARGET/.ai-kit/memory.jsonl" ] && echo log-exists
+$MEMORY query --dir "$TARGET" --limit 1 \
+  | python3 -c 'import sys,json; print("log-has-records" if json.load(sys.stdin)["count"] else "log-is-empty")'
 ```
 
 **`README.md` present** routes the README half of this run through step 6 instead
@@ -243,14 +251,26 @@ Ask, in one line, whether to leave it, add to it, or replace it — and if the
 answer is to add, treat its existing content the way hard rule 8 treats an
 existing README: the only lines you touch are the ones you are adding.
 
-**No `.ai-kit/memory.jsonl`** is not an error and needs no `init`. `memory add`
-creates the file and its parent directory on first write, at exit 0. What it does
-mean is that step 4's first `add` will be the thing that creates that directory in
-the user's repository, and **that gets announced when it happens** — not asked
-about, announced. The consent for the write is the invocation; what the user is
-owed is knowing that a new directory appeared in their tree and what is in it.
-This is the only reason the file test above exists, since a `query` returning
-`count: 0` cannot tell you which case you are in.
+**`log-is-empty`** is not an error and needs no `init`. Any `memory` command that
+resolves a location creates it — including this very query and the three reads a few
+lines below — so `.ai-kit/` and an empty `memory.jsonl` exist from that moment
+whether or not anything is ever written to them.
+
+That is why the count and not a test on the file. Its *existence* stopped being
+evidence of anything the moment a read started creating it, and its *size* is only a
+proxy: a log holding one blank line, or one line some older writer left broken, has
+a size and no records. `query`'s `count` is the number of records the CLI can
+actually read out of it, which is the question being asked — and `--limit 1` keeps
+the answer from carrying any record bodies, since the count is all that is wanted
+here.
+
+`log-is-empty` means step 4's first `add` will be the first record this repository's
+log has ever held, and **that gets announced when it happens** — not asked about,
+announced. The consent for the write is the invocation; what the user is owed is
+knowing that a log now exists in their tree with content in it and what that content
+is. Nothing about this depends on running before the three queries below: a read
+creates the file and writes no records into it, so the count still answers the same
+question afterwards.
 
 Then read what the log already holds, because on a repository the loop has seen
 before this is where half the `CLAUDE.md` comes from and none of it should be
@@ -477,8 +497,8 @@ today, and it is the one thing in this whole run that nothing regenerates. Step
 9's gate is over the two files, and only over them. That asymmetry is deliberate,
 and because it is the kind of thing a user discovers afterwards, it is stated to
 them at the moment it happens rather than left in this file — see the announcement
-at the end of this step, which says it in words whether or not the log was created
-by this run.
+at the end of this step, which says it in words whether or not this run is what put
+the first records in the log.
 
 The anchor is the misleading code itself. Ask which lines the answer is about if
 that is not already clear — that is not ceremony, it is what makes the record
@@ -522,7 +542,8 @@ answer to question 3 and it belongs in the `CLAUDE.md`'s rules, not in the log.
 What must not happen is an anchor drawn at a plausible-looking file to satisfy the
 flag.
 
-Then confirm what landed, and **announce the log if this run created it**:
+Then confirm what landed, and **announce the log if this run is what put anything
+in it**:
 
 ```bash
 $MEMORY anchors --dir "$TARGET" --repo-root "$TARGET" --plan repo-bootstrap --kind gotcha --current
@@ -542,12 +563,13 @@ part an append-only log will not let them undo:
 > pase con los dos archivos: el log es append-only y esto no se deshace. Lo que
 > vas a aprobar o rechazar al final son el `README.md` y el `CLAUDE.md`, no esto.
 
-And if step 1 found no log, this run is what created it, so name the path in the
-same breath:
+And if step 1 printed `log-is-empty`, these are the first records this repository's
+log has ever held, so name the path in the same breath:
 
-> Creé el log de memoria de este repo — `<$TARGET>/.ai-kit/memory.jsonl`. Es un
-> archivo JSONL append-only, gitignoreado, con los `<n>` gotchas que acabás de
-> contarme. El `CLAUDE.md` va a apuntar ahí.
+> Este repo no tenía nada guardado: estos `<n>` gotchas son los primeros de su log
+> de memoria — `<$TARGET>/.ai-kit/memory.jsonl`. Es un archivo JSONL append-only, y
+> queda fuera de git por su propio `.gitignore` adentro de `.ai-kit/`, sin tocar el
+> `.gitignore` del repo. El `CLAUDE.md` va a apuntar ahí.
 
 ### 5 — Compose the README, section by section
 
@@ -797,8 +819,8 @@ literally and do not re-litigate it.
 
 On agreement, write exactly the files that were shown, at absolute paths under
 `$TARGET`, and nothing else — no directory, no `docs/`, no scratch file left
-behind. Then say what landed: the two paths, and the log path if step 4 created
-it.
+behind. Then say what landed: the two paths, and the log path if step 4 wrote the
+first records into it.
 
 **On a refusal, neither file is written and the run ends there** — no partial
 write, no "I'll leave the CLAUDE.md at least", no file in scratch for later. Say

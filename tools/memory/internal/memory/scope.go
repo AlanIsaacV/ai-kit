@@ -39,8 +39,13 @@ var ErrPlanScopeRemoved = errors.New(`the "plan" scope was removed in schema ver
 //	repo → <repo>/.ai-kit/memory.jsonl   everything this repo's work has produced
 //	user → ~/.ai-kit/memory.jsonl        distilled across repos, promoted deliberately
 //
-// Both are gitignored: these are files the assistant writes for itself, and they
-// have no business adding noise to a pull request.
+// Both keep themselves out of git, and nothing outside the .ai-kit/ directory is
+// touched to arrange it: whichever command resolves a location first creates the
+// directory with a .gitignore containing `*` inside it (Store.ensureDir), which
+// covers the log and everything the loop later writes alongside it. These are
+// files the assistant writes for itself, and they have no business adding noise
+// to a pull request — but the repository's own .gitignore is not this tool's to
+// edit either.
 //
 // There used to be a third — `plan → <repo>/plans/<slug>/memory.jsonl` — and
 // removing it is what schema version 2 is. One file per plan was not a tidier

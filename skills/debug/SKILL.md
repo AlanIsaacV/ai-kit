@@ -86,55 +86,62 @@ MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
 ```
 
 **Every `memory` call in this skill passes `--dir`, and it points at the repo the
-loop is running in** — the one holding `plans/`, where `plan` writes drafts and
-`work` reads them. That repo is usually also the one under investigation, and then
-the two are the same path; but this is the skill that can be pointed at somebody
-else's checkout, and the difference has to be settled once, here, rather than per
-command.
+loop is running in** — the one whose `.ai-kit/` holds the log, where `plan` writes
+its drafts under `.ai-kit/plans/` and `work` reads them. That repo is usually also
+the one under investigation, and then the two are the same path; but this is the
+skill that can be pointed at somebody else's checkout, and the difference has to be
+settled once, here, rather than per command.
 
-Derive it, before anything has had a chance to change directory. It is not a
-value to ask for and it is not one to type from memory — `plans/` is what
-identifies that repo by construction, so the walk up from where this session
-started finds it:
+Derive it, before anything has had a chance to change directory. It is not a value
+to ask for and it is not one to type from memory — git already knows which
+repository this is:
 
 ```bash
-LOOP_REPO=$(sh -c 'd=$(pwd); while [ "$d" != "/" ]; do
-  if [ -d "$d/plans" ] || [ -d "$d/.ai-kit" ]; then printf %s "$d"; exit 0; fi
-  d=$(dirname "$d")
-done; exit 1')
+git -C "<the path the user named, or the session's cwd>" rev-parse --show-toplevel
 ```
 
-`.ai-kit/` is accepted as the second marker for the repo whose first objective has
-not been written yet, where the log exists and `plans/` does not. The `sh -c`
-wrapper is not decoration: the session's shell may be `fish`, where this loop does
-not parse.
+That is the same command `ask` and `bootstrap` derive their target with, and it
+replaced a walk upward for `plans/` or `.ai-kit/` because those markers answer a
+different question: "has this repo run the loop before?" In a repository being set
+up right now the honest answer is no and the walk refuses the one case that works.
+Nothing has to exist first — the `memory` CLI creates `.ai-kit/` on the first
+command that resolves a location, read or write.
+
+It is written bare, with no `LOOP_REPO=$(…)` around it, and that is not an
+oversight: `fish` does not parse a POSIX assignment, and the session's shell may be
+`fish`. Nothing is lost by leaving it off — a variable would not survive to the
+next command either, and what this line is for is putting the path on stdout where
+you can read it and copy it.
 
 **Empty output means the derivation failed, and a failed derivation stops the
-skill.** Say so and ask, rather than proceeding:
+skill.** `rev-parse` prints nothing on stdout when the path is missing or is not
+inside a git repository. Say so and ask, rather than proceeding:
 
-> No encuentro el repo del loop desde acá — ningún directorio por encima de
-> `<cwd>` tiene `plans/` ni `.ai-kit/`. Decime la ruta absoluta del repo donde
-> estás llevando los objetivos y sigo desde ahí.
+> No puedo resolver el repo del loop desde `<the path>` — o no existe, o no está
+> dentro de un repositorio git. Decime la ruta absoluta del repo donde estás
+> llevando los objetivos y sigo desde ahí.
 
-Then take the answer, confirm the directory exists, and use it. **What must never
+Then take the answer, confirm the path printed, and use it. **What must never
 happen is a `memory` call with `--dir` empty**, because that is not an error: it
 falls straight back to resolving the log from the current directory — measured,
-exit 0, a `query` reporting `count: 0` from a log that does not exist and an `add`
-creating one. Which is the whole failure this flag exists to prevent, arriving
-silently by the one route nobody checks.
+exit 0. The refusal above covers a path that *is* passed and is not a repo; it
+never fires on the empty string, so this stop is the only thing between a
+`$LOOP_REPO` left unsubstituted and an investigation filed in the wrong repository.
 
 That failure is worth stating in full, because it is what stops a later edit from
 dropping the flag as noise. Resolved from the current directory, the log is
 whatever is above cwd — so a `cd` into the repo under investigation, or step 4's
-bisect clone in scratch, redirects the write, and `add` **creates** `.ai-kit/`
-wherever it lands: a directory appearing in a tree hard rule 6 promises never to
-touch, and the hypotheses ending up in a log nobody will read again.
+bisect clone in scratch, redirects the write. And it is not only `add` that lands
+there: since every command **creates** the location it resolves, even a `query`
+leaves an `.ai-kit/` behind wherever cwd happens to be — a directory appearing in
+a tree hard rule 6 promises never to touch, and the hypotheses ending up in a log
+nobody will read again.
 
-`$LOOP_REPO` below is shorthand for the path this derivation printed. **Substitute
-that absolute path into every command**, rather than relying on the variable
-surviving: each command runs in its own shell, an unset variable expands to
-nothing, and `--dir ""` is exactly the silent fallback above. A path you can read
-in the command is a path you can see is wrong.
+`$LOOP_REPO` in the commands below is notation for the path this derivation prints,
+and nothing anywhere assigns it. **Substitute that absolute path into every
+command**: each command runs in its own shell, `$LOOP_REPO` pasted as it is written
+expands to nothing, and `--dir ""` is exactly the silent fallback above. A path you
+can read in the command is a path you can see is wrong.
 
 `$MEMORY kinds` lists every valid record kind and edge type. The kind this skill
 writes is `hypothesis`, and it is the only one it writes: a confirmed root cause
@@ -160,7 +167,7 @@ expected, what happened instead, where it is observable, and since when. Ask for
 the ones you do not have — in one `AskUserQuestion` call, not four turns — and do
 not interrogate for the rest. Everything else you are about to find out yourself.
 
-Derive `LOOP_REPO` here, by the section above, before anything else runs a
+Derive the loop repo here, by the section above, before anything else runs a
 command. This is the last moment it is trivially correct: nothing has changed
 directory yet, and from step 4 onward something may have. A derivation that comes
 back empty stops the skill at this line rather than at the first write.
