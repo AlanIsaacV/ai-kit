@@ -201,6 +201,64 @@ than a free-floating convention is that `--about` is already required with at
 least one non-blank tag, so no preference can exist without a topic — only with a
 badly chosen one.
 
+## Which areas a log answers for
+
+That soft spot is what `areas` is for. `--about` is freeform, so a reader who
+guesses a tag wrong gets `count: 0` — byte-identical to the answer meaning nobody
+ever wrote one. `areas` lists the tags that exist, so those two stop being the
+same answer:
+
+```bash
+memory areas                      # every tag in both logs
+memory areas --kind preference    # only the tags preferences are keyed by
+```
+
+```json
+{"area": "persistence", "records": 2,
+ "live": {"id": "01K…", "kind": "preference", "slug": "persistence-is-sqlc",
+          "title": "Persistence is sqlc", "at": "…", "key": true}}
+```
+
+- **Every distinct tag is a row**, wherever it sits in the record's `--about`.
+  A preference tagged `migrations,db` is findable under `db` by a reader who came
+  looking for that, and `key` is what says which of the two the record claims to
+  be about. So the [keying convention](#records-the-repository-owns) is reported
+  and still not enforced.
+- **`records` counts every record carrying the tag**, settled ones included,
+  because how many times an area has been answered is what a writer about to
+  answer it again wants to know. `live` is the separate question: the most recent
+  record carrying the tag that survives `--current`, which for a `preference` is
+  exactly the convention above. It is `null` when every record carrying the tag
+  has been superseded — an area answered and retired is not an area nobody wrote
+  about.
+- **Both logs, always, reported apart.** This is the one command with no
+  `--scope`: it has nothing to choose between. Each scope is resolved on its own
+  and carries the path it resolved to, and nothing merges the two — the whole
+  point of the user log is that what is in it came from somewhere else. A machine
+  that has never promoted anything gets a user scope with zero areas and exit 0,
+  never a missing section, so "I never promoted anything" stays distinguishable
+  from "I did not look there".
+- **`--plan` bounds it exactly as it bounds `query`**, which means a record the
+  repository owns is enumerated under every plan. `--kind` narrows it, and the
+  counts follow.
+- **No bodies, so no threshold.** Every row names one record and returns none, and
+  this is the cheap read that tells a caller how to narrow the expensive one —
+  withholding it over 25 areas would defeat the point.
+- **Tags are folded to lower case**, since that is how `--about` compares them: a
+  query for `persistence` returns a record tagged `Persistence`, so listing the
+  two as separate areas would contradict the count that query gives back.
+  Nothing else is merged — two tags that mean the same thing stay two areas, and
+  making that visible is as far as a read-only enumeration should go.
+- **A tag carrying leading or trailing spaces is reported with them**, so a row
+  name can begin with a space. Only a hand-edited log holds one: `add` trims
+  every `--about` value on the way in. Be warned that such a row is **not
+  reachable through `query --about` in either spelling** — the flag is trimmed
+  before it is compared and the stored tag is not, so the padded form never
+  reaches the comparison and the trimmed form is not what is stored. `areas`
+  reports what is on disk rather than a tidied spelling that would be no more
+  queryable; which side should trim is open question
+  `01KZHJ6EG06DVHXX2ZCMW3EWX8`.
+
 ## Promotion
 
 `promote` copies records from a repo log up to the user log. It is the only
@@ -865,6 +923,7 @@ memory add   --kind preference \
 
 memory query --plan jwt-migration --about auth --kind decision --current
 memory search --plan jwt-migration "key rotation"
+memory areas --kind preference   # what can be asked about, in both logs
 memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
 memory graph --from <id> --depth 2
 
@@ -888,7 +947,9 @@ directory nobody can write to says nothing about whether the records in it are
 well-formed, but a sweep that covered fewer logs than requested has not passed
 either, and a caller reading only the exit code has to hear about it.
 
-`--scope` is `repo` by default, and `user` is the only other value. `--plan` is a
+`--scope` is `repo` by default, and `user` is the only other value —
+[`areas`](#which-areas-a-log-answers-for) is the one command that does not take
+it, because it answers for both. `--plan` is a
 *stamp* on `add`, optional there since a record without one belongs to the
 [repository](#records-the-repository-owns), and a *bound* on `query` and
 `search`; other commands accept it and read the whole log, since `link` and
@@ -1050,6 +1111,17 @@ everything under it, so `--about pkg/auth/` finds a record tagged
   swapping their two entries swaps the answer while the edge points the same way.
 - A parent's tally counts `met` and superseded children as done, leaves
   `cancelled` and `separated` out, and reports the rest outstanding.
+- `areas` reports both scopes on every run, each carrying the path it resolved
+  to. A user log that was never created is a user scope with zero areas and exit
+  0, printing an empty list rather than null — never a section left out, which
+  would read the same as not having looked.
+- A tag sitting second in a record's `--about` is enumerated like any other and
+  its row says `key: false`, while the first tag's row says `key: true` and both
+  name the same record. A record whose tag is second still answers for that area
+  when it is the newest one carrying it.
+- Two `areas` runs over one log print byte-identical output, because the rows are
+  sorted by area name and not by count — the order a caller diffs must not move
+  every time something is written.
 
 ```bash
 go test ./...

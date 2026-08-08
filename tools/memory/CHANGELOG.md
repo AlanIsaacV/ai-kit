@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+### `areas` enumerates what a log can be asked about
+
+`--about` is the only carrier of a preference's identity and it is freeform, so a
+reader who guessed the tag wrong got `count: 0` — the same bytes as the answer
+meaning nobody ever wrote one. A preference that existed and a preference that did
+not were indistinguishable to anyone who did not already know the tag, and the two
+callers about to depend on it both have to check whether an area already has an
+answer before they coin a second key for the same thing.
+
+```bash
+memory areas                      # every tag in both logs, with counts
+memory areas --kind preference    # only the tags preferences are keyed by
+```
+
+- **Every distinct tag is a row, not only the first.** REJECTED: enumerating keys
+  alone. A preference tagged `migrations,db` has to stay findable under `db`, and
+  `gotcha` is not forced to obey a keying convention that belongs to one kind.
+  Each row's `live.key` says whether the tag is the first `--about` of the record
+  the row names, so the convention is reported and still not enforced.
+- **`records` counts the settled too, and `live` is asked separately.** Counting
+  only current records would hide that an area has been answered three times,
+  which is the history a writer about to answer it a fourth time is looking for.
+  `live` is the most recent record carrying the tag that survives `--current` —
+  defined generically rather than for `preference`, and coinciding exactly with
+  the preference convention under `--kind preference`. It is `null` when every
+  record carrying the tag is settled.
+- **Both scopes, reported apart, and this is the first command whose default
+  reads two logs.** It follows `validate --all`: each scope resolved on its own,
+  each carrying the path it resolved to. REJECTED: one merged list, in which no
+  row says which log it came from. There is therefore **no `--scope` flag** — the
+  command has nothing to choose between, and an accepted-and-ignored flag would
+  look like it chose.
+- **A missing user log is a user scope with zero areas at exit 0.** REJECTED:
+  omitting the section, which would leave "I have never promoted anything"
+  indistinguishable from "I did not look there". It resolves through the same
+  best-effort read path every other read uses, so nothing new decides this.
+- **The plan-less rule is inherited, not restated.** `Areas` calls `Query` twice
+  — once for the counts, once with `--current` for the live answers — rather than
+  walking the entries itself, so `--plan X` enumerates X's tags *and* the
+  repository's exactly as a query would, and there is one place where that rule
+  is written down.
+- **No threshold.** Rows are aggregates naming one record each and carrying no
+  body, and this is the cheap read that tells a caller how to narrow the expensive
+  one; withholding it over 25 areas would defeat the point.
+- **Tags are folded to lower case and nothing else is merged.** `--about`
+  compares case-insensitively, so splitting `Persistence` and `persistence` into
+  two rows of one record each would contradict the count `query --about
+  persistence` returns. Two tags that merely *mean* the same thing stay two areas:
+  making that visible is as far as a read-only enumeration goes.
+- **No schema obligation is triggered.** No kind, no edge type, no scope and no
+  record shape changed; `CurrentSchemaVersion` stays at 3 and the closed sets are
+  untouched. What it owed was the usage string, the README and tests, and it has
+  them.
+
 ### `promote` selects by class, reaches one hop, and reports what is half-connected
 
 `promote` did one thing safely and nothing else: you named records by id, it

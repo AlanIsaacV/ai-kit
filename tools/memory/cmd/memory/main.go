@@ -30,6 +30,7 @@ Usage:
   memory link      --type TYPE --from ID --to ID
   memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--current] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
+  memory areas     [--kind KINDS] [--plan SLUG]
   memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--current] [--repo-root PATH]
   memory graph     --from ID [--depth N]
   memory state     [--id ID]
@@ -39,7 +40,8 @@ Usage:
   memory kinds
 
 Common flags:
-  --scope repo|user        which log to act on (default: repo)
+  --scope repo|user        which log to act on (default: repo). 'areas' takes no
+                           --scope: it answers for both logs, reported apart.
   --plan SLUG              which plan a record belongs to: stamped by 'add',
                            bounds 'query' and 'search'. Defaults to AI_KIT_PLAN.
                            Other commands accept it and read the whole log.
@@ -85,6 +87,8 @@ func main() {
 		err = cmdQuery(os.Args[2:])
 	case "search":
 		err = cmdSearch(os.Args[2:])
+	case "areas":
+		err = cmdAreas(os.Args[2:])
 	case "anchors":
 		err = cmdAnchors(os.Args[2:])
 	case "graph":
@@ -540,6 +544,67 @@ func cmdSearch(args []string) error {
 	return runQuery(&c, memory.Filter{
 		Plan: plan, Text: text, CurrentOnly: *current, Limit: *limit, Threshold: *threshold,
 	})
+}
+
+// areaReport is one scope's enumeration. Count is how many distinct areas the
+// log answers for; each row carries its own count of records.
+type areaReport struct {
+	Path  string        `json:"path"`
+	Scope memory.Scope  `json:"scope"`
+	Count int           `json:"count"`
+	Areas []memory.Area `json:"areas"`
+}
+
+// cmdAreas answers what a log can be asked about, which is the one question the
+// other reads cannot be asked.
+//
+// `--about` is freeform and nothing validates its contents, so a reader who
+// guesses a tag wrong gets `count: 0` — the same answer they would get if nobody
+// had ever written one. This lists the tags that exist, so those two stop being
+// the same answer.
+//
+// It is the first command whose default reads two logs, and they are kept apart
+// the way `validate --all` keeps its reports apart: each scope resolved on its
+// own, each with the path it resolved to. Merging them would produce a list no
+// row of which says which log it came from — and the whole point of the user log
+// is that what is in it came from somewhere else. So there is no `--scope` here:
+// this command has nothing to choose between.
+func cmdAreas(args []string) error {
+	fs := flag.NewFlagSet("areas", flag.ExitOnError)
+	var c common
+	// Bound by hand rather than through common.bind, which would also bind a
+	// --scope this command does not honour.
+	fs.StringVar(&c.plan, "plan", "", "plan slug: bounds the enumeration exactly as it bounds query")
+	fs.StringVar(&c.dir, "dir", "", "start directory for repo discovery")
+	kinds := fs.String("kind", "", "comma-separated kinds")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	plan, err := c.planFilter()
+	if err != nil {
+		return err
+	}
+	f := memory.Filter{Plan: plan, Kinds: toKinds(splitList(*kinds))}
+
+	reports := make([]areaReport, 0, 2)
+	for _, s := range []memory.Scope{memory.ScopeRepo, memory.ScopeUser} {
+		// Through load, so each scope goes through the same best-effort resolve
+		// every other read uses: a machine that has never promoted anything has no
+		// user log, and that has to come back as a user scope with zero areas
+		// rather than as a refusal. An omitted section would leave "I never
+		// promoted anything" and "I did not look there" indistinguishable, which
+		// is the failure this command exists to stop making.
+		sc := common{scope: string(s), plan: c.plan, dir: c.dir}
+		loc, lines, err := sc.load()
+		if err != nil {
+			return err
+		}
+		areas := memory.Areas(lines, f)
+		reports = append(reports, areaReport{Path: loc.Path, Scope: loc.Scope, Count: len(areas), Areas: areas})
+	}
+
+	emit(map[string]any{"plan": plan, "kinds": nonNil(splitList(*kinds)), "scopes": reports})
+	return nil
 }
 
 // cmdAnchors is `gotcha`'s reader, and the only mechanical check in this tool of
