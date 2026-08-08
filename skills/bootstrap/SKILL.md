@@ -133,12 +133,18 @@ pointing at an empty log.
 So settle the target once, at step 1, as an absolute path:
 
 ```bash
-TARGET=$(git -C "<the path the user named, or the session's cwd>" rev-parse --show-toplevel)
+git -C "<the path the user named, or the session's cwd>" rev-parse --show-toplevel
 ```
 
+It is written bare, with no `TARGET=$(…)` around it, and that is not an oversight:
+`fish` does not parse a POSIX assignment, and the session's shell may be `fish`.
+Nothing is lost by leaving it off — a variable would not survive to the next
+command either, and what this line is for is putting the path on stdout where you
+can read it and copy it.
+
 **Empty output means the derivation failed, and a failed derivation stops the
-skill.** `rev-parse` prints nothing when the path is missing or is not inside a
-git repository. Say so and ask, rather than proceeding:
+skill.** `rev-parse` prints nothing on stdout when the path is missing or is not
+inside a git repository. Say so and ask, rather than proceeding:
 
 > No puedo resolver el repo desde `<the path>` — o no existe, o no está dentro de
 > un repositorio git. Decime la ruta absoluta del repo que querés documentar y
@@ -155,11 +161,11 @@ below covers a path that *is* passed and is not a repo; it never fires on the
 empty string, so this stop is the only thing standing between a mistyped path and
 another repository's tree gaining a directory it never asked for.
 
-`$TARGET` below is shorthand for the path that printed. **Substitute that
-absolute path literally into every command** rather than relying on the variable
-surviving: each command runs in its own shell, an unset variable expands to
-nothing, and `--dir ""` is exactly the silent fallback above. The same goes for
-every file you read and both files you write — `"$TARGET/README.md"`, not
+`$TARGET` below is notation for the path this derivation prints, and nothing
+anywhere assigns it. **Substitute that absolute path literally into every
+command**: each command runs in its own shell, `$TARGET` pasted as it is written
+expands to nothing, and `--dir ""` is exactly the silent fallback above. The same
+goes for every file you read and both files you write — `"$TARGET/README.md"`, not
 `README.md`, because a relative path here writes into whatever directory the
 session is standing in.
 
@@ -227,9 +233,9 @@ reads away.
 
 ### 1 — Settle the target, and find out what is already there
 
-Resolve `$TARGET` first, by the section above, before anything else runs. It is
-the one value everything downstream depends on and the cheapest moment to get it
-right.
+Derive the target path first, by the section above, and keep it where you can read
+it — it is the one value everything downstream depends on and this is the cheapest
+moment to get it right.
 
 Then read four things about it, in this order, because each one changes what the
 rest of the run does:
