@@ -2,6 +2,69 @@
 
 ## Unreleased
 
+### The `preference` kind, and `--plan` becoming optional on `add`
+
+Two changes that only mean anything together: a kind for *how things are done
+here, and it still holds*, and a record that can belong to the repository rather
+than to an objective inside it.
+
+```bash
+memory add --kind preference --title "Migrations go through Atlas" \
+           --about persistence,migrations --body "Hand-written scripts drifted twice."
+memory query --kind preference --about persistence --current   # newest first
+```
+
+- **What the manifests can be asked is never written.** "This repo uses GORM
+  v1.25" is derivable from the repository at the moment of asking, so it is not a
+  record; *why* GORM and not sqlc is what has nowhere else to live. That is the
+  line the kind is for, and it is the one thing about it a writer can get wrong
+  in a way nothing will catch.
+- **A kind of its own, not `decision --about stack`.** REJECTED on mechanics:
+  `--about` is freeform and unvalidated, so the distinction would be a convention
+  that can be forgotten in silence and added by accident, while `--kind` is a
+  closed set the validator enforces — and the loop writes a `decision` at every
+  objective's close, so a preference would be a needle in that haystack. It is
+  not `decision` on meaning either: that kind presupposes a displaced
+  alternative, and a preference may have been the only thing anybody tried.
+- **No version 4, and not anchored.** `entryKindsV3` gained a third member with
+  `CurrentSchemaVersion` left at 3, for the reason the two widenings below state
+  in full. `anchoredKindsV3` is untouched and `gotcha` remains the one kind
+  refused without an anchor: that set *narrows*, adding to it now would condemn
+  records on disk, and a preference is about a choice rather than about code —
+  one promoted to the user scope could carry no `path:line` meaning anything
+  outside the repository it came from.
+- **`--plan` is now optional on `add`.** ~~`add` stamps `origin.plan` from
+  `--plan` or `AI_KIT_PLAN` and refuses when it has neither.~~ Reversed. The
+  requirement was never in the schema — `Origin` is optional, `Origin.Plan` is
+  `omitempty`, and no version's rule set has ever looked at either — it was a
+  refusal the CLI added on its own, and three skills had each worked around it by
+  inventing a fixed sentinel plan slug. A malformed slug is still refused;
+  `link`, `query` and `search` are untouched.
+- **A plan-less record is in scope for every plan-bounded read.** `--plan X`
+  returns X's records **and** the repository's, and a record that names a plan is
+  still absent from a query naming a different one. REJECTED: the smaller change
+  where `--plan X` excludes plan-less records, which would have made every
+  repo-global record invisible to exactly the reads that most need it. The cost
+  is real and there is no flag for it: a bounded read now returns a little more
+  than the turn asked for.
+- **A preference is keyed by its first `--about` tag**, and the newest one
+  carrying that tag is the live answer, read off the result order rather than
+  derived. A `supersedes` edge is optional rather than required — it still works,
+  and still drops the older record from `--current`, but preferences arrive
+  months apart from writers who do not know what they are replacing. Chosen over
+  a required `topic` field on the kind, with the weakness known and written down:
+  a tag's content is unvalidated, so `persistence` and `database` do not shadow
+  each other.
+- **Nothing already on disk is re-kinded and no sentinel slug is retired.**
+  `skills/bootstrap` and `skills/ask` go on writing under `repo-bootstrap` and
+  `repo-questions`; removing the refusal is what makes retiring them possible
+  later, and doing both at once would mean changing those skills while changing
+  the CLI underneath them.
+- **`memory.RequirePlan` and `memory.ErrNoPlan` are gone**, having lost their one
+  caller. Both existed only to state a rule that no longer exists, and an
+  exported symbol whose doc comment asserts a deleted rule is worse than no
+  symbol.
+
 ### Anchors, and `memory anchors` to check them
 
 A record may now cite the code its claim rests on as a structured field —
@@ -374,9 +437,12 @@ records that most needed to say it.
 - `--plan <slug>` is a filter over `origin.plan` rather than a choice of file. A
   bounded query still bounds, now by objective instead of by directory, and the
   count-before-dump threshold applies to the named plan's own matches.
-- `add` stamps `origin.plan` from `--plan` or `AI_KIT_PLAN` and refuses when it
+- `add` stamps `origin.plan` from `--plan` or `AI_KIT_PLAN`, and ~~refuses when it
   has neither. A record with no plan is unreachable by every bounded query, and
-  the log is append-only, so refusing is the only place to catch it.
+  the log is append-only, so refusing is the only place to catch it.~~ Reversed by
+  the `preference` work above: the premise was true only because `--plan X`
+  excluded plan-less records, and that is the half of it that changed. Such a
+  record is now in scope for every bounded query rather than for none.
 - Any two records in a repo can be linked, whatever plan produced them.
 - `promote --to repo` is gone: a plan's records are already in the repo log, so
   there is nothing below it to lift them out of. `promote --to user` is the one

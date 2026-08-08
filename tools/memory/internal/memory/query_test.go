@@ -102,11 +102,7 @@ func TestQueryFiltersByOriginPlan(t *testing.T) {
 	mine.Origin = &Origin{Plan: "jwt-migration"}
 	theirs := entry(t, KindDecision, "Cancel is async", "orders")
 	theirs.Origin = &Origin{Plan: "order-cancellation"}
-	// No origin at all: what a record written before `add` insisted on a plan
-	// looks like. It is unreachable by any bounded query, which is exactly why
-	// writing one is refused.
-	orphan := entry(t, KindDecision, "Nobody knows where this came from", "auth")
-	all := []*Entry{mine, theirs, orphan}
+	all := []*Entry{mine, theirs}
 
 	res := Query(logOf(all, nil), Filter{Plan: "jwt-migration"})
 	if res.Count != 1 || res.Records[0].ID != mine.ID {
@@ -118,11 +114,42 @@ func TestQueryFiltersByOriginPlan(t *testing.T) {
 		t.Fatalf("the plan bound and the tag bound both apply, got %d", res.Count)
 	}
 
-	if got := Query(logOf(all, nil), Filter{}).Count; got != 3 {
+	if got := Query(logOf(all, nil), Filter{}).Count; got != 2 {
 		t.Fatalf("no plan named means no plan filter, got %d", got)
 	}
 	if got := Query(logOf(all, nil), Filter{Plan: "order-cancellation"}).Count; got != 1 {
 		t.Fatalf("the other plan's record is reachable by its own slug, got %d", got)
+	}
+}
+
+// A record with no `origin.plan` belongs to the repository, so it is in scope for
+// every tree in it. That is the whole of the widening and it is one line in
+// Query, which is why the guard has to be on both halves at once: the plan-less
+// record comes back from a bound naming any slug, and the plan-carrying one is
+// still excluded from a bound naming a different one. A filter that let
+// everything through would pass the first half alone.
+//
+// The plan-less record used to be the shape `add` refused to write; the tag it
+// carries is the one the repository is keyed by rather than a tree's.
+func TestQueryPlanBoundReturnsTheRepositorysOwnRecordsToo(t *testing.T) {
+	tree := entry(t, KindDecision, "Cancel is async", "orders")
+	tree.Origin = &Origin{Plan: "order-cancellation"}
+	repo := entry(t, KindPreference, "Migrations go through Atlas", "persistence")
+	all := []*Entry{tree, repo}
+
+	for _, plan := range []string{"order-cancellation", "some-other-tree", ""} {
+		res := Query(logOf(all, nil), Filter{Plan: plan, Kinds: []Kind{KindPreference}})
+		if res.Count != 1 || res.Records[0].ID != repo.ID {
+			t.Errorf("plan=%q must still see the repository's own record, got %+v", plan, res.Records)
+		}
+	}
+
+	res := Query(logOf(all, nil), Filter{Plan: "some-other-tree", Kinds: []Kind{KindDecision}})
+	if res.Count != 0 {
+		t.Fatalf("the widening must not collapse the filter: a record naming a plan stays out of another plan's query, got %+v", res.Records)
+	}
+	if got := Query(logOf(all, nil), Filter{Plan: "order-cancellation"}).Count; got != 2 {
+		t.Errorf("a bounded read returns its tree's records and the repository's, got %d", got)
 	}
 }
 

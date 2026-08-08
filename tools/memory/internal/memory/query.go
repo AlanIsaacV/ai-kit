@@ -124,7 +124,9 @@ func Query(lines []Line, f Filter) Result {
 		if f.CurrentOnly && settled[e.ID] {
 			continue
 		}
-		if f.Plan != "" && planOf(e) != f.Plan {
+		// A record with no plan is the repository's rather than nobody's, so it is
+		// in scope for every tree in it and a plan bound never hides it.
+		if f.Plan != "" && planOf(e) != "" && planOf(e) != f.Plan {
 			continue
 		}
 		if len(kinds) > 0 && !kinds[e.Kind] {
@@ -214,11 +216,13 @@ func containsID(entries []*Entry, id string) bool {
 
 // planOf is the plan a record says it came from, or "" when it says nothing.
 //
-// A record with no `origin.plan` matches no plan filter at all — not even the
-// empty one, since an empty Filter.Plan means the filter is off. That is the
-// point: one log holds every plan's records, so a record that cannot name its
-// plan is invisible to every bounded query, which is why `add` refuses to write
-// one. See ErrNoPlan.
+// Saying nothing used to make a record invisible to every bounded query, and the
+// write path refused to produce one for exactly that reason. It now means the
+// opposite — the record belongs to the repository and every plan bound admits it
+// — because one log holds every tree's records and there was nowhere else for a
+// fact about the repository itself to sit. What that costs is stated where it is
+// paid: a bounded read returns its tree's records *and* the repository's, so it
+// can hand back something the turn did not ask for.
 func planOf(e *Entry) string {
 	if e.Origin == nil {
 		return ""

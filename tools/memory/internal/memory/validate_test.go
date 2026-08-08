@@ -611,10 +611,10 @@ func TestTheUnitRecordsOnDiskAreJudgedByTheVersionTheyDeclare(t *testing.T) {
 func TestVersion3TookNothingAwayButTheUnitKind(t *testing.T) {
 	// Version 1's eleven minus `unit`, and every kind added to this set since. The
 	// count is written as that sum rather than as a number, because the number has
-	// already moved twice — `hypothesis`, then `gotcha`, widened in afterwards —
-	// and a literal would have made an additive change look like a regression in
-	// the test that guards the narrowing.
-	widenedIn := []Kind{KindHypothesis, KindGotcha}
+	// already moved three times — `hypothesis`, `gotcha`, then `preference`, widened
+	// in afterwards — and a literal would have made an additive change look like a
+	// regression in the test that guards the narrowing.
+	widenedIn := []Kind{KindHypothesis, KindGotcha, KindPreference}
 	if want := len(entryKindsV1) - 1 + len(widenedIn); len(entryKindsV3) != want {
 		t.Errorf("version 3 knows version 1's eleven minus `unit`, plus %d widened in since: %v",
 			len(widenedIn), sortedKinds(entryKindsV3))
@@ -752,6 +752,70 @@ func TestTheGotchaKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T
 	})
 	if !rep.OK || len(rep.Problems) != 0 {
 		t.Fatalf("both widenings must leave every record already on disk valid: %v", rep.Problems)
+	}
+	if len(rep.Unjudged) != 0 {
+		t.Fatalf("no version moved, so nothing should go unjudged: %v", rep.Unjudged)
+	}
+}
+
+// The third in-place widening, and the version-4 question answered a third time.
+// The argument is the one the two tests above state and it is not repeated; what
+// this kind adds is the claim that it is *not* anchored, which is the one way a
+// new kind could have needed a bump — `anchoredKindsV3` narrows, and every
+// candidate for it now has records on disk to condemn.
+func TestThePreferenceKindWasWidenedIntoVersion3AndIsNotAnchored(t *testing.T) {
+	if CurrentSchemaVersion != SchemaVersion3 {
+		t.Fatalf("three widenings and no narrowing since, so the version is still 3, not %d", CurrentSchemaVersion)
+	}
+
+	asPreference := func(e *Entry) { e.Kind = KindPreference }
+	if ps := validateEntryV3(newTestEntry(t, asPreference)); len(ps) != 0 {
+		t.Errorf("version 3's rules must accept `preference`: %v", ps)
+	}
+	if ps := ValidateEntry(newTestEntry(t, asPreference)); len(ps) != 0 {
+		t.Errorf("the write gate must accept `preference`: %v", ps)
+	}
+	if !slices.Contains(EntryKinds(), KindPreference) {
+		t.Errorf("`memory kinds` must advertise the kind the gate accepts: %v", EntryKinds())
+	}
+
+	// Unanchored, where an unanchored `gotcha` is still refused. A preference is
+	// about a choice rather than about code that exists, and one promoted to the
+	// user scope could carry no path:line that means anything outside the
+	// repository it came from.
+	if anchoredKindsV3[KindPreference] {
+		t.Error("`preference` must not owe an anchor; adding a kind to that set is a version bump")
+	}
+	if slices.Contains(AnchoredKinds(), KindPreference) {
+		t.Errorf("and it must not be advertised as owing one: %v", AnchoredKinds())
+	}
+	if ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = KindGotcha })); problemFields(ps) != "anchors" {
+		t.Errorf("the premise: an unanchored gotcha is still refused, got %v", ps)
+	}
+
+	if entryKindsV1[KindPreference] {
+		t.Error("the widening reached version 1's frozen set")
+	}
+	for name, ps := range map[string][]Problem{
+		"version 1": validateEntryV1(newV1Entry(t, asPreference)),
+		"version 2": validateEntryV2(newV2Entry(t, asPreference)),
+	} {
+		if problemFields(ps) != "kind" {
+			t.Errorf("%s never knew `preference` and must go on refusing it, on the kind and nothing else: %v", name, ps)
+		}
+	}
+
+	// And the record a widening must never make illegal — including one with no
+	// origin at all, which is now a shape the write path produces rather than one
+	// only a hand-edited log could hold.
+	rep := ValidateLog("test.jsonl", []Line{
+		{Num: 1, Entry: newV1Entry(t, nil)},
+		{Num: 2, Entry: newV2Entry(t, nil)},
+		{Num: 3, Entry: newTestEntry(t, asPreference)},
+		{Num: 4, Entry: newTestEntry(t, func(e *Entry) { e.Kind = KindPreference; e.Origin = nil })},
+	})
+	if !rep.OK || len(rep.Problems) != 0 {
+		t.Fatalf("the widening must leave every record already on disk valid: %v", rep.Problems)
 	}
 	if len(rep.Unjudged) != 0 {
 		t.Fatalf("no version moved, so nothing should go unjudged: %v", rep.Unjudged)

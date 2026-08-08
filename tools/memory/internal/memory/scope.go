@@ -14,16 +14,6 @@ type Location struct {
 	Path  string
 }
 
-// ErrNoPlan is returned when a write cannot tell which plan the record belongs
-// to.
-//
-// One repo has one log, so `origin.plan` is the only thing a bounded query has
-// left to bound by: a record written without one is unreachable by every query
-// that names a plan, and unreachable is how a memory quietly becomes worthless.
-// Guessing would be worse than stopping — it would file the record under someone
-// else's objective, where the mistake is invisible.
-var ErrNoPlan = errors.New("no plan: pass --plan <slug> or set AI_KIT_PLAN")
-
 // ErrPlanScopeRemoved is returned for `--scope plan`.
 //
 // It is a named refusal rather than a generic "unknown scope" because the value
@@ -86,10 +76,13 @@ func Resolve(scope Scope, startDir string) (Location, error) {
 // PlanSlug is the plan a command names: the flag when it carries something,
 // otherwise AI_KIT_PLAN.
 //
-// An empty result means no plan was named at all. A read treats that as "do not
-// filter by plan", which is how a query reaches across every objective in the
-// log; a write treats it as a refusal, because there is no such thing as a
-// record that belongs to no plan. See RequirePlan.
+// An empty result means no plan was named at all, and both paths now read that
+// the same way: a query reaches across every objective in the log, and a write
+// records something the repository owns rather than something one objective
+// produced. There used to be a RequirePlan beside this that turned the write case
+// into a refusal, and removing it is what made a `preference` writable — nothing
+// but the CLI ever required a plan, since no validator in any version looks at
+// origin.plan at all.
 func PlanSlug(plan string) (string, error) {
 	if plan == "" {
 		plan = os.Getenv("AI_KIT_PLAN")
@@ -101,19 +94,6 @@ func PlanSlug(plan string) (string, error) {
 		return "", fmt.Errorf("plan %q must be kebab-case: lowercase letters, digits and hyphens", plan)
 	}
 	return plan, nil
-}
-
-// RequirePlan is PlanSlug for the write path, where an unnamed plan is a
-// refusal rather than an absent filter.
-func RequirePlan(plan string) (string, error) {
-	slug, err := PlanSlug(plan)
-	if err != nil {
-		return "", err
-	}
-	if slug == "" {
-		return "", ErrNoPlan
-	}
-	return slug, nil
 }
 
 // RepoRoot walks up from dir looking for a .git entry.

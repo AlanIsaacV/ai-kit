@@ -26,7 +26,7 @@ const usage = `memory — append-only knowledge log
 
 Usage:
   memory init      [--scope repo|user]
-  memory add       --plan SLUG --kind KIND --title TEXT --about TAG[,TAG...] [--body TEXT] [--slug SLUG] [--anchor PATH:LINE] [--repo-root PATH]
+  memory add       --kind KIND --title TEXT --about TAG[,TAG...] [--plan SLUG] [--body TEXT] [--slug SLUG] [--anchor PATH:LINE] [--repo-root PATH]
   memory link      --type TYPE --from ID --to ID
   memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--current] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
@@ -48,6 +48,10 @@ Common flags:
 There is one log per repo, at <repo>/.ai-kit/memory.jsonl. The plan a record
 belongs to lives in the record, as origin.plan, so any two records can be linked
 whatever plan produced them.
+
+A record written with no --plan belongs to the repository rather than to any plan
+in it, and every plan-bounded read returns it — that is what 'preference' is for.
+A record that does name a plan stays out of a query naming a different one.
 
 The first command that resolves a location creates it, read or write, and writes
 a .gitignore containing '*' inside it — so nothing the loop leaves behind reaches
@@ -228,14 +232,22 @@ func (c *common) planFilter() (string, error) {
 	return slug, nil
 }
 
-// planStamp is the plan a write records itself under. Unlike planFilter it
-// refuses to be empty: see memory.ErrNoPlan.
+// planStamp is the plan a write records itself under, empty when none was named.
+// A malformed slug is still a refusal, since `origin.plan` is what every bounded
+// query matches on.
+//
+// It reads the same two sources planFilter reads and today produces the same
+// answer, and it derives that answer itself rather than calling planFilter,
+// because the two are separate questions about the same empty string. Absent on a
+// read means "do not bound", which a later change could reasonably redefine —
+// widen to a default, narrow to the current tree. Absent on a write means "this
+// belongs to the repository rather than to a tree in it", which is the claim a
+// `preference` exists to make, and it is stamped into an append-only log where a
+// wrong answer cannot be taken back. Under the alias, moving the first would have
+// silently moved the second.
 func (c *common) planStamp() (string, error) {
-	slug, err := memory.RequirePlan(c.plan)
+	slug, err := memory.PlanSlug(c.plan)
 	if err != nil {
-		if errors.Is(err, memory.ErrNoPlan) {
-			return "", fail("no_plan", "%s", err.Error())
-		}
 		return "", fail("bad_plan", "%s", err.Error())
 	}
 	return slug, nil
@@ -318,9 +330,9 @@ func cmdAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	// Before the id, before anything: a record whose plan cannot be named is a
-	// record no bounded query will ever return, and the log is append-only, so
-	// there is no taking it back afterwards.
+	// Before the id, so that a plan slug that is not a slug refuses the write
+	// rather than reaching a log that cannot take it back. An *absent* plan is not
+	// a refusal: the record then belongs to the repository. See planStamp.
 	plan, err := c.planStamp()
 	if err != nil {
 		return err

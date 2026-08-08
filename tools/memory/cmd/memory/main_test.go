@@ -683,12 +683,12 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 	// Version 3 took `unit` away, and this is the list a caller reads to find out
 	// what the write gate accepts — so the narrowing has to show up here, or the
 	// tool advertises a kind it refuses. The ten that are left, plus the kinds
-	// widened into version 3 in place afterwards — `hypothesis`, then `gotcha`: a
-	// widening owes this list the same update a narrowing does, in the other
-	// direction, or the tool hides a value it accepts.
+	// widened into version 3 in place afterwards — `hypothesis`, `gotcha`, then
+	// `preference`: a widening owes this list the same update a narrowing does, in
+	// the other direction, or the tool hides a value it accepts.
 	wantKinds := []string{"objective", "decision", "deviation", "assumption",
 		"open-question", "wont-fix", "dead-end", "adr", "postmortem", "review-finding",
-		"hypothesis", "gotcha"}
+		"hypothesis", "gotcha", "preference"}
 	for _, want := range wantKinds {
 		if !slices.Contains(out.EntryKinds, want) {
 			t.Errorf("kind %q went missing from the advertised set: %v", want, out.EntryKinds)
@@ -993,23 +993,22 @@ func TestValidateToleratesAStateEdgeTheWritePathWouldRefuse(t *testing.T) {
 	}
 }
 
-// A record that cannot name its plan is unreachable by every bounded query, and
-// the log is append-only, so there is no fixing it afterwards. `add` stops.
-func TestAddRefusesWithoutAPlanAndTakesItFromTheEnvironment(t *testing.T) {
+// `add` no longer refuses a record that names no plan — such a record belongs to
+// the repository rather than to a tree in it — but every other thing it refused
+// about a plan it still refuses, and the environment is still the second way to
+// name one.
+func TestAddWritesWithoutAPlanAndStillTakesItFromTheEnvironment(t *testing.T) {
 	r := throwawayRepo(t)
 
-	res := runBare(t, r, "add", "--kind", "decision", "--title", "Homeless", "--about", "auth")
-	if res.code == 0 {
-		t.Fatal("add with no plan must be refused")
+	res := runBare(t, r, "add", "--kind", "preference", "--title", "Migrations go through Atlas",
+		"--about", "persistence")
+	if res.code != 0 {
+		t.Fatalf("add with no plan must be written: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
-	if code, _ := errorCode(t, res); code != "no_plan" {
-		t.Errorf("expected a no_plan refusal, got %q", code)
-	}
-	// The log itself is there — resolving a location creates it, and `add` resolves
-	// before it checks the plan — so what a refusal has to leave behind is an empty
-	// log rather than no log. The invariant is that no record was written.
-	if got := readFile(t, r.log); got != "" {
-		t.Errorf("a refused add must write nothing, got %q", got)
+	// Absent, not empty: `origin.plan` is omitempty, so a record belonging to the
+	// repository carries no plan key at all rather than one holding "".
+	if line := lines(t, r.log)[0]; strings.Contains(line, `"plan"`) {
+		t.Errorf("a plan-less record must carry no plan key: %s", line)
 	}
 
 	// AI_KIT_PLAN is the other way to say it, and it has to be enough on its own.
@@ -1019,8 +1018,8 @@ func TestAddRefusesWithoutAPlanAndTakesItFromTheEnvironment(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("AI_KIT_PLAN should be enough: %v\n%s", err, out)
 	}
-	if !strings.Contains(lines(t, r.log)[0], `"plan":"from-env"`) {
-		t.Errorf("the record should carry the plan from the environment: %s", lines(t, r.log)[0])
+	if got := lines(t, r.log)[1]; !strings.Contains(got, `"plan":"from-env"`) {
+		t.Errorf("the record should carry the plan from the environment: %s", got)
 	}
 
 	// And a slug that is not a slug is refused rather than stamped, since
@@ -1032,6 +1031,161 @@ func TestAddRefusesWithoutAPlanAndTakesItFromTheEnvironment(t *testing.T) {
 	}
 	if code, _ := errorCode(t, res); code != "bad_plan" {
 		t.Errorf("expected a bad_plan refusal, got %q", code)
+	}
+}
+
+// A preference belongs to the repository, not to any objective tree inside it,
+// and this is the whole of what that means through the binary: it is written with
+// no `--plan` and no `AI_KIT_PLAN`, the log it lands in still sweeps clean, and a
+// read bounded to any tree in the same log returns it.
+//
+// The second half is what stops the widening from being a filter that stopped
+// filtering: the record that *does* name a plan is still absent from a query
+// naming a different one.
+func TestAPreferenceIsWrittenWithoutAPlanAndEveryPlanBoundedReadSeesIt(t *testing.T) {
+	r := throwawayRepo(t)
+
+	res := runBare(t, r, "add", "--kind", "preference", "--title", "Migrations go through Atlas",
+		"--about", "persistence,migrations", "--body", "Hand-written scripts drifted from the schema twice.")
+	if res.code != 0 {
+		t.Fatalf("a preference must be writable with no plan: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	preference := recordID(t, res)
+	addTo(t, r, "tree-a", "Cancel is async")
+
+	if out, code := validateOne(t, r); !out.OK || code != 0 {
+		t.Fatalf("a log holding a plan-less record must still sweep clean: ok=%v exit=%d %+v",
+			out.OK, code, out.Reports[0].Problems)
+	}
+
+	// Every direction the bound can be asked in: no plan at all, the slug that is
+	// in the log, and one that is not. A record the repository owns is in scope for
+	// all three.
+	for _, args := range [][]string{
+		{"query", "--kind", "preference"},
+		{"query", "--plan", "tree-a", "--kind", "preference"},
+		{"query", "--plan", "tree-b", "--kind", "preference"},
+	} {
+		out := readQuery(t, r, args...)
+		if out.Count != 1 || out.Records[0].ID != preference {
+			t.Errorf("%v must return the repository's own record, got %v", args, ids(out))
+		}
+	}
+
+	if out := readQuery(t, r, "query", "--plan", "tree-b", "--kind", "decision"); out.Count != 0 {
+		t.Errorf("a record that names a plan stays out of another plan's query, got %v", ids(out))
+	}
+	if out := readQuery(t, r, "query", "--plan", "tree-a"); out.Count != 2 {
+		t.Errorf("a bounded read returns its own tree's records and the repository's, got %d", out.Count)
+	}
+}
+
+// The kind is not anchored, and the way to say that through the binary is beside
+// the kind that is: the same `add`, with no `--anchor`, written for one and
+// refused for the other.
+func TestAPreferenceIsWrittenWithoutAnAnchorWhereAGotchaIsRefused(t *testing.T) {
+	r := throwawayRepo(t)
+
+	if res := runBare(t, r, "add", "--kind", "preference", "--title", "Migrations go through Atlas",
+		"--about", "persistence"); res.code != 0 {
+		t.Fatalf("a preference owes no anchor: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+
+	res := runBare(t, r, "add", "--kind", "gotcha", "--title", "The lock is taken before the write",
+		"--about", "persistence")
+	if res.code == 0 {
+		t.Fatal("`gotcha` is still the one kind refused without an anchor")
+	}
+	if code, _ := errorCode(t, res); code != "invalid_record" {
+		t.Errorf("expected invalid_record, got %q", code)
+	}
+	if got := lines(t, r.log); len(got) != 1 {
+		t.Fatalf("the refused gotcha must have written nothing, log has %d lines", len(got))
+	}
+}
+
+// Removing one refusal must not remove the others. Everything `add` refused about
+// a record before the plan became optional, it refuses now, with the code it
+// returned then and with nothing reaching the log.
+func TestAddWithNoPlanStillRefusesEverythingElseItRefused(t *testing.T) {
+	r := throwawayRepo(t)
+
+	for name, args := range map[string][]string{
+		"a kind outside the closed set": {"add", "--kind", "invented", "--title", "Whatever", "--about", "auth"},
+		"no about at all":               {"add", "--kind", "preference", "--title", "Whatever"},
+		"a blank title":                 {"add", "--kind", "preference", "--title", "   ", "--about", "auth"},
+	} {
+		res := runBare(t, r, args...)
+		if res.code == 0 {
+			t.Errorf("%s must still be refused", name)
+			continue
+		}
+		if code, _ := errorCode(t, res); code != "invalid_record" {
+			t.Errorf("%s: expected invalid_record, got %q", name, code)
+		}
+	}
+	if got := readFile(t, r.log); got != "" {
+		t.Errorf("a refused add must write nothing, got %q", got)
+	}
+}
+
+// The newest preference under a tag is the live answer, read off the result order
+// with no edge drawn — which is what makes the convention usable by a writer who
+// does not know which record they are replacing. `supersedes` still works for the
+// writer who does, and `--current` is where the difference shows.
+//
+// It also covers the plan-less endpoints: neither of these records carries a
+// plan, and the edge between them is written all the same. The draft this
+// implements expected `link` to *require* a `--plan` for it — it does not, and
+// never did: `cmdLink` reads neither the flag nor AI_KIT_PLAN. So the edge is
+// written twice over here, with a plan and without, because the claim worth
+// pinning is that neither spelling depends on the endpoints having one.
+func TestTheNewestPreferenceUnderATagIsTheLiveAnswer(t *testing.T) {
+	r := throwawayRepo(t)
+
+	addPreference := func(title string) string {
+		t.Helper()
+		res := runBare(t, r, "add", "--kind", "preference", "--title", title, "--about", "persistence,orm")
+		if res.code != 0 {
+			t.Fatalf("add %q: exit %d\n%s%s", title, res.code, res.stdout, res.stderr)
+		}
+		return recordID(t, res)
+	}
+	older := addPreference("Persistence is GORM")
+	newer := addPreference("Persistence is sqlc")
+
+	out := readQuery(t, r, "query", "--kind", "preference", "--about", "persistence", "--current")
+	if out.Count != 2 {
+		t.Fatalf("both preferences are current until something says otherwise, got %d", out.Count)
+	}
+	if out.Records[0].ID != newer || out.Records[1].ID != older {
+		t.Fatalf("the live answer is the first result, most recent first: %v", ids(out))
+	}
+
+	// With a --plan, although neither endpoint carries one.
+	if res := runBare(t, r, "link", "--plan", "some-tree", "--type", "supersedes",
+		"--from", newer, "--to", older); res.code != 0 {
+		t.Fatalf("link between two plan-less records: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+
+	out = readQuery(t, r, "query", "--kind", "preference", "--about", "persistence", "--current")
+	if out.Count != 1 || out.Records[0].ID != newer {
+		t.Fatalf("the superseded preference must drop out of --current, got %v", ids(out))
+	}
+
+	// And without one, which is what `link` has always accepted.
+	third := addPreference("Persistence is Ent")
+	if res := runBare(t, r, "link", "--type", "supersedes", "--from", third, "--to", newer); res.code != 0 {
+		t.Fatalf("link needs no plan and never did: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	out = readQuery(t, r, "query", "--kind", "preference", "--about", "persistence", "--current")
+	if out.Count != 1 || out.Records[0].ID != third {
+		t.Fatalf("the newest unsuperseded preference is the live answer, got %v", ids(out))
+	}
+
+	if out, code := validateOne(t, r); !out.OK || code != 0 {
+		t.Fatalf("edges between plan-less records must sweep clean: ok=%v exit=%d %+v",
+			out.OK, code, out.Reports[0].Problems)
 	}
 }
 

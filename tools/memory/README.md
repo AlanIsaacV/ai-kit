@@ -65,10 +65,11 @@ repository nobody can write to still answers `query` with what its log holds, an
 only a write refuses when the directory cannot be made. Promotion between the two
 scopes is always an explicit act.
 
-**One log per repo, and the plan lives in the record.** Every entry carries
+**One log per repo, and the plan lives in the record.** An entry carries
 `origin.plan`, and `--plan <slug>` is a filter over that field — not a choice of
-file. `add` refuses to write a record that cannot name its plan, because
-`origin.plan` is the only thing a bounded query has left to bound by.
+file. An entry written *without* one belongs to the repository rather than to any
+plan in it, and every plan-bounded read returns it; see
+[records the repository owns](#records-the-repository-owns).
 
 There used to be a third scope, `plan → <repo>/plans/<slug>/memory.jsonl`, and
 removing it is what [schema version 2](#changing-the-schema) is. One file per
@@ -83,7 +84,7 @@ can now be linked, whatever plan produced them.
 |---|---|---|
 | Core | `objective` `decision` `deviation` | Make the work loop run |
 | Learning | `assumption` `open-question` `wont-fix` `dead-end` `hypothesis` | Stop verification theater and repeated work |
-| Knowledge | `adr` `postmortem` `review-finding` `gotcha` | Outlive the plan, get promoted upward |
+| Knowledge | `adr` `postmortem` `review-finding` `gotcha` `preference` | Outlive the plan, get promoted upward |
 
 `wont-fix` earns its place: once you decide a risk is not worth covering, that
 decision is recorded, and no later verification pass raises it again.
@@ -120,12 +121,82 @@ decides when a *why* is written as a `gotcha` at all is stated in
 `agents/implement.md`, and `skills/bootstrap/SKILL.md` states it for that one
 interview case and for no other.
 
+`preference` is how things are done here, and it still holds: the library, the
+tool or the pattern this repository settled on, written with the reasoning that
+makes it worth carrying to the next one. **What the manifests can be asked is
+never written here.** "This repo uses GORM v1.25" is derivable from the
+repository at the moment of asking and is therefore not a record; *why* GORM and
+not sqlc is what has nowhere else to live. It is not `decision`, which presupposes
+an option was taken and says what it displaced — a preference may have been the
+only thing anybody tried — and it is not `adr`, which is a synthesis fed by one
+objective's decisions and deviations where this outlives every objective in the
+repository. It was [widened into version 3](#the-versions) in place, after
+`gotcha`, and it is **not** anchored: it is about a choice rather than about code
+that exists, and one promoted to the user scope could carry no `path:line` that
+means anything outside the repository it came from.
+
+Filing preferences under `decision` with an `--about stack` tag was considered
+and rejected on mechanics. `--about` is freeform and unvalidated, so the
+distinction would be a convention that can be forgotten in silence and added by
+accident, while `--kind` is a closed set the validator enforces — and the loop
+writes a `decision` at every objective's close, so a preference would be a needle
+in that haystack.
+
+It is the kind written [without a plan](#records-the-repository-owns), which is
+also where the convention for reading two contradictory ones lives.
+
 There used to be a `unit` as well, for a piece of work under an objective, and
 removing it is what [schema version 3](#changing-the-schema) is. An objective may
 derive from an objective, so the work under one is another objective and the kind
 named a distinction the tool no longer draws. The records already on disk that
 carry it declare version 1 or version 2 and are still judged by the rules those
 versions state, where the kind is valid.
+
+## Records the repository owns
+
+Most records come out of one objective and say so. A few are facts about the
+repository itself, and they are written with **no `--plan`** and no
+`AI_KIT_PLAN`. Three conventions govern them, and none of them is enforced by the
+validator — `origin.plan` is `omitempty` and no version's rule set has ever
+looked at it, so all three live here rather than in a refusal.
+
+**Which kinds are written without a plan.** `preference` is the one, today. The
+test is whether the record would still be true after every objective in the plan
+directory is closed and forgotten: a preference would, a decision taken under an
+objective would not. Nothing stops another kind from being written this way, and
+nothing should — an `open-question` about the repository as a whole is the
+obvious next candidate — but a record that *could* name the objective it came out
+of and does not is a record that has thrown information away.
+
+**A plan-less record is in scope for every plan-bounded read.** `--plan X`
+returns X's records **and** the repository's; it does not return another plan's.
+That is what "belongs to the repository" has to mean if it is to mean anything:
+one log holds every plan's records, so a record nobody's filter admits is a
+record nobody reads. The cost is stated rather than hidden — a bounded read now
+returns a little more than the turn asked for, and there is no flag to turn that
+off.
+
+**A preference is keyed by its first `--about` tag, and the newest one carrying
+that tag is the live answer.** No `supersedes` edge is required, and
+`query --kind preference --about persistence --current` puts it first, because
+[`query` returns most-recent-first](#usage) and an id is a ULID. The edge still
+works and is still worth writing when the writer knows which record they are
+replacing — it drops the older one from `--current` outright. But preferences
+arrive months apart from writers who do not know, and without this convention two
+contradictory ones would both come back current with nothing saying which is
+live.
+
+Its known soft spot, written here so the session that hits it does not think it
+found a bug: **a tag's content is not validated.** Two writers can key the same
+question as `persistence` and as `database`, and neither will shadow the other.
+That was chosen over a required `topic` field on the kind, with the weakness
+known. Nor is the *position* validated: `--about` matches a tag wherever it sits
+in the list, so "first" is a convention for whoever writes the record and is
+nothing at all at read time — a preference tagged `orm,persistence` competes for
+"newest wins" with one tagged `persistence,migrations`. What makes it stronger
+than a free-floating convention is that `--about` is already required with at
+least one non-blank tag, so no preference can exist without a topic — only with a
+badly chosen one.
 
 ## Anchors
 
@@ -511,7 +582,7 @@ rather than passed over in silence.
 |---|---|---|
 | 1 | eleven kinds; `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
 | 2 | eleven kinds; `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
-| 3 | twelve kinds; `scope` and the edge types are version 2's; entries may carry `anchors` | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis` and then `gotcha`, and the optional `anchors` field arrived the same way — with one rule that tightens: a `gotcha` without one is refused |
+| 3 | thirteen kinds; `scope` and the edge types are version 2's; entries may carry `anchors` | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis`, `gotcha` and then `preference`, and the optional `anchors` field arrived the same way — with one rule that tightens: a `gotcha` without one is refused |
 
 **Version 3 is the current version, and dropping the `unit` kind is what the bump
 bought.** `entryKindsV3` started as version 1's eleven without it — the two kinds
@@ -539,16 +610,21 @@ where that value is valid. Not a byte of them was rewritten, and no legacy value
 entered the current validator.
 
 **The kinds widened afterwards, and stayed inside version 3.** `entryKindsV3`
-gained `hypothesis` and then `gotcha`, appended to the map literal, with
-`CurrentSchemaVersion` left at 3 — the same move version 2 made with the state
-edges, for the same reason: widening makes no record already written illegal, so
-a bump would protect nothing. `entryKindsV1` gained neither, so an entry
-declaring version 1 or 2 with kind `hypothesis` or `gotcha` is refused by the
-rules it declares, which is what says the widening happened inside one version
-rather than everywhere at once. What it costs is the same false alarm the rule
-above names: a binary built before this reports `kind: unknown` where it would
-have reported an honest `unjudged`. Two widenings do not add up to a bump: the
-direction is what decides, not the count.
+gained `hypothesis`, then `gotcha`, then `preference`, appended to the map
+literal, with `CurrentSchemaVersion` left at 3 — the same move version 2 made
+with the state edges, for the same reason: widening makes no record already
+written illegal, so a bump would protect nothing. `entryKindsV1` gained none of
+them, so an entry declaring version 1 or 2 with one of those kinds is refused by
+the rules it declares, which is what says the widening happened inside one
+version rather than everywhere at once. What it costs is the same false alarm the
+rule above names: a binary built before this reports `kind: unknown` where it
+would have reported an honest `unjudged`. Three widenings do not add up to a
+bump: the direction is what decides, not the count.
+
+`preference` needed nothing else from the schema. It is not added to
+`anchoredKindsV3` — that set narrows, and adding to it now is a bump — and
+`--plan` becoming optional on `add` took no rule with it, because no version's
+rule set ever looked at `origin.plan`. The requirement had been the CLI's own.
 
 **The `anchors` field arrived inside version 3, and it brought the one rule here
 that takes something back.** The field itself is the easy half: optional, so every
@@ -641,6 +717,11 @@ memory add   --plan jwt-migration --kind gotcha \
              --about auth,pkg/auth/ \
              --anchor pkg/auth/token.go:41-43
 
+memory add   --kind preference \
+             --title "Migrations go through Atlas, not hand-written scripts" \
+             --body "Hand-written scripts drifted from the schema twice in 2025." \
+             --about persistence,migrations     # no --plan: the repo owns this
+
 memory query --plan jwt-migration --about auth --kind decision --current
 memory search --plan jwt-migration "key rotation"
 memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
@@ -666,7 +747,8 @@ well-formed, but a sweep that covered fewer logs than requested has not passed
 either, and a caller reading only the exit code has to hear about it.
 
 `--scope` is `repo` by default, and `user` is the only other value. `--plan` is a
-*stamp* on `add`, which refuses without one, and a *bound* on `query` and
+*stamp* on `add`, optional there since a record without one belongs to the
+[repository](#records-the-repository-owns), and a *bound* on `query` and
 `search`; other commands accept it and read the whole log, since `link` and
 `graph` are the operations the collapse exists to let cross plans. `state` is in
 that second group on purpose — an objective's parent, its children and which
@@ -711,8 +793,18 @@ everything under it, so `--about pkg/auth/` finds a record tagged
   counts only that plan's matches, and still withholds them above the threshold.
 - Two records written under different plans can be linked, and each is reachable
   from the other by a graph walk.
-- `add` refuses when no plan is named, because the record it would write is
-  unreachable by every bounded query.
+- `add` writes a record when no plan is named, and it carries no `plan` key at
+  all rather than an empty one; a plan slug that is not kebab-case is still
+  refused, and so is a kind outside the closed set, a missing `about` and a blank
+  title. `AI_KIT_PLAN` is still the second way to name a plan.
+- A plan-less record comes back from `query --kind preference` with no `--plan`
+  and from `--plan <slug>` for any slug, including one no record in the log
+  carries — while a record that names a plan is still absent from a query naming
+  a different one. The widening admits the plan-less case and nothing else.
+- Two preferences sharing a first `--about` tag both come back `--current`, most
+  recent first, with no edge drawn; a `supersedes` edge from the newer then drops
+  the older. Both endpoints carry no plan and the edge is written either way,
+  since `link` reads no plan at all.
 - `plan` is refused as a scope going in, by no flag and no environment variable
   can it be reopened, and the records already on disk that carry it still pass
   the sweep.
@@ -730,6 +822,9 @@ everything under it, so `--about pkg/auth/` finds a record tagged
   move the version, and it leaves every record already on disk valid.
 - `gotcha` clears the same six checks, and the version is still 3 with both
   widenings in: two of them do not add up to a bump.
+- `preference` clears them a third time, is absent from `anchored_kinds`, and is
+  written with no `--anchor` where an unanchored `gotcha` is still refused. Three
+  widenings still do not add up to a bump.
 - Anchors survive a round trip through the log field for field, on a record
   carrying two of them, and the log still sweeps clean afterwards.
 - `add --kind gotcha` with no anchor is refused on the `anchors` field, the

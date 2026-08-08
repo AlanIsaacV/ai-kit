@@ -56,8 +56,8 @@ const SchemaVersion2 = 2
 // names edgeTypesV2 rather than declaring sets of their own. `implements` in
 // particular stays valid: six edges on disk use it.
 //
-// The kinds have since gained `hypothesis` and then `gotcha`, in place and
-// without a version 4, the way version 2 gained the state edges: widening a
+// The kinds have since gained `hypothesis`, then `gotcha`, then `preference`, in
+// place and without a version 4, the way version 2 gained the state edges: widening a
 // closed set makes no record already written illegal, so there is nothing for a
 // bump to protect. What it costs is a binary built before a widening, which has
 // rules for version 3 and so reports the newer kind as a problem rather than as
@@ -138,6 +138,22 @@ const (
 	// It is the one kind version 3 refuses to write without an Anchor. See
 	// anchoredKindsV3.
 	KindGotcha Kind = "gotcha"
+	// KindPreference is how things are done here, and it still holds: the library,
+	// the tool or the pattern a repository settled on, written with the reasoning
+	// that makes it worth carrying to the next repository. What the manifests can
+	// be asked is never written here — "this repo uses GORM v1.25" is derivable
+	// from the repository at the moment of asking, and why GORM rather than sqlc is
+	// what has nowhere else to live. It is not `decision`, which presupposes an
+	// option was taken and says what it displaced; a preference may have been the
+	// only thing anybody ever tried. It is not `adr`, which is a synthesis fed by
+	// the decisions and deviations of one objective, where this outlives every
+	// objective in the repository.
+	//
+	// It belongs to the repository rather than to a plan, so it is the kind `add`
+	// is written without a --plan. Two of them sharing a first `about` tag are
+	// answered by the newer; see the README's Preferences section for why that
+	// convention sits there rather than in a validation rule.
+	KindPreference Kind = "preference"
 
 	// Structural.
 	KindEdge Kind = "edge"
@@ -163,9 +179,9 @@ var entryKindsV1 = map[Kind]bool{
 
 // entryKindsV3 is the closed set of entry kinds as schema version 3 defines it:
 // version 1's eleven without `unit`, plus the kinds widened in since —
-// `hypothesis`, then `gotcha`. Dropping `unit` is the whole of what the bump
-// changed; both widenings came afterwards, appended to this set in place,
-// because widening takes nothing back from any record on disk and so needs no
+// `hypothesis`, then `gotcha`, then `preference`. Dropping `unit` is the whole of
+// what the bump changed; every widening came afterwards, appended to this set in
+// place, because widening takes nothing back from any record on disk and so needs no
 // version of its own. The narrowing and the widenings are listed apart here on
 // purpose — a reader asking what version 3 *bought* is asking about the
 // narrowing, and a widening folded into that sentence would look like part of
@@ -182,7 +198,7 @@ var entryKindsV3 = map[Kind]bool{
 	KindObjective: true, KindDecision: true, KindDeviation: true,
 	KindAssumption: true, KindOpenQuestion: true, KindWontFix: true, KindDeadEnd: true,
 	KindADR: true, KindPostmortem: true, KindReviewFinding: true,
-	KindHypothesis: true, KindGotcha: true,
+	KindHypothesis: true, KindGotcha: true, KindPreference: true,
 }
 
 // anchoredKindsV3 is the kinds version 3 will not write without at least one
@@ -382,9 +398,13 @@ func sortedScopes(set map[Scope]bool) []Scope {
 //
 // Plan carries more weight than the rest of it. Since version 2 there is one
 // log per repo, so `origin.plan` is the only thing a bounded query has left to
-// bound by — a record written without one is not untidy, it is unreachable by
-// every query that names a plan. That is why the write path refuses to guess it;
-// see ErrNoPlan.
+// bound by, and it is where a record says which objective tree produced it.
+//
+// Empty means the record belongs to the repository rather than to any tree in
+// it, which is a claim and not an omission: such a record is returned by every
+// bounded query instead of by none, so `--plan X` narrows to X's records plus
+// the repository's own. See planOf, and KindPreference for the kind written that
+// way.
 type Origin struct {
 	Repo   string `json:"repo,omitempty"`
 	Plan   string `json:"plan,omitempty"`
