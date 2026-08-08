@@ -87,21 +87,6 @@ func TestPromotionCarriesEdgesBetweenPromotedRecords(t *testing.T) {
 	}
 }
 
-// An edge whose other end stays behind must not follow: it would be dangling
-// at the target, and a dangling edge fails silently.
-func TestPromotionLeavesHalfEdgesBehind(t *testing.T) {
-	decision := entry(t, KindDecision, "Use RS256", "auth")
-	adr := entry(t, KindADR, "Asymmetric signing", "auth")
-	edges := []*Edge{derives(t, adr, decision)}
-
-	p := PlanPromotion([]*Entry{decision, adr}, edges, nil, nil,
-		[]string{adr.ID}, ScopeUser)
-
-	if p.EdgesCopied != 0 {
-		t.Fatalf("an edge into a record that stayed behind must not be copied, got %d", p.EdgesCopied)
-	}
-}
-
 // Promoting one end later should reconnect the pair, not leave the graph
 // permanently broken because of the order the user happened to pick.
 func TestPromotionReconnectsOnSecondPass(t *testing.T) {
@@ -148,6 +133,234 @@ func TestPromotionCarriesTheSourceVersion(t *testing.T) {
 	}
 	if old.Version != 0 {
 		t.Error("the source record must not be mutated")
+	}
+}
+
+// Idempotency was proven for records and asserted for edges: the test above
+// passes nil for both edge slices, so the dedup at `have[edgeKey(e)]` had never
+// once been run by a test. Here both slices are real, and the destination
+// already holds the pair *and* the edge between them — which is the state a
+// first promotion leaves behind, and the state a second one meets.
+func TestPromotionIsIdempotentForEdgesToo(t *testing.T) {
+	decision := entry(t, KindDecision, "Use RS256", "auth")
+	adr := entry(t, KindADR, "Asymmetric signing", "auth")
+	edge := derives(t, adr, decision)
+
+	atUser := []*Entry{}
+	for _, e := range []*Entry{decision, adr} {
+		cp := *e
+		cp.Scope = ScopeUser
+		atUser = append(atUser, &cp)
+	}
+	landed := *edge
+
+	p := PlanPromotion([]*Entry{decision, adr}, []*Edge{edge}, atUser, []*Edge{&landed},
+		[]string{adr.ID, decision.ID}, ScopeUser)
+
+	if len(p.Records) != 0 {
+		t.Fatalf("a second pass must append nothing at all, got %d records", len(p.Records))
+	}
+	if p.EdgesCopied != 0 {
+		t.Errorf("the edge is already at the target: %d copied", p.EdgesCopied)
+	}
+	if len(p.AlreadyPresent) != 2 || len(p.Promoted) != 0 {
+		t.Errorf("both records should read as already present: %+v", p)
+	}
+	if p.EdgesSkipped != 0 || len(p.Border) != 0 {
+		t.Errorf("nothing was left behind, so nothing sits at the border: %+v", p)
+	}
+}
+
+// An `adr` that arrives without the `decision` that fed it arrives as an
+// assertion. One hop is what stops that, and it is one hop from the named set
+// and no further.
+func TestPromotionReachesOneHopAndStopsThere(t *testing.T) {
+	adr := entry(t, KindADR, "Asymmetric signing", "auth")
+	decision := entry(t, KindDecision, "Use RS256", "auth")
+	deviation := entry(t, KindDeviation, "Rotated the key by hand", "auth")
+	edges := []*Edge{derives(t, adr, decision), derives(t, decision, deviation)}
+
+	p := PlanPromotion([]*Entry{adr, decision, deviation}, edges, nil, nil,
+		[]string{adr.ID}, ScopeUser)
+
+	if len(p.Promoted) != 2 {
+		t.Fatalf("the adr and the decision it derives from should travel: %v", p.Promoted)
+	}
+	for _, id := range p.Promoted {
+		if id == deviation.ID {
+			t.Fatal("two hops is the transitive closure this refused to be")
+		}
+	}
+	if p.EdgesCopied != 1 {
+		t.Errorf("only the edge with both ends at the target may be copied, got %d", p.EdgesCopied)
+	}
+}
+
+// The reach cannot depend on the order the edges happen to sit in the log. A
+// walk that added neighbours as it scanned would take the chain in one direction
+// and stop at one hop in the other.
+func TestOneHopIsMeasuredFromTheNamedSetWhateverTheEdgeOrder(t *testing.T) {
+	a := entry(t, KindADR, "Asymmetric signing", "auth")
+	b := entry(t, KindDecision, "Use RS256", "auth")
+	c := entry(t, KindDeviation, "Rotated the key by hand", "auth")
+	forward := []*Edge{derives(t, a, b), derives(t, b, c)}
+	backward := []*Edge{derives(t, b, c), derives(t, a, b)}
+
+	for name, edges := range map[string][]*Edge{"forward": forward, "backward": backward} {
+		p := PlanPromotion([]*Entry{a, b, c}, edges, nil, nil, []string{a.ID}, ScopeUser)
+		if len(p.Promoted) != 2 {
+			t.Errorf("%s: expected exactly the named record and its neighbour, got %v", name, p.Promoted)
+		}
+	}
+}
+
+// The border is the whole point of criterion 5: a promotion that left reasoning
+// behind must not print success in silence.
+func TestPromotionNamesTheBorderAndCountsSkippedEdges(t *testing.T) {
+	adr := entry(t, KindADR, "Asymmetric signing", "auth")
+	decision := entry(t, KindDecision, "Use RS256", "auth")
+	deviation := entry(t, KindDeviation, "Rotated the key by hand", "auth")
+	edges := []*Edge{derives(t, adr, decision), derives(t, decision, deviation)}
+
+	p := PlanPromotion([]*Entry{adr, decision, deviation}, edges, nil, nil,
+		[]string{adr.ID}, ScopeUser)
+
+	if len(p.Border) != 1 || p.Border[0] != deviation.ID {
+		t.Fatalf("the record two hops out is what sat at the border: %v", p.Border)
+	}
+	if p.EdgesSkipped != 1 {
+		t.Errorf("the edge into it could not be copied and has to be counted, got %d", p.EdgesSkipped)
+	}
+	// The rule the expansion must not weaken: more records qualify, never an edge
+	// whose endpoint is absent. An edge whose other end stayed behind would be
+	// dangling at the target, and a dangling edge fails silently — a graph walk
+	// there would simply return less than it should, with nothing saying so.
+	if p.EdgesCopied != 1 {
+		t.Errorf("only the edge between two records at the target travels, got %d", p.EdgesCopied)
+	}
+}
+
+// The reach carries the reasoning and stops at the scaffolding. An `adr` very
+// often derives from the objective that produced it, and following that edge
+// would lift a repository's own work planning into a log meant to outlive it.
+//
+// What it must not do is disappear: an objective left behind is border like
+// anything else, and the edge to it is counted.
+func TestOneHopDoesNotReachForAnObjectiveButStillNamesIt(t *testing.T) {
+	objective := entry(t, KindObjective, "Ship the token service", "auth")
+	decision := entry(t, KindDecision, "Use RS256", "auth")
+	adr := entry(t, KindADR, "Asymmetric signing", "auth")
+	edges := []*Edge{derives(t, adr, decision), derives(t, adr, objective)}
+
+	p := PlanPromotion([]*Entry{objective, decision, adr}, edges, nil, nil,
+		[]string{adr.ID}, ScopeUser)
+
+	if len(p.Promoted) != 2 {
+		t.Fatalf("the adr and its decision travel, and nothing else: %v", p.Promoted)
+	}
+	for _, id := range p.Promoted {
+		if id == objective.ID {
+			t.Fatal("the objective was reached for: a repository's scaffolding is not knowledge")
+		}
+	}
+	if len(p.Border) != 1 || p.Border[0] != objective.ID {
+		t.Fatalf("an objective that was not reached for is still named: %v", p.Border)
+	}
+	if p.EdgesSkipped != 1 {
+		t.Errorf("the edge into it stayed behind and has to be counted, got %d", p.EdgesSkipped)
+	}
+	if p.EdgesCopied != 1 {
+		t.Errorf("only the edge to the decision travels, got %d", p.EdgesCopied)
+	}
+}
+
+// The other half of the same hole. `--kind` refuses `gotcha` because its anchor
+// resolves against the repository it was written in, and the reach would have
+// carried one upward anyway by following an edge into it.
+func TestOneHopDoesNotReachForAGotchaButStillNamesIt(t *testing.T) {
+	got := entry(t, KindGotcha, "The lock is taken before the write", "auth")
+	decision := entry(t, KindDecision, "Use RS256", "auth")
+	adr := entry(t, KindADR, "Asymmetric signing", "auth")
+	edges := []*Edge{derives(t, adr, decision), derives(t, adr, got)}
+
+	p := PlanPromotion([]*Entry{got, decision, adr}, edges, nil, nil,
+		[]string{adr.ID}, ScopeUser)
+
+	for _, id := range p.Promoted {
+		if id == got.ID {
+			t.Fatal("the gotcha was reached for: its anchor means nothing at the target")
+		}
+	}
+	if len(p.Promoted) != 2 {
+		t.Fatalf("the adr and its decision travel, and nothing else: %v", p.Promoted)
+	}
+	if len(p.Border) != 1 || p.Border[0] != got.ID {
+		t.Fatalf("a gotcha that was not reached for is still named: %v", p.Border)
+	}
+	if p.EdgesSkipped != 1 || p.EdgesCopied != 1 {
+		t.Errorf("one edge travels and one is counted as left behind: %+v", p)
+	}
+}
+
+// The rule bounds the reach and not the selection: a caller who types an id has
+// decided, and nothing here overrides that. Both excluded kinds, since the two
+// are excluded for different reasons and could drift apart.
+func TestAKindExcludedFromTheReachIsStillPromotedByID(t *testing.T) {
+	for name, kind := range map[string]Kind{"objective": KindObjective, "gotcha": KindGotcha} {
+		neighbour := entry(t, kind, "Whatever this is", "auth")
+		adr := entry(t, KindADR, "Asymmetric signing", "auth")
+		edges := []*Edge{derives(t, adr, neighbour)}
+
+		p := PlanPromotion([]*Entry{neighbour, adr}, edges, nil, nil,
+			[]string{adr.ID, neighbour.ID}, ScopeUser)
+
+		if len(p.Promoted) != 2 || p.EdgesCopied != 1 {
+			t.Errorf("%s: both named records and the edge between them travel: %+v", name, p)
+		}
+		if len(p.Border) != 0 || p.EdgesSkipped != 0 {
+			t.Errorf("%s: nothing was left behind here: %+v", name, p)
+		}
+	}
+}
+
+// An edge with neither endpoint in the promotion is not a skipped edge — it is
+// the rest of the graph, and counting it would make the number say nothing.
+func TestPromotionDoesNotCountEdgesItNeverConsidered(t *testing.T) {
+	adr := entry(t, KindADR, "Asymmetric signing", "auth")
+	elsewhere := entry(t, KindDecision, "Use Postgres", "storage")
+	alsoElsewhere := entry(t, KindDeviation, "Skipped the migration", "storage")
+	edges := []*Edge{derives(t, elsewhere, alsoElsewhere)}
+
+	p := PlanPromotion([]*Entry{adr, elsewhere, alsoElsewhere}, edges, nil, nil,
+		[]string{adr.ID}, ScopeUser)
+
+	if p.EdgesSkipped != 0 || len(p.Border) != 0 {
+		t.Fatalf("an edge nowhere near this promotion is not something it left behind: %+v", p)
+	}
+}
+
+// Selecting by class is the other half of not having to know every id, and the
+// two selectors are a union: a record named twice is still promoted once.
+func TestPromotionSelectsByKindAndUnionsWithNamedIDs(t *testing.T) {
+	pref := entry(t, KindPreference, "Migrations go through Atlas", "persistence")
+	other := entry(t, KindPreference, "Errors wrap with %w", "errors")
+	decision := entry(t, KindDecision, "Use RS256", "auth")
+
+	p := PlanPromotion([]*Entry{pref, other, decision}, nil, nil, nil,
+		[]string{pref.ID, decision.ID}, ScopeUser, KindPreference)
+
+	if len(p.Promoted) != 3 {
+		t.Fatalf("both preferences and the named decision should travel: %v", p.Promoted)
+	}
+	seen := map[string]int{}
+	for _, id := range p.Promoted {
+		seen[id]++
+	}
+	if seen[pref.ID] != 1 {
+		t.Errorf("a record named by id and matched by kind is one record, got %d copies", seen[pref.ID])
+	}
+	if len(p.Records) != 3 {
+		t.Errorf("expected exactly three lines to append, got %d", len(p.Records))
 	}
 }
 

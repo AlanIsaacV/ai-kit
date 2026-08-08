@@ -123,7 +123,12 @@ const (
 	// abandoned during implementation.
 	KindHypothesis Kind = "hypothesis"
 
-	// Knowledge — what is meant to outlive the plan and be promoted upward.
+	// Knowledge — what is meant to outlive the plan.
+	//
+	// Which of these `promote --kind` will sweep upward is promotableKindsV3, and
+	// it is not this group: two of the five are tied to the repository they were
+	// written in, while a kind from Learning belongs to it. Any record still
+	// promotes by id, whatever its kind.
 	KindADR           Kind = "adr"
 	KindPostmortem    Kind = "postmortem"
 	KindReviewFinding Kind = "review-finding"
@@ -208,6 +213,42 @@ var entryKindsV3 = map[Kind]bool{
 // The README's Anchors and versions sections carry the argument.
 var anchoredKindsV3 = map[Kind]bool{KindGotcha: true}
 
+// promotableKindsV3 is the closed set `promote --kind` sweeps: the kinds worth
+// carrying to a repository the work has not reached yet. It sits beside
+// anchoredKindsV3 because it is the same shape of thing — a narrower named set
+// over the kinds — and because this is where somebody adding a kind will be
+// standing when they have to decide whether it belongs.
+//
+// It is not a validation rule and it narrows nothing on disk. No record is
+// illegal for being of a kind absent from here, and every kind still promotes by
+// id: what this set bounds is only which classes a caller may name at once.
+//
+// It cuts across the groups above rather than following them, and that is the
+// point. `dead-end` is Learning and belongs here — what was tried and did not
+// work is the most expensive thing to rediscover in a new repository. Three
+// kinds are absent for three different reasons:
+//
+//   - `decision` because the loop writes one at the close of every objective, so
+//     sweeping the class would carry hundreds of records about this repository's
+//     own code into a log meant to outlive it.
+//   - `gotcha` because it cannot exist without an Anchor, and a path:line is
+//     resolved against `origin.repo` and nothing else — it means nothing in the
+//     next repository. See anchoredKindsV3.
+//   - `review-finding` because it names a defect in one repository's code at one
+//     moment, and what settles it is fixing that code.
+//
+// Keeping a kind out of this set is only half a bound: promotion also reaches
+// one hop past what it was given, and an edge into a record of an excluded kind
+// would carry it up anyway. `objective` and `gotcha` are held back there too;
+// see notPulledByReach.
+//
+// Adding a kind here widens what one flag selects and takes nothing back from
+// any record on disk, so it needs no version of its own — the opposite of
+// anchoredKindsV3, where adding a member condemns records already written.
+var promotableKindsV3 = map[Kind]bool{
+	KindADR: true, KindPostmortem: true, KindPreference: true, KindDeadEnd: true,
+}
+
 // entryKinds is the current schema's set: what `memory kinds` prints and what
 // the write gate enforces. Whoever adds a version repoints this at the new
 // version's set — that is one of the three obligations the README names.
@@ -234,6 +275,15 @@ func EntryKinds() []Kind { return sortedKinds(entryKinds) }
 // to keep in step. A version 4 that changes which kinds owe an anchor repoints
 // this function, and that is the whole of the obligation.
 func AnchoredKinds() []Kind { return sortedKinds(anchoredKindsV3) }
+
+// PromotableKinds returns the kinds `promote --kind` accepts, sorted, and
+// IsPromotable answers for one. Both are published for the reason AnchoredKinds
+// is: a closed set the tool enforces but does not advertise is a set a caller
+// only ever meets as a refusal.
+func PromotableKinds() []Kind { return sortedKinds(promotableKindsV3) }
+
+// IsPromotable says whether `promote --kind` will take this kind as a class.
+func IsPromotable(k Kind) bool { return promotableKindsV3[k] }
 
 func sortedKinds(set map[Kind]bool) []Kind {
 	out := make([]Kind, 0, len(set))
@@ -406,7 +456,21 @@ func sortedScopes(set map[Scope]bool) []Scope {
 // the repository's own. See planOf, and KindPreference for the kind written that
 // way.
 type Origin struct {
-	Repo   string `json:"repo,omitempty"`
+	Repo string `json:"repo,omitempty"`
+
+	// RepoID is what tells two repositories apart once their records share one
+	// log, which Repo cannot: Repo is a directory name, and two checkouts both
+	// called `api` are one string in the user log the moment promotion is easy
+	// enough that people use it. It is the origin remote's URL where the
+	// repository has one and the repository's absolute path where it does not.
+	//
+	// Empty is a real answer and not a hole: a record written where neither could
+	// be read says nothing about which repository, which is exactly what a record
+	// written before this field existed says. A sentinel value would make those
+	// two look like different claims. Nothing is backfilled — the log is
+	// append-only, and this applies to records written from now on.
+	RepoID string `json:"repo_id,omitempty"`
+
 	Plan   string `json:"plan,omitempty"`
 	Author string `json:"author,omitempty"`
 

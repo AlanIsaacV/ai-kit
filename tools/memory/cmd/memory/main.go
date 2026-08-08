@@ -34,7 +34,7 @@ Usage:
   memory graph     --from ID [--depth N]
   memory state     [--id ID]
   memory render    --as KIND
-  memory promote   --ids ID[,ID...] --to user
+  memory promote   [--ids ID[,ID...]] [--kind KIND[,KIND...]] --to user [--dry-run]
   memory validate  [--all]
   memory kinds
 
@@ -370,7 +370,12 @@ func cmdAdd(args []string) error {
 		// nothing. An anchor's path says where in a repository and never which
 		// one, so a user-scope record whose origin.repo read "." would carry a
 		// citation nobody could resolve.
-		Repo:   firstNonEmpty(*repo, repoLabel(loc.Repo), repoLabel(anchorRepo)),
+		Repo: firstNonEmpty(*repo, repoLabel(loc.Repo), repoLabel(anchorRepo)),
+		// The label and the identity are read off the same root but answer
+		// different questions, so --repo overrides the first and not the second: a
+		// caller may rename what a record calls its repository, and nothing it can
+		// type makes two repositories the same one.
+		RepoID: repoIdentity(firstNonEmpty(loc.Repo, anchorRepo)),
 		Plan:   plan,
 		Author: firstNonEmpty(*author, os.Getenv("AI_KIT_AUTHOR"), gitUserName(loc.Repo)),
 		Unit:   *unit,
@@ -743,13 +748,38 @@ func cmdPromote(args []string) error {
 	var c common
 	c.bind(fs)
 	ids := fs.String("ids", "", "comma-separated entry ids to promote")
+	kinds := fs.String("kind", "", "comma-separated kinds to promote as a class (see `memory kinds`)")
 	to := fs.String("to", "", "target scope: user")
+	dryRun := fs.Bool("dry-run", false, "print what would be promoted and write nothing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	want := splitList(*ids)
-	if len(want) == 0 {
-		return fail("missing_ids", "promote needs --ids <id>[,<id>...]")
+	wantKinds := toKinds(splitList(*kinds))
+	// A union, and either one alone is enough: naming a class and naming a record
+	// are two ways of asking for the same operation. Only having asked for neither
+	// is a refusal, and it names both ways of asking rather than the one it
+	// happens to check first.
+	if len(want) == 0 && len(wantKinds) == 0 {
+		return fail("missing_selection", "promote needs --ids <id>[,<id>...] or --kind <kind>[,<kind>...], or both")
+	}
+	// toKinds validates nothing — on `query` an unknown kind simply matches no
+	// record, which is a harmless empty answer. Here it would be a promotion that
+	// silently moved nothing, and a caller reading `promoted: []` cannot tell that
+	// from a class that happened to be empty. So the closed set is checked, and
+	// the refusal carries it rather than leaving the caller to guess which four.
+	// The structure is emitted rather than only spelled into the message for the
+	// reason `add` emits its problems: a caller should not have to parse prose to
+	// find out what it may say instead.
+	for _, k := range wantKinds {
+		if memory.IsPromotable(k) {
+			continue
+		}
+		emit(map[string]any{
+			"error": fmt.Sprintf("kind %q is not promotable as a class: --kind takes one of %s", k, joinKinds(memory.PromotableKinds())),
+			"code":  "kind_not_promotable", "kind": string(k), "promotable": memory.PromotableKinds(),
+		})
+		os.Exit(1)
 	}
 	target := memory.Scope(*to)
 	switch target {
@@ -780,8 +810,15 @@ func cmdPromote(args []string) error {
 	// the refusals above so that a promote that never happens creates nothing. It
 	// is a write, so the failure is a refusal: resolveForWrite's reasoning, applied
 	// to the one location that does not come from a --scope flag.
-	if err := materialize(dstLoc); err != nil {
-		return err
+	//
+	// Except under --dry-run, which is the one path here that is not a write at
+	// all: a preview that left a directory behind would have been a preview you
+	// cannot take back. A destination that does not exist reads as an empty log,
+	// so the report is the same one the real run would print.
+	if !*dryRun {
+		if err := materialize(dstLoc); err != nil {
+			return err
+		}
 	}
 
 	dstLines, err := readLog(dstLoc)
@@ -792,21 +829,35 @@ func cmdPromote(args []string) error {
 	plan := memory.PlanPromotion(
 		memory.Entries(lines), memory.Edges(lines),
 		memory.Entries(dstLines), memory.Edges(dstLines),
-		want, target,
+		want, target, wantKinds...,
 	)
 
-	if len(plan.Records) > 0 {
+	if len(plan.Records) > 0 && !*dryRun {
 		if err := memory.Open(dstLoc.Path).Append(plan.Records...); err != nil {
 			return fail("write_failed", "%s", err.Error())
 		}
 	}
 
+	// The same report either way, down to the keys, with one boolean saying which
+	// run this was. A preview in a shape of its own would be a second thing to
+	// read and a second thing to keep in step with the first, and its whole job is
+	// to be believed about what the real run will do.
 	emit(map[string]any{
 		"from": srcLoc.Path, "to": dstLoc.Path,
 		"promoted": nonNil(plan.Promoted), "already_present": nonNil(plan.AlreadyPresent),
 		"unknown": nonNil(plan.Unknown), "edges_copied": plan.EdgesCopied,
+		"border": nonNil(plan.Border), "border_count": len(plan.Border),
+		"edges_skipped": plan.EdgesSkipped, "dry_run": *dryRun,
 	})
 	return nil
+}
+
+func joinKinds(ks []memory.Kind) string {
+	out := make([]string, 0, len(ks))
+	for _, k := range ks {
+		out = append(out, string(k))
+	}
+	return strings.Join(out, ", ")
 }
 
 func nonNil(s []string) []string {
@@ -925,7 +976,11 @@ func cmdKinds(args []string) error {
 		"threshold":      memory.DefaultThreshold,
 		"justifications": justifications,
 		"anchored_kinds": memory.AnchoredKinds(),
-		"verdicts":       memory.Verdicts(),
+		// What `promote --kind` will take as a class, which is neither every kind
+		// nor the Knowledge group. A caller that had to discover it by being
+		// refused would be a caller guessing.
+		"promotable_kinds": memory.PromotableKinds(),
+		"verdicts":         memory.Verdicts(),
 	})
 	return nil
 }
@@ -1050,10 +1105,50 @@ func firstNonEmpty(vals ...string) string {
 }
 
 func gitUserName(dir string) string {
+	return gitOutput(dir, "config", "user.name")
+}
+
+// repoIdentity is what tells two repositories apart in one log where repoLabel
+// cannot: it is a directory name, and `api` in two places is one label.
+//
+// The remote comes first because it survives the repository being moved, cloned
+// or checked out twice on one machine — the absolute path survives none of
+// those, and is the fallback rather than the answer for exactly that reason. A
+// repository with no remote and no resolvable path gets nothing, and Origin.RepoID
+// is omitted; see there for why that is a claim rather than a hole.
+//
+// Which remote is `origin` and only `origin`. That covers a repository having
+// none; it does not cover one having several under other names, which nothing
+// here decides between.
+func repoIdentity(root string) string {
+	if strings.TrimSpace(root) == "" {
+		return ""
+	}
+	if url := gitOutput(root, "remote", "get-url", "origin"); url != "" {
+		return url
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	return filepath.Clean(abs)
+}
+
+// gitOutput runs one git command in dir and returns its trimmed stdout, empty
+// for anything that went wrong. Every caller is filling in a field that is
+// allowed to be absent, so there is nothing here for a failure to be reported
+// to: a machine without git, a directory that is not a repository and a
+// repository that has no answer are the same outcome — the tool does not know.
+//
+// This is the whole of the shell-out, and it lives in the CLI layer on purpose.
+// internal/memory resolves a repository root by looking for a .git entry and
+// never invokes the binary, which is what keeps the library testable without one
+// installed.
+func gitOutput(dir string, args ...string) string {
 	if dir == "" {
 		return ""
 	}
-	cmd := exec.Command("git", "config", "user.name")
+	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

@@ -2,6 +2,112 @@
 
 ## Unreleased
 
+### `promote` selects by class, reaches one hop, and reports what is half-connected
+
+`promote` did one thing safely and nothing else: you named records by id, it
+copied them, and it counted the edges it copied. Sending a class of knowledge
+upward meant querying for it, extracting the ids and pasting them back; an `adr`
+travelled without the `decision` that fed it; and the report counted
+`edges_copied` and never mentioned the ones it dropped.
+
+```bash
+memory promote --kind preference --to user --dry-run   # what would move
+memory promote --kind preference --to user             # move it
+memory promote --ids <id> --kind adr --to user         # both, as a union
+```
+
+- **`--kind` takes four kinds and no others**: `adr`, `postmortem`,
+  `preference`, `dead-end`. `decision` is REJECTED from the set because the loop
+  writes one at the close of every objective, so sweeping the class would carry
+  hundreds of records about this repository's own code into a log meant to hold
+  what outlives it. `gotcha` because it cannot exist without an anchor and an
+  anchor is resolved against `origin.repo` — a `path:line` means nothing in the
+  next repository. `review-finding` because it names a defect in one
+  repository's code at one moment. The set is `promotableKindsV3`, sited beside
+  `anchoredKindsV3` where somebody adding a kind will be standing, and published
+  by `memory kinds` as `promotable_kinds`. It bounds only what may be named as a
+  *class*: any record still promotes by id, and nothing validates it.
+- **A kind outside the set is refused by name, with the four listed.** Including
+  a kind that is perfectly valid to write, like `decision` — `toKinds` validates
+  nothing, so the alternative was a promotion that moved nothing and a caller
+  who cannot tell that from an empty class.
+- **`--kind` and `--ids` are a union.** REJECTED: making them mutually
+  exclusive. Either alone is enough, both together promote everything either one
+  named, a record named twice is promoted once, and only naming neither is
+  refused — with a message naming both. The refusal's code changed from
+  `missing_ids` to `missing_selection`, since it is no longer about ids.
+- **Promotion reaches one hop past what it was given.** A record nobody named
+  but that an edge joins to one that was named travels too, so an `adr` stops
+  arriving without the reasoning that justifies it. REJECTED: the full transitive
+  closure, which is the mechanism that would lift a whole repository's
+  scaffolding into the user log. The hop is measured from the named set only, and
+  it is a pass over the edge list rather than a call to `Graph()` — that function
+  is single-source and shadows same-pair edges by walk order
+  (`01KZ4ZXEPR07E7VH06JTG8E6J0`).
+- **The reach never pulls in an `objective` or a `gotcha`.** Both were a back
+  door into the user log for exactly what the four-kind set keeps out of the
+  front one. An `adr` very often `derives_from` the objective that produced it,
+  and an objective names work that happened in one repository. A `gotcha` cannot
+  exist without an anchor, whose `path:line` resolves against `origin.repo` — the
+  reason `--kind` refuses the class, and an edge into one would have carried it
+  up regardless. It bounds the reach and not the selection: either kind named in
+  `--ids` is promoted like anything else. And neither exclusion is silent, which
+  was the condition of having them at all — the skipped record is reported in
+  `border` and its edge counted in `edges_skipped`, like anything else left
+  behind.
+- **The report names what sat at the border**: `border` with `border_count`, and
+  `edges_skipped`. Both are **about the destination and not about this run** —
+  the test is whether a record will be over there when the promotion is done,
+  selected by it *or already present*, so promoting an unrelated `preference`
+  will name a record some earlier promotion left half-connected. That is the
+  honest answer to "what is still half-connected over there", which is the
+  question worth asking of a log nobody can tidy; the narrower reading goes stale
+  the moment you stop reading the reports. The cost is accepted and stated: the
+  border list grows as the user log fills, and there is no flag to narrow it. An
+  edge with neither endpoint at the destination is not counted — that number
+  would measure the rest of the graph. REJECTED: reporting each skipped edge as a
+  triple; REJECTED: refusing when skipped edges outnumber copied ones; and
+  REJECTED: narrowing the code to report only what this run moved, which is what
+  the wording used to promise.
+- **The both-endpoints rule is untouched.** The expansion adds records so that
+  more edges qualify; it never admits an edge whose endpoint is absent. Open
+  question `01KZ38XQTXFQZRVG6VMPRA82SK` — a state edge promoted without its
+  justification — is made less likely and is not closed.
+- **`--dry-run` prints the report the real run would print**, plus
+  `dry_run: true`, and writes nothing: not the records, not the edges, not the
+  destination directory. REJECTED: a preview format of its own, and REJECTED:
+  making it a mandatory confirmation, which would break every non-interactive
+  caller.
+- **`origin.repo_id` tells two repositories with one directory name apart.**
+  `origin.repo` is `filepath.Base` of the root, so two checkouts called `api` are
+  one string in a log holding records from both. The identity is the `origin`
+  remote's URL where there is one and the repository's absolute path where there
+  is not, and absent where neither could be read — REJECTED: a required field
+  with a sentinel, which would have made "no answer" look different from the
+  answer every record written before this field gives. `--repo` overrides the
+  label and not the identity.
+- **No version 4, and no migration.** `CurrentSchemaVersion` stays at 3: no
+  version's rule set has ever inspected `Origin`, so a record lacking the key
+  cannot fail and one carrying it cannot either. Nothing is backfilled — the log
+  is append-only, and the identity applies to records written from now on.
+- **The git shell-out stays in the CLI layer**, beside `gitUserName`, so
+  `internal/memory` remains stdlib-only and free of `os/exec`. REJECTED: reading
+  `.git/config` directly, and REJECTED: putting the call in the library.
+- **Idempotency is now proven rather than asserted.** `TestPromotionIsIdempotent`
+  passed `nil` for both edge slices, so the edge-dedup path had never been run by
+  a test, and no test invoked the `promote` subcommand twice at all. Both gaps are
+  closed: a unit test with real edge slices on both sides, and an end-to-end test
+  that runs the built binary twice over the same two logs and compares the
+  destination's bytes across the second run.
+- **`TestPromotionLeavesHalfEdgesBehind` is deleted.** It seeded an `adr`, the
+  `decision` it derives from and nothing else, promoted the `adr` alone, and
+  asserted the edge was not copied — exactly the case the one-hop reach exists to
+  fix. REJECTED: rewriting it with a longer chain, which would have been a second
+  copy of `TestPromotionNamesTheBorderAndCountsSkippedEdges`, where the record
+  left behind is genuinely two hops out and the same invariant is proven against
+  `EdgesCopied` and `EdgesSkipped` together. The one sentence of its comment that
+  was still true and stated nowhere else moved to that test.
+
 ### The `preference` kind, and `--plan` becoming optional on `add`
 
 Two changes that only mean anything together: a kind for *how things are done

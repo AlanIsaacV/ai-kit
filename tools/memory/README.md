@@ -84,7 +84,10 @@ can now be linked, whatever plan produced them.
 |---|---|---|
 | Core | `objective` `decision` `deviation` | Make the work loop run |
 | Learning | `assumption` `open-question` `wont-fix` `dead-end` `hypothesis` | Stop verification theater and repeated work |
-| Knowledge | `adr` `postmortem` `review-finding` `gotcha` `preference` | Outlive the plan, get promoted upward |
+| Knowledge | `adr` `postmortem` `review-finding` `gotcha` `preference` | Outlive the plan |
+
+Which kinds [promotion](#promotion) will sweep as a class is a set of its own and
+is deliberately not this group; any record still promotes by id.
 
 `wont-fix` earns its place: once you decide a risk is not worth covering, that
 decision is recorded, and no later verification pass raises it again.
@@ -197,6 +200,138 @@ nothing at all at read time — a preference tagged `orm,persistence` competes f
 than a free-floating convention is that `--about` is already required with at
 least one non-blank tag, so no preference can exist without a topic — only with a
 badly chosen one.
+
+## Promotion
+
+`promote` copies records from a repo log up to the user log. It is the only
+operation that crosses logs, it is always explicit — nothing is promoted on a
+rule, a schedule or an inference — and it only goes upward: `--to repo` is
+refused, because since [version 2](#the-versions) a plan's records are already in
+the repo log and there is nothing below it to lift them out of.
+
+```bash
+memory promote --kind preference --to user --dry-run   # what would move
+memory promote --kind preference --to user             # move it
+memory promote --ids <id>,<id> --kind adr --to user    # both, as a union
+```
+
+**Four kinds may be named as a class**, and the set is published by
+`memory kinds` as `promotable_kinds`:
+
+| | |
+|---|---|
+| `adr` `postmortem` `preference` `dead-end` | what is worth carrying to a repository the work has not reached yet |
+
+It cuts across the groups in [record kinds](#record-kinds) rather than following
+them. `dead-end` is a Learning kind and belongs here — what was tried and did not
+work is the most expensive thing to rediscover. Three Knowledge kinds are absent,
+each for its own reason:
+
+- **`decision`** because the loop writes one at the close of every objective.
+  Sweeping the class would carry hundreds of records about *this* repository's
+  code into a log meant to hold what outlives it.
+- **`gotcha`** because it cannot exist without an [anchor](#anchors), and an
+  anchor's path is resolved against `origin.repo` and nothing else. A `path:line`
+  means nothing in the next repository.
+- **`review-finding`** because it names a defect in one repository's code at one
+  moment, and what settles it is fixing that code.
+
+Naming a kind outside the set is refused by name, with the four listed in the
+refusal — including a kind that is perfectly valid to write, like `decision`.
+A promotion that silently moved nothing would be indistinguishable from a class
+that happened to be empty. **The set is not a validation rule**: nothing here
+stops `--ids` from carrying any record at all upward, including a `gotcha` whose
+anchor will not resolve there.
+
+**`--kind` and `--ids` are a union.** Either alone is enough and both together
+promote everything either one named; a record named twice is promoted once. Only
+naming neither is refused.
+
+**It reaches one hop.** A record nobody named but that an edge joins to one that
+was named travels too, because an `adr` that arrives without the `decision` that
+fed it arrives as an assertion. One hop and not the transitive closure: the
+closure is the mechanism that would lift a whole repository's scaffolding into
+the user log. The hop is measured from the named set only — a record pulled in at
+one hop does not go on to pull in its own neighbours, whatever order the edges
+sit in the log.
+
+**Except two kinds the reach never pulls in**, because the expansion was
+otherwise a back door into the user log for exactly what the four-kind set keeps
+out of the front one:
+
+- **`objective`.** An `adr` very often derives from the objective that produced
+  it, and following that edge would carry a repository's scaffolding upward. An
+  objective names work that happened in one repository; the ADR it produced is
+  what was meant to outlive it.
+- **`gotcha`.** It cannot exist without an [anchor](#anchors), and an anchor's
+  `path:line` is resolved against `origin.repo`. `--kind` refuses the class for
+  that reason, and an edge into one would have carried it up regardless — anchor
+  and all.
+
+This bounds the *reach* and not the *selection*: either kind named in `--ids` is
+promoted like anything else, because a caller typing an id has decided. And
+neither exclusion is silent — a record the walk skipped is reported in `border`
+and the edge to it counted in `edges_skipped`, exactly like any other record left
+behind.
+
+**And it says where it stopped.** The report carries `border`, with
+`border_count`, and `edges_skipped`.
+
+Read them carefully, because they are **about the destination and not about this
+run**. The test is whether a record will be over there when this promotion is
+done — selected by it *or already present* — so an edge with one end at the
+destination and one end not is counted, and the end that is not is named,
+whatever run left it that way. Promoting an unrelated `preference` will report a
+record some earlier promotion left half-connected.
+
+That is deliberate, and it is the honest answer to the question worth asking of a
+log nobody can tidy: *what is still half-connected over there?* The narrower
+reading — what this run in particular left behind — goes stale the moment you
+stop reading the reports, and nothing would ever tell you again. **The cost is
+that the border list grows as the user log fills**, and there is no flag to
+narrow it.
+
+An edge with *neither* endpoint at the destination is not counted: that number
+would be a measure of the rest of the graph. And skipped edges outnumbering
+copied ones is not a refusal — the command proceeds and reports it, because the
+alternative is a promotion that decides for you what you meant.
+
+The [both-endpoints rule](#guarantees-under-test) is untouched by any of this.
+The expansion adds *records* so that more edges qualify; it never admits an edge
+whose endpoint is absent, and a promoted record never arrives with a dangling
+edge behind it.
+
+**`--dry-run` prints the report a real run would print**, plus `dry_run: true`,
+and writes nothing — not the records, not the edges, and not the destination
+directory the real run would have created. It is optional and never a required
+confirmation step: a mandatory one would break every non-interactive caller.
+
+Running the same promotion twice is a no-op. Ids are preserved, so a record
+already at the destination is reported as `already_present` and not written
+again, and an edge already there is deduplicated by type-from-to. That includes
+records pulled in at one hop: whatever the first run moved, the second one names.
+
+### Which repository a record came from
+
+`origin.repo` is a directory name, and two checkouts both called `api` are one
+string in a log holding records from both. So a record also carries
+`origin.repo_id`:
+
+1. the `origin` remote's URL, where the repository has one — it survives the
+   repository being moved, cloned, or checked out twice on one machine;
+2. the repository's absolute path otherwise, which survives none of those and is
+   the fallback for exactly that reason;
+3. absent, where neither could be read.
+
+Absent is a claim and not a hole: it says nothing about which repository, which
+is exactly what a record written before the field existed says. A sentinel would
+have made those two look like different answers. `--repo` overrides the *label*
+and not the identity — a caller may rename what a record calls its repository,
+and nothing it can type makes two repositories the same one.
+
+It applies to records written from now on. **Nothing is backfilled**, because the
+log is append-only. Which remote is `origin` and only `origin`: that covers a
+repository having none, and does not decide between several under other names.
 
 ## Anchors
 
@@ -626,6 +761,12 @@ bump: the direction is what decides, not the count.
 `--plan` becoming optional on `add` took no rule with it, because no version's
 rule set ever looked at `origin.plan`. The requirement had been the CLI's own.
 
+**`origin.repo_id` arrived the same way and cost nothing.** No version's rule set
+has ever inspected `Origin` at all, so a record lacking the key cannot fail and a
+record carrying it cannot either — the optional-field rule above, in its purest
+form. There was no migration and nothing was backfilled; see
+[which repository a record came from](#which-repository-a-record-came-from).
+
 **The `anchors` field arrived inside version 3, and it brought the one rule here
 that takes something back.** The field itself is the easy half: optional, so every
 record written before it stays legal, which is what the compatibility rule calls
@@ -730,6 +871,7 @@ memory graph --from <id> --depth 2
 memory state                     # every objective: state, tree, blocking, tally
 memory state --id <objective-id> # just that one
 
+memory promote --kind preference --to user --dry-run   # see Promotion
 memory promote --ids <id>,<id> --to user
 memory render  --as adr
 memory validate --all
@@ -754,6 +896,8 @@ either, and a caller reading only the exit code has to hear about it.
 that second group on purpose — an objective's parent, its children and which
 objective is current are properties of the log, so narrowing the derivation would
 change the answers rather than the view. With no `--plan`, `AI_KIT_PLAN` is used.
+`promote` is in that second group too: it reads the whole source log, so a class
+sweep is not silently narrowed by a plan slug somebody passed out of habit.
 
 `--about` matches by exact tag or by path prefix: a tag ending in `/` catches
 everything under it, so `--about pkg/auth/` finds a record tagged
@@ -774,7 +918,9 @@ everything under it, so `--about pkg/auth/` finds a record tagged
   log without passing any gate, so a state edge whose justification was left
   behind can arrive there unchecked. That is open question
   `01KZ38XQTXFQZRVG6VMPRA82SK`, and the copy is at
-  `internal/memory/promote.go:88`.
+  `internal/memory/promote.go:218`. [Promotion's one-hop reach](#promotion) makes
+  it less likely — the justification is exactly the record one edge away — and
+  does not close it: two hops out, it stays behind and is reported as border.
 - An edge declaring version 1 with a type version 2 added is refused by the
   sweep; the identical edge declaring version 2 passes, and version 1's own set
   is still the six it shipped with.
@@ -851,7 +997,31 @@ everything under it, so `--about pkg/auth/` finds a record tagged
   read.
 - Promotion preserves ids, does not mutate the source, is idempotent, never
   copies an edge whose other end stayed behind, and never restamps the version a
-  record was written under.
+  record was written under. Idempotency is proven for edges as well as records —
+  with real edge slices on both sides — and proven again through the built binary
+  run twice over the same two files, where the destination's bytes are identical
+  across the second run and the report classifies everything as already present.
+- `--kind preference` promotes every preference and no record of any other kind,
+  with no id named. `--kind decision` and `--kind notakind` are both refused by
+  name, exit 1, list the four kinds that are accepted, and write nothing.
+- `--kind` and `--ids` together put the union of both selections in the
+  destination; neither given is refused with a message naming both.
+- An `adr` promoted by id alone carries the `decision` it derives from and the
+  edge between them, and stops there: a record two hops out is left behind,
+  reported in `border` with its count and counted in `edges_skipped`. Both logs
+  still validate afterwards, with no dangling edge.
+- An `adr` linked to both a `decision` and an `objective` carries the decision
+  and leaves the objective, which is reported in `border` and whose edge is
+  counted — and naming that objective in `--ids` afterwards promotes it and
+  reconnects the edge. The same holds for a `gotcha` in the objective's place.
+  The reach is bounded; the selection is not.
+- `--dry-run` reports exactly what the run without it goes on to report, leaves
+  the destination's bytes untouched, and does not even create the destination
+  when there is none.
+- Two repositories whose directories are both called `api` carry the same
+  `origin.repo` and different `origin.repo_id` in one user log: the one with a
+  git remote takes its identity from the remote, the one without takes its
+  absolute path.
 - A state resolves to the most recent state edge by `at`; a later line carrying
   an older `at` loses, and two edges sharing an `at` are separated by which is
   later in the file. `approved_for_execution` → `blocked` →

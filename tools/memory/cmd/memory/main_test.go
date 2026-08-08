@@ -1711,3 +1711,468 @@ func TestPromoteCreatesItsDestination(t *testing.T) {
 		t.Errorf("the destination must be created like any other location, got %q", got)
 	}
 }
+
+// ------------------------------------------------- promotion that reaches ---
+
+type promoteOutput struct {
+	From           string   `json:"from"`
+	To             string   `json:"to"`
+	Promoted       []string `json:"promoted"`
+	AlreadyPresent []string `json:"already_present"`
+	Unknown        []string `json:"unknown"`
+	EdgesCopied    int      `json:"edges_copied"`
+	Border         []string `json:"border"`
+	BorderCount    int      `json:"border_count"`
+	EdgesSkipped   int      `json:"edges_skipped"`
+	DryRun         bool     `json:"dry_run"`
+}
+
+func promote(t *testing.T, r repo, args ...string) promoteOutput {
+	t.Helper()
+	res := run(t, r, append([]string{"promote"}, args...)...)
+	if res.code != 0 {
+		t.Fatalf("promote %v: exit %d\n%s%s", args, res.code, res.stdout, res.stderr)
+	}
+	var out promoteOutput
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatalf("promote printed something that is not JSON: %v\n%s", err, res.stdout)
+	}
+	return out
+}
+
+// addBare is `add` with the kind, a title and one tag, and nothing else — no
+// anchor and no plan, which is how a `preference` is actually written: it
+// belongs to the repository rather than to a tree in it, and an anchor promoted
+// to the user scope would carry a path:line meaning nothing there.
+func addBare(t *testing.T, r repo, kind, title string) string {
+	t.Helper()
+	res := runBare(t, r, "add", "--kind", kind, "--title", title, "--about", "auth")
+	if res.code != 0 {
+		t.Fatalf("add --kind %s %q: exit %d\n%s%s", kind, title, res.code, res.stdout, res.stderr)
+	}
+	return recordID(t, res)
+}
+
+// kindsIn is what a log holds, read back as JSON rather than matched as a
+// substring: a kind named inside somebody's body would otherwise pass for a
+// record of that kind.
+func kindsIn(t *testing.T, path string) []string {
+	t.Helper()
+	var out []string
+	for _, l := range lines(t, path) {
+		var rec struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal([]byte(l), &rec); err != nil {
+			t.Fatalf("a line in %s is not JSON: %v", path, err)
+		}
+		out = append(out, rec.Kind)
+	}
+	return out
+}
+
+func sweepValidates(t *testing.T, r repo) {
+	t.Helper()
+	out, code := validate(t, r, "--all")
+	if !out.OK || code != 0 {
+		t.Fatalf("both logs must still validate after a promotion: ok=%v exit=%d %+v",
+			out.OK, code, out.Reports)
+	}
+}
+
+// Selecting a class is what makes the command usable by somebody who does not
+// already know every id they want. `--kind preference` takes the preferences and
+// nothing else.
+func TestPromoteByKindTakesTheClassWithoutBeingGivenAnID(t *testing.T) {
+	r := throwawayRepo(t)
+	addBare(t, r, "preference", "Migrations go through Atlas")
+	addBare(t, r, "preference", "Errors wrap rather than replace")
+	addBare(t, r, "decision", "Use RS256 over HS256")
+	addBare(t, r, "adr", "Asymmetric signing")
+
+	out := promote(t, r, "--kind", "preference", "--to", "user")
+	if len(out.Promoted) != 2 {
+		t.Fatalf("both preferences should have travelled: %+v", out)
+	}
+	got := kindsIn(t, r.user)
+	if len(got) != 2 {
+		t.Fatalf("the user log should hold exactly the two preferences, got %v", got)
+	}
+	for _, k := range got {
+		if k != "preference" {
+			t.Errorf("--kind preference carried a %s as well: %v", k, got)
+		}
+	}
+	sweepValidates(t, r)
+}
+
+// The four kinds are a closed set, and a caller meets it as an answer rather
+// than as an empty promotion. `decision` is the one that has to be refused by
+// name: it is a real kind, and the loop writes one at the close of every
+// objective, so sweeping the class would carry this repository's scaffolding
+// upward.
+func TestPromoteRefusesAKindItWillNotSweep(t *testing.T) {
+	r := throwawayRepo(t)
+	id := addBare(t, r, "adr", "Asymmetric signing")
+	addBare(t, r, "decision", "Use RS256 over HS256")
+	// A destination with something in it, so "nothing was written" is a claim
+	// about bytes rather than about a file that never existed.
+	promote(t, r, "--ids", id, "--to", "user")
+	before := readFile(t, r.user)
+
+	for _, kind := range []string{"decision", "notakind"} {
+		res := run(t, r, "promote", "--kind", kind, "--to", "user")
+		if res.code != 1 {
+			t.Fatalf("--kind %s must be refused with exit 1, got %d\n%s", kind, res.code, res.stdout)
+		}
+		var out struct {
+			Code       string   `json:"code"`
+			Error      string   `json:"error"`
+			Kind       string   `json:"kind"`
+			Promotable []string `json:"promotable"`
+		}
+		if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+			t.Fatalf("a refusal must still print JSON: %v\n%s%s", err, res.stdout, res.stderr)
+		}
+		if out.Code != "kind_not_promotable" {
+			t.Errorf("--kind %s: got code %q", kind, out.Code)
+		}
+		if out.Kind != kind || !strings.Contains(out.Error, kind) {
+			t.Errorf("the refusal must name the kind it rejected, got %q / %q", out.Kind, out.Error)
+		}
+		want := []string{"adr", "dead-end", "postmortem", "preference"}
+		if strings.Join(out.Promotable, ",") != strings.Join(want, ",") {
+			t.Errorf("the refusal must list the four kinds it does take, got %v", out.Promotable)
+		}
+		for _, k := range want {
+			if !strings.Contains(out.Error, k) {
+				t.Errorf("the message should name %s too, got %q", k, out.Error)
+			}
+		}
+	}
+	if after := readFile(t, r.user); after != before {
+		t.Errorf("a refused promotion must write nothing:\nbefore %q\nafter  %q", before, after)
+	}
+	sweepValidates(t, r)
+}
+
+// Naming a class and naming a record are two ways of asking for the same
+// operation, so they add up. Having asked for neither is the only refusal.
+func TestPromoteUnionsKindsAndIDsAndRefusesNeither(t *testing.T) {
+	r := throwawayRepo(t)
+	pref := addBare(t, r, "preference", "Migrations go through Atlas")
+	decision := addBare(t, r, "decision", "Use RS256 over HS256")
+	addBare(t, r, "adr", "Asymmetric signing")
+
+	out := promote(t, r, "--kind", "preference", "--ids", decision, "--to", "user")
+	if len(out.Promoted) != 2 {
+		t.Fatalf("the union of both selections should travel: %+v", out)
+	}
+	landed := strings.Join(lines(t, r.user), "\n")
+	for _, id := range []string{pref, decision} {
+		if !strings.Contains(landed, id) {
+			t.Errorf("%s never reached the user log:\n%s", id, landed)
+		}
+	}
+	if got := kindsIn(t, r.user); len(got) != 2 {
+		t.Errorf("the adr was in neither selection: %v", got)
+	}
+
+	res := run(t, r, "promote", "--to", "user")
+	if res.code != 1 {
+		t.Fatalf("promote with no selection must be refused, got exit %d\n%s", res.code, res.stdout)
+	}
+	code, msg := errorCode(t, res)
+	if code != "missing_selection" {
+		t.Errorf("got code %q", code)
+	}
+	if !strings.Contains(msg, "--ids") || !strings.Contains(msg, "--kind") {
+		t.Errorf("the refusal must name both ways of asking, got %q", msg)
+	}
+	sweepValidates(t, r)
+}
+
+// An `adr` that arrives without the `decision` that fed it arrives as an
+// assertion. Nobody names that decision, and it travels anyway.
+func TestPromotingAnADRCarriesTheDecisionThatFedIt(t *testing.T) {
+	r := throwawayRepo(t)
+	decision := addBare(t, r, "decision", "Use RS256 over HS256")
+	adr := addBare(t, r, "adr", "Asymmetric signing")
+	mustLink(t, r, "derives_from", adr, decision)
+
+	out := promote(t, r, "--ids", adr, "--to", "user")
+	if len(out.Promoted) != 2 || out.EdgesCopied != 1 {
+		t.Fatalf("the reasoning should have come along with the record: %+v", out)
+	}
+	landed := lines(t, r.user)
+	if len(landed) != 3 {
+		t.Fatalf("expected two entries and the edge between them, got %d lines:\n%s",
+			len(landed), strings.Join(landed, "\n"))
+	}
+	joined := strings.Join(landed, "\n")
+	for _, id := range []string{adr, decision} {
+		if !strings.Contains(joined, id) {
+			t.Errorf("%s is missing from the user log:\n%s", id, joined)
+		}
+	}
+	if !strings.Contains(joined, `"kind":"edge"`) {
+		t.Errorf("the edge between them has to be there or the decision arrives unattached:\n%s", joined)
+	}
+	sweepValidates(t, r)
+}
+
+// One hop, and the report says where it stopped. A promotion that leaves
+// reasoning behind can no longer print success in silence.
+func TestPromoteNamesWhatSatAtTheBorder(t *testing.T) {
+	r := throwawayRepo(t)
+	deviation := addBare(t, r, "deviation", "Rotated the signing key by hand")
+	decision := addBare(t, r, "decision", "Use RS256 over HS256")
+	adr := addBare(t, r, "adr", "Asymmetric signing")
+	mustLink(t, r, "derives_from", adr, decision)
+	mustLink(t, r, "derives_from", decision, deviation)
+
+	out := promote(t, r, "--ids", adr, "--to", "user")
+	if len(out.Border) != 1 || out.Border[0] != deviation {
+		t.Fatalf("the record two hops out is what sat at the border: %+v", out)
+	}
+	if out.BorderCount != 1 {
+		t.Errorf("the count has to agree with the list, got %d", out.BorderCount)
+	}
+	if out.EdgesSkipped != 1 {
+		t.Errorf("the edge into it could not be copied and has to be counted, got %d", out.EdgesSkipped)
+	}
+	if out.EdgesCopied != 1 {
+		t.Errorf("only the edge with both ends at the target travels, got %d", out.EdgesCopied)
+	}
+	if strings.Contains(strings.Join(lines(t, r.user), "\n"), deviation) {
+		t.Error("the border is reported, not promoted: two hops is the closure this refused to be")
+	}
+	sweepValidates(t, r)
+}
+
+// The reach carries reasoning and refuses to carry scaffolding. An `adr` here
+// derives from both the `decision` that fed it and the `objective` that produced
+// it; only the first is knowledge that means anything in another repository.
+//
+// The exclusion is not allowed to be silent — that would be worse than not
+// having it — so the objective left behind is reported as border and the edge to
+// it is counted.
+func TestOneHopWillNotCarryAnObjectiveAndSaysSo(t *testing.T) {
+	r := throwawayRepo(t)
+	objective := addBare(t, r, "objective", "Ship the token service")
+	decision := addBare(t, r, "decision", "Use RS256 over HS256")
+	adr := addBare(t, r, "adr", "Asymmetric signing")
+	mustLink(t, r, "derives_from", adr, decision)
+	mustLink(t, r, "derives_from", adr, objective)
+
+	out := promote(t, r, "--ids", adr, "--to", "user")
+	if len(out.Promoted) != 2 || out.EdgesCopied != 1 {
+		t.Fatalf("the adr and the decision travel, with the edge between them: %+v", out)
+	}
+	landed := strings.Join(lines(t, r.user), "\n")
+	if !strings.Contains(landed, decision) {
+		t.Errorf("the reasoning must still come along:\n%s", landed)
+	}
+	if strings.Contains(landed, objective) {
+		t.Errorf("the objective reached the user log:\n%s", landed)
+	}
+	if len(out.Border) != 1 || out.Border[0] != objective {
+		t.Fatalf("an objective that was not reached for is still named: %+v", out)
+	}
+	if out.BorderCount != 1 || out.EdgesSkipped != 1 {
+		t.Errorf("the edge into it stayed behind and has to be counted: %+v", out)
+	}
+	// Nothing dangles: the edge to the objective was never copied, so the user log
+	// holds two entries and the one edge that joins them.
+	sweepValidates(t, r)
+
+	// The rule bounds the reach and not the selection. Naming the id promotes it,
+	// and the edge that was border a moment ago comes along with it.
+	second := promote(t, r, "--ids", objective, "--to", "user")
+	if len(second.Promoted) != 1 || second.EdgesCopied != 1 {
+		t.Fatalf("an objective named by id travels, and reconnects its edge: %+v", second)
+	}
+	sweepValidates(t, r)
+}
+
+// The same hole on the other side. `--kind` refuses `gotcha` as a class because
+// an anchor's path:line is resolved against the repository it was written in;
+// following an edge into one would have carried it up regardless, anchor and all.
+func TestOneHopWillNotCarryAGotchaAndSaysSo(t *testing.T) {
+	r := throwawayRepo(t)
+	// addKind rather than addBare: version 3 refuses a gotcha with no anchor, and
+	// the anchor is the whole reason this kind is not reached for.
+	gotcha := addKind(t, r, "gotcha", "The lock is taken before the write")
+	decision := addBare(t, r, "decision", "Use RS256 over HS256")
+	adr := addBare(t, r, "adr", "Asymmetric signing")
+	mustLink(t, r, "derives_from", adr, decision)
+	mustLink(t, r, "derives_from", adr, gotcha)
+
+	out := promote(t, r, "--ids", adr, "--to", "user")
+	if len(out.Promoted) != 2 || out.EdgesCopied != 1 {
+		t.Fatalf("the adr and the decision travel, with the edge between them: %+v", out)
+	}
+	landed := strings.Join(lines(t, r.user), "\n")
+	if !strings.Contains(landed, decision) {
+		t.Errorf("the reasoning must still come along:\n%s", landed)
+	}
+	if strings.Contains(landed, gotcha) {
+		t.Errorf("the gotcha reached the user log, anchor and all:\n%s", landed)
+	}
+	if len(out.Border) != 1 || out.Border[0] != gotcha {
+		t.Fatalf("a gotcha that was not reached for is still named: %+v", out)
+	}
+	if out.BorderCount != 1 || out.EdgesSkipped != 1 {
+		t.Errorf("the edge into it stayed behind and has to be counted: %+v", out)
+	}
+	sweepValidates(t, r)
+
+	// Reach, not selection: a caller who types the id has decided.
+	second := promote(t, r, "--ids", gotcha, "--to", "user")
+	if len(second.Promoted) != 1 || second.EdgesCopied != 1 {
+		t.Fatalf("a gotcha named by id travels, and reconnects its edge: %+v", second)
+	}
+	sweepValidates(t, r)
+}
+
+// A preview has to be believed about what the real run will do, so it is the
+// same report with one boolean added — and it leaves nothing behind, not even
+// the destination it would have created.
+func TestDryRunPrintsTheSameReportAndWritesNothing(t *testing.T) {
+	r := throwawayRepo(t)
+	pref := addBare(t, r, "preference", "Migrations go through Atlas")
+	adr := addBare(t, r, "adr", "Asymmetric signing")
+
+	preview := promote(t, r, "--kind", "preference", "--to", "user", "--dry-run")
+	if !preview.DryRun || len(preview.Promoted) != 1 || preview.Promoted[0] != pref {
+		t.Fatalf("the preview must name what a real run would move: %+v", preview)
+	}
+	if _, err := os.Stat(filepath.Join(r.home, ".ai-kit")); !os.IsNotExist(err) {
+		t.Errorf("a preview that creates its destination is not a preview: %v", err)
+	}
+
+	// Now against a destination that exists, so "nothing was written" is a claim
+	// about bytes.
+	promote(t, r, "--ids", adr, "--to", "user")
+	before := readFile(t, r.user)
+	preview = promote(t, r, "--kind", "preference", "--to", "user", "--dry-run")
+	if after := readFile(t, r.user); after != before {
+		t.Fatalf("--dry-run wrote to the destination:\nbefore %q\nafter  %q", before, after)
+	}
+
+	real := promote(t, r, "--kind", "preference", "--to", "user")
+	if real.DryRun {
+		t.Error("a run without the flag must not claim to be one")
+	}
+	preview.DryRun = false
+	if fmt.Sprintf("%+v", preview) != fmt.Sprintf("%+v", real) {
+		t.Errorf("the preview and the run it previewed must report the same thing:\n%+v\n%+v", preview, real)
+	}
+	if !strings.Contains(readFile(t, r.user), pref) {
+		t.Error("dropping --dry-run must actually perform the promotion")
+	}
+	sweepValidates(t, r)
+}
+
+// Running it twice is something a person does by accident, and the second run
+// has to be a no-op in the bytes as well as in the report. Nothing in the
+// package can prove that: this is the binary, twice, over real files.
+func TestPromotingTwiceAppendsNothingTheSecondTime(t *testing.T) {
+	r := throwawayRepo(t)
+	decision := addBare(t, r, "decision", "Use RS256 over HS256")
+	adr := addBare(t, r, "adr", "Asymmetric signing")
+	mustLink(t, r, "derives_from", adr, decision)
+	addBare(t, r, "preference", "Migrations go through Atlas")
+
+	first := promote(t, r, "--kind", "preference,adr", "--to", "user")
+	if len(first.Promoted) != 3 || first.EdgesCopied != 1 {
+		t.Fatalf("the preference, the adr and the decision it reached should all travel: %+v", first)
+	}
+	before := readFile(t, r.user)
+
+	second := promote(t, r, "--kind", "preference,adr", "--to", "user")
+	if after := readFile(t, r.user); after != before {
+		t.Fatalf("the second run appended something:\nbefore %q\nafter  %q", before, after)
+	}
+	if len(second.Promoted) != 0 || second.EdgesCopied != 0 {
+		t.Errorf("nothing was left to move: %+v", second)
+	}
+	if len(second.AlreadyPresent) != 3 {
+		t.Errorf("everything the first run moved should read as already present: %+v", second)
+	}
+	sweepValidates(t, r)
+}
+
+// Two repositories called `api` are one label in a log that holds records from
+// both. What tells them apart is the remote where there is one, and the absolute
+// path where there is not.
+func TestTwoReposWithOneNameStayApartInTheUserLog(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git is not installed: %v", err)
+	}
+	home := t.TempDir()
+	base := t.TempDir()
+
+	const remote = "https://example.invalid/somebody/api.git"
+	remoted := repo{root: filepath.Join(base, "with-a-remote", "api"), home: home}
+	if err := os.MkdirAll(remoted.root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, remoted.root, "init", "-q")
+	git(t, remoted.root, "remote", "add", "origin", remote)
+
+	// No real repository here, only the .git entry the tool looks for — which is
+	// also the case `git remote get-url` has to fail on rather than answer.
+	bare := repo{root: filepath.Join(base, "without-one", "api"), home: home}
+	if err := os.MkdirAll(filepath.Join(bare.root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, r := range []*repo{&remoted, &bare} {
+		r.log = filepath.Join(r.root, ".ai-kit", "memory.jsonl")
+		r.user = filepath.Join(r.home, ".ai-kit", "memory.jsonl")
+	}
+	if filepath.Base(remoted.root) != filepath.Base(bare.root) {
+		t.Fatal("the whole point is that the two directories share a name")
+	}
+
+	remotedID := addBare(t, remoted, "preference", "Migrations go through Atlas")
+	bareID := addBare(t, bare, "preference", "Errors wrap rather than replace")
+	promote(t, remoted, "--kind", "preference", "--to", "user")
+	promote(t, bare, "--kind", "preference", "--to", "user")
+
+	identities := map[string]string{}
+	labels := map[string]string{}
+	for _, l := range lines(t, remoted.user) {
+		var rec struct {
+			ID     string `json:"id"`
+			Origin struct {
+				Repo   string `json:"repo"`
+				RepoID string `json:"repo_id"`
+			} `json:"origin"`
+		}
+		if err := json.Unmarshal([]byte(l), &rec); err != nil {
+			t.Fatal(err)
+		}
+		identities[rec.ID] = rec.Origin.RepoID
+		labels[rec.ID] = rec.Origin.Repo
+	}
+	if labels[remotedID] != labels[bareID] || labels[remotedID] != "api" {
+		t.Fatalf("both records should carry the same label `api`: %v", labels)
+	}
+	if identities[remotedID] == identities[bareID] {
+		t.Fatalf("the two repositories are indistinguishable in the user log: %v", identities)
+	}
+	if identities[remotedID] != remote {
+		t.Errorf("where a remote exists the identity is the remote, got %q", identities[remotedID])
+	}
+	if identities[bareID] != bare.root {
+		t.Errorf("with no remote it falls back to the absolute path, got %q", identities[bareID])
+	}
+	// The one destination in this file that received records from two different
+	// sources, so it is the one place a sweep could catch a log two promotions
+	// left inconsistent. Swept from both sides, since --all resolves the repo log
+	// from the repo it is run in and each of these has its own.
+	sweepValidates(t, remoted)
+	sweepValidates(t, bare)
+}
