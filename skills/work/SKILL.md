@@ -391,13 +391,15 @@ On approval, and only on approval, freeze it — whether `plan` authored it minu
 ago or you were already on it:
 
 ```bash
-FREEZE=$($MEMORY add --plan <tree-slug> --kind decision \
+$MEMORY add --plan <tree-slug> --kind decision \
   --title "Approved for execution: <short name>" \
   --body "<the acceptance criteria as approved, each with its required fidelity>" \
-  --about <areas> \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
+  --about <areas>
+```
 
-$MEMORY link --type approved_for_execution --from <objective-id> --to "$FREEZE"
+```bash
+$MEMORY link --type approved_for_execution --from <objective-id> \
+  --to <the id the add above printed, at .record.id, pasted literally>
 ```
 
 That decision is the freeze as a record. The edge has to point at the record
@@ -421,6 +423,15 @@ a resumption.
 `add` prints the whole record; the id is at `.record.id`. Every command prints
 JSON on success and on failure alike, so check the exit code rather than
 scanning the text.
+
+Neither this pair nor the blocker pair in step 5 wraps the write in
+`FREEZE=$(…)`, and that is not an oversight: run verbatim under `fish` 4.8.1, a
+block carrying that shape fails with `Unsupported use of '='` at exit 127 before
+any of its lines have run, while a shell that accepts the shape runs the same
+block through — and nothing here tells the turn which one it has. The write and
+the edge are one run each, in that order, and nothing in this log undoes
+whichever of them already went in. Read the id and paste it: one you can read in
+the command is one you can see is wrong.
 
 ### 5 — Implement
 
@@ -455,11 +466,13 @@ When the wall is external — a credential, an upstream decision, someone else's
 release — record what is being waited on and say so on the objective:
 
 ```bash
-BLOCKER=$($MEMORY add --plan <tree-slug> --kind open-question \
-  --title "<what is being waited on>" --about <area> \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
+$MEMORY add --plan <tree-slug> --kind open-question \
+  --title "<what is being waited on>" --about <area>
+```
 
-$MEMORY link --type blocked --from <objective-id> --to "$BLOCKER"
+```bash
+$MEMORY link --type blocked --from <objective-id> \
+  --to <the id the add above printed, at .record.id, pasted literally>
 ```
 
 `blocked` points at the `open-question` or the `decision` that says what the

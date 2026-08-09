@@ -596,17 +596,29 @@ own could not be attached to its parent at all.
 
 ```bash
 # The objective itself. `--slug` is taken exactly as given, so pass the slug the
-# draft directory already has. Keep the record: the id comes out of it.
-REC=$($MEMORY add --plan <tree-slug> --kind objective \
+# draft directory already has.
+$MEMORY add --plan <tree-slug> --kind objective \
   --slug "<the slug you derived in step 5>" \
   --title "<objective one-liner>" \
   --body "<Objective or Deliverable + Constraints + Out of scope + the criteria as written>" \
-  --about <area>,<area>)
-OBJ=$(printf '%s' "$REC" | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
-
-# When it has a parent: one edge, now, while you still know which one it is.
-$MEMORY link --type derives_from --from "$OBJ" --to <parent-objective-id>
+  --about <area>,<area>
 ```
+
+```bash
+# When it has a parent: one edge, now, while you still know which one it is.
+$MEMORY link --type derives_from \
+  --from <the id the add above printed, at .record.id, pasted literally> \
+  --to <parent-objective-id>
+```
+
+Two runs, and nothing is captured between them. The `sh -c` note in step 5 says
+why a POSIX construct cannot be assumed here; a capture is the same problem with
+a worse ending, since nothing in this log undoes whichever half already ran. Run
+verbatim under `fish` 4.8.1 a block carrying `REC=$(…)` fails with `Unsupported
+use of '='` at exit 127 before any of its lines have run, while under a shell that
+accepts the shape the same block runs — and nothing in the turn tells you which
+one you have. Paste the id instead: one you can read in the command is one you can
+see is wrong.
 
 `work` finds the draft by the record's slug, and passing `--slug` is what makes
 that slug the draft directory's name too — one name, rather than two that have to
@@ -620,7 +632,9 @@ all.
 ```bash
 # When you were invoked from `debug`: point the objective at the hypothesis whose
 # verdict is `confirmed`, using the record id `debug` handed you.
-$MEMORY link --type caused_by --from "$OBJ" --to <confirmed-hypothesis-id>
+$MEMORY link --type caused_by \
+  --from <the objective record's id — the one the add at the top of this step printed, at .record.id, pasted literally> \
+  --to <confirmed-hypothesis-id>
 ```
 
 Write it now, in the same breath as the objective, because this is the last

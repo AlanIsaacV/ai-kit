@@ -139,7 +139,13 @@ It is written bare, with no `TARGET=$(…)` around it, and that is not an oversi
 `fish` does not parse a POSIX assignment, and the session's shell may be `fish`.
 Nothing is lost by leaving it off — a variable would not survive to the next
 command either, and what this line is for is putting the path on stdout where you
-can read it and copy it.
+can read it and copy it. **No block in this skill captures one command's output
+for a later command**, for that same reason: run verbatim under `fish` 4.8.1 a
+block containing that shape fails with `Unsupported use of '='` at exit 127, and
+it fails before any of its lines have run, while under a shell that accepts the
+shape the same block runs — so which of the two a turn gets is decided by
+whichever shell it happens to have. Step 7's pair, where a write and the edge
+that qualifies it are two runs, is where that matters most.
 
 **Empty output means the derivation failed, and a failed derivation stops the
 skill.** `rev-parse` prints nothing on stdout when the path is missing or is not
@@ -579,24 +585,29 @@ re-explored, and whose revision **the user confirms**. Then it is a new record
 superseding the old, exactly the way a re-anchored `gotcha` is:
 
 ```bash
-NEW=$($MEMORY add --dir "$TARGET" --repo-root "$TARGET" --plan repo-questions --kind review-finding \
+$MEMORY add --dir "$TARGET" --repo-root "$TARGET" --plan repo-questions --kind review-finding \
   --title "<the claim as it is true now>" \
   --body "Claim: <what the code does now>
 Question: <the question this was answering>
 Revised because: the previous claim's anchor came back changed at <path:line>" \
   --about <area>,<path-prefix>/ \
-  --anchor <path>:<first>-<last> \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
-
-$MEMORY link --dir "$TARGET" --type supersedes --from "$NEW" --to <old-id>
+  --anchor <path>:<first>-<last>
 ```
 
-The edge runs from the new record to the one it replaces. Without it both records
-answer the same `--current` query and a later ask cannot tell which one describes
-the code — with it, the stale citation stops being checked the moment the
-replacement exists. The old id is not repeated in the body for the same reason the
-anchor is not: the edge is what carries it, and `$MEMORY graph --from <new-id>`
-walks to it. What the body adds is *why* the revision happened, which no edge holds.
+```bash
+$MEMORY link --dir "$TARGET" --type supersedes \
+  --from <the id the add above printed, at .record.id, pasted literally> \
+  --to <old-id>
+```
+
+Two runs, with nothing captured between them, for the reason the target-path
+derivation above gives — and here the stakes are higher than a failed
+derivation. The edge runs from the new record to the one it replaces. Without it
+both records answer the same `--current` query and a later ask cannot tell which
+one describes the code — with it, the stale citation stops being checked the
+moment the replacement exists. The old id is not repeated in the body for the
+same reason the anchor is not: the edge is what carries it, and
+`$MEMORY graph --from <new-id>` walks to it. What the body adds is *why* the revision happened, which no edge holds.
 
 The user's confirmation is not a formality. A `changed` verdict says the lines
 moved, not what is true now, and writing a revision they never agreed to would put

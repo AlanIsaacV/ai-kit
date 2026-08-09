@@ -175,17 +175,28 @@ on disk.
   closing record says what verification and review actually established —
   criteria met, criteria unverified with their count, what the user accepted in
   triage — built from `verify_result`, `review_result` and `triage_outcome`, not
-  from optimism:
+  from optimism. **Two separate runs, with nothing captured between them:**
 
 ```bash
-CLOSE=$("$memory_cmd" add --plan <plan_slug> --kind review-finding \
+"$memory_cmd" add --plan <plan_slug> --kind review-finding \
   --title "<what verification and review actually established>" \
   --body "<criteria met, criteria unverified, what the user accepted>" \
-  --about <areas> \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
-
-"$memory_cmd" link --type met --from <objective_id> --to "$CLOSE"
+  --about <areas>
 ```
+
+```bash
+"$memory_cmd" link --type met --from <objective_id> \
+  --to <the id the add above printed, at .record.id, pasted literally>
+```
+
+  There is no `CLOSE=$(…)` around the first command, here or at the postmortem
+  below, and that is not an oversight. `fish` rejects that shape: run verbatim
+  there, the block fails with `Unsupported use of '='` at exit 127 before any of
+  its lines have run — measured under `fish` 4.8.1. Under a shell that accepts
+  the shape the same block runs, so which of the two this turn gets is decided by
+  whichever shell it happens to have, and neither half of a pair like this one
+  comes back out of an append-only log. Paste the id instead: one you can read in
+  the command is one you can see is wrong.
 
   `met` is the state that counts toward the parent and it accepts a `decision` or
   a `review-finding`. An objective that is not going to happen closes
@@ -223,13 +234,16 @@ the normal outcome rather than an omission to apologise for.** Say so in
 the promotion pass turns into a folder nobody reads.
 
 ```bash
-PM=$("$memory_cmd" add --plan <plan_slug> --kind postmortem \
+"$memory_cmd" add --plan <plan_slug> --kind postmortem \
   --title "<the general lesson, not the symptom>" \
   --body "<what the class of failure is, what invited it, what would prevent it elsewhere>" \
-  --about <areas> \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["record"]["id"])')
+  --about <areas>
+```
 
-"$memory_cmd" link --type derives_from --from "$PM" --to <confirmed hypothesis id>
+```bash
+"$memory_cmd" link --type derives_from \
+  --from <the id the add above printed, at .record.id, pasted literally> \
+  --to <confirmed hypothesis id>
 ```
 
 The edge is what makes it derived rather than a second opinion: `derives_from`

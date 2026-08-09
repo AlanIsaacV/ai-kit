@@ -287,11 +287,19 @@ correct, and a command that decides good-or-bad by its exit code.
 
 Bisecting moves `HEAD`, so it does not run in the repository under investigation
 — hard rule 6 has no exception for "but only the working tree". It runs in a
-clone in scratch, which reads that repo and writes nothing to it:
+clone in scratch, which reads that repo and writes nothing to it. The scratch path
+is printed and pasted rather than captured, for the reason the loop-repo
+derivation above gives, and it is spelled in angle brackets rather than as
+`$SCRATCH` notation because an unsubstituted `$SCRATCH` expands to nothing and
+points the clone at `/bisect`, while angle brackets cannot run unsubstituted at
+all:
 
 ```bash
-SCRATCH=$(mktemp -d)
-git clone --no-hardlinks <repo_root> "$SCRATCH/bisect" && cd "$SCRATCH/bisect"
+mktemp -d
+```
+
+```bash
+git clone --no-hardlinks <repo_root> <the path mktemp printed>/bisect && cd <the path mktemp printed>/bisect
 git bisect start <known-bad-rev> <known-good-rev>
 git bisect run <command that exits 0 when good and non-zero when bad>
 ```
