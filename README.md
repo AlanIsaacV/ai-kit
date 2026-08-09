@@ -39,6 +39,7 @@ skills/debug   turn a symptom into a stated cause, with the evidence that establ
 skills/work    run one objective: pick, gate, implement, verify, review, record
 skills/ask     answer a question about a repo from its code and its log, every claim cited
 skills/bootstrap  give an unseen repo a README.md and a CLAUDE.md in one invocation
+skills/prefer  record why this repo chose what it chose, and carry it to the next one
 agents/        explore · implement · verify · review · record
 tools/memory   the append-only knowledge log everything writes to
 ```

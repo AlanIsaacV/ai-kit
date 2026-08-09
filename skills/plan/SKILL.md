@@ -249,6 +249,44 @@ though it were the only one.
 Options that turn on an external dependency get rule 4 applied first — resolve
 the version, then present the option.
 
+Before presenting them, read what this repository already chose in the areas the
+options touch, one area at a time:
+
+```bash
+$MEMORY areas --kind preference
+$MEMORY query              --kind preference --about <one of the areas the options touch> --current
+$MEMORY query --scope user --kind preference --about <the same area> --current
+```
+
+`areas` names the areas anybody has a recorded choice about, in this repo's log
+and the user's, and which record is live in each; the two `query` lines read that
+area's live answer out of each of those logs in turn. **Both lines, always**:
+`query` reads one scope per call and defaults to this repo's, so a choice promoted
+up out of some other repository is named by `areas` and then comes back `count: 0`
+from the repo-scope line alone — and it applies here exactly as much as a local
+one does. No `--plan` on any of the three — these records are written without one
+because they belong to the repository rather than to a tree, and a plan-bounded
+read returns them anyway. Read per area rather than in bulk, so the query stays
+small enough to come back with records in it.
+
+What comes back goes **beside** the options, as context, never in place of one:
+
+> Opción A: consultas generadas. Opción B: un ORM. Contexto: hay una preferencia
+> registrada para este repo que dice consultas generadas y no ORM
+> (`01KZ…`, 2026-03-14). No decide esto — te la muestro para que la tengamos a la
+> vista.
+
+**Every option that would have been presented is still presented**, including the
+one the recorded choice argues against. That is the trade this makes and it is
+worth naming: it re-opens things somebody already settled, and it costs a round
+that would otherwise not have happened. What it avoids is worse — a choice made
+months ago quietly freezing this one, with nobody in the conversation aware that
+an option was dropped before they saw it. A recorded choice is a fact about what
+was picked before and why; it is not a ruling on this objective, and it is never a
+reason to present fewer options or to present one as already settled. And when the
+round concludes that the recorded choice is itself wrong, it does not get corrected
+here — step 7 says where a choice that outlives this tree belongs.
+
 ### 4 — Check your judgment calls before any file exists
 
 Nothing is written yet, and that is what makes this round cheap. The same content
@@ -619,6 +657,16 @@ if the record carries it. Keep the value to one of the three tokens step 4
 defined, verbatim. A label that lives only in the draft file lasts exactly as
 long as somebody is reading that draft, and re-deriving it later from memory is
 how six assumptions ended up marked confirmed.
+
+A `decision` is scoped to this objective tree, and some of what the conversation
+settled is not. "We use generated queries rather than an ORM" will still be true
+two trees from now, and filed under this slug it disappears from view the moment
+this tree closes. A choice that outlives this objective tree belongs in a
+`preference`, and the skill that gathers those — checks them against what the
+repository actually does, and offers to carry them up to user scope — is `prefer`.
+**Name it here and do not run it.** No step of `plan` invokes that skill and
+nothing in `plan` writes that kind of record: say in one line which of the settled
+choices looks like one, and leave the invoking to the user.
 
 Tag `--about` with the areas and paths a future session would search by. A
 record nobody can find by filtering is a record nobody will read.
