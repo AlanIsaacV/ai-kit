@@ -80,6 +80,13 @@ not re-write the records the first run landed: point the state edge at
 closing record cannot be taken back, and two of them is worse than the missing
 edge you were relaunched to fix.
 
+An edge on its own is not a batch line — every batch line is a record — so this is
+the one case that goes through `link`, with both ids taken from your inputs:
+
+```bash
+"$memory_cmd" link --type met --from <objective_id> --to <existing_closing_record>
+```
+
 ## Read the artifacts yourself
 
 Nobody hands you a narrative of the turn. That synthesis is the cost this
@@ -111,6 +118,49 @@ check exists to prevent.
 `$memory_cmd kinds` is the authority on which record kinds and edge types exist
 and on which record each state edge is allowed to point at. Resolve it, do not
 recall it.
+
+## How the records get written: one batch file, one command
+
+Everything below goes into a single JSONL file that you write with whatever writes
+files — **not with the shell** — and then append with one command. A close writes a
+dozen records carrying multi-paragraph bodies, and that is a script rather than a
+command line: as separate invocations it was a dozen chances for a body to lose its
+quoting, and worse, a dozen chances for half of a pair to land in a log that cannot
+take it back.
+
+Write it beside the draft, as `close.jsonl` in the directory `objective_draft`
+already names — that directory is under `.ai-kit/`, which the CLI keeps out of git
+by itself, so the file saying what you appended survives without reaching a commit.
+
+One JSON object per line, carrying the fields `add`'s flags carry — `kind`,
+`title`, `body`, `about`, `slug`, `anchor` — plus the edges that record takes part
+in:
+
+```jsonl
+{"kind":"decision","title":"<the choice, stated as substance>","body":"<what was chosen, what it displaced>\nProvenance: <you chose this | their words | my call>","about":["<area>"]}
+{"kind":"assumption","title":"<what this turn assumed rather than established>","body":"Provenance: <my call>","about":["<area>"]}
+{"kind":"open-question","title":"<what was left genuinely open>","about":["<area>"]}
+```
+
+```bash
+"$memory_cmd" add --plan <plan_slug> --batch <the directory objective_draft is in>/close.jsonl
+```
+
+**Every entry lands in one write, or none of them does.** A line the tool refuses
+refuses the whole batch, names the line and the field, and leaves the log exactly as
+it was — so a refusal is something you fix and re-run, not half a close on disk.
+Check the exit code: exit 1 means nothing was written.
+
+**An edge on a line names one endpoint by an id already in the log, and the
+record on that line is the other end.** `"to"` puts this record at the source of the
+edge, `"from"` puts it at the target — which is how the same file writes an `answers`
+pointing *out* of a new record and a `met` pointing *at* one. Nothing is captured
+out of any command's output and nothing needs to be: a record's id does not exist
+until the write happens, and no edge here has to name it.
+
+`add --batch` prints `count`, the number of edges, and one row per record — id,
+kind, slug, title — which is what you report back. It prints no bodies; they are in
+the file you wrote.
 
 ## What the close records by default
 
@@ -160,43 +210,38 @@ on disk.
   words**, from `triage_outcome`. Do not improve their reasoning and do not
   substitute your own — the point of the record is that a future turn can see who
   dismissed it and why, and stop re-raising it.
-- **An `answers` edge for anything this turn actually settled.** Answering is a
-  link from the record that settles a question to the question, never an edit:
+- **An `answers` edge for anything this turn actually settled.** Answering is an
+  edge from the record that settles a question to the question, never an edit — so
+  it rides on the line of the record that settles it:
 
-```bash
-"$memory_cmd" link --type answers --from <new-record-id> --to <question-id>
+```jsonl
+{"kind":"decision","title":"<what settled it>","body":"<...>","about":["<area>"],"edges":[{"type":"answers","to":"<question-id>"}]}
 ```
 
   A carried-in open question the turn spoke to but did not settle stays open. A
   question with no record pointing at it is not answered, however clearly the
   turn discussed it.
 
-- **The closing `review-finding` and the state edge.** You write both. The
-  closing record says what verification and review actually established —
-  criteria met, criteria unverified with their count, what the user accepted in
-  triage — built from `verify_result`, `review_result` and `triage_outcome`, not
-  from optimism. **Two separate runs, with nothing captured between them:**
+- **The closing `review-finding` and the state edge.** You write both, and they are
+  one line. The closing record says what verification and review actually
+  established — criteria met, criteria unverified with their count, what the user
+  accepted in triage — built from `verify_result`, `review_result` and
+  `triage_outcome`, not from optimism. The state edge points *at* it, so it is
+  spelled `"from"`:
 
-```bash
-"$memory_cmd" add --plan <plan_slug> --kind review-finding \
-  --title "<what verification and review actually established>" \
-  --body "<criteria met, criteria unverified, what the user accepted>" \
-  --about <areas>
+```jsonl
+{"kind":"review-finding","title":"<what verification and review actually established>","body":"<criteria met, criteria unverified, what the user accepted>","about":["<area>"],"edges":[{"type":"met","from":"<objective_id>"}]}
 ```
 
-```bash
-"$memory_cmd" link --type met --from <objective_id> \
-  --to <the id the add above printed, at .record.id, pasted literally>
-```
-
-  There is no `CLOSE=$(…)` around the first command, here or at the postmortem
-  below, and that is not an oversight. `fish` rejects that shape: run verbatim
-  there, the block fails with `Unsupported use of '='` at exit 127 before any of
-  its lines have run — measured under `fish` 4.8.1. Under a shell that accepts
-  the shape the same block runs, so which of the two this turn gets is decided by
-  whichever shell it happens to have, and neither half of a pair like this one
-  comes back out of an append-only log. Paste the id instead: one you can read in
-  the command is one you can see is wrong.
+  **The record and the edge on one line is the whole point of writing this as a
+  batch.** As two commands they were two runs, and the failure was not symmetric:
+  the `add` half wrote a durable record and the `link` half could be refused,
+  leaving an objective that reads open forever with nothing in an append-only log to
+  undo the half that landed. Whether that happened used to depend on the shell the
+  turn got — an assignment of a command substitution is one of the shapes a shell
+  may refuse outright, at parse time, so a block carrying one runs none of its
+  lines while the same text runs through elsewhere, and nothing here says which
+  shell this is. One batch has no halves.
 
   `met` is the state that counts toward the parent and it accepts a `decision` or
   a `review-finding`. An objective that is not going to happen closes
@@ -233,17 +278,8 @@ the normal outcome rather than an omission to apologise for.** Say so in
 `not_recorded` in one line and move on. Manufacturing one for every fix is how
 the promotion pass turns into a folder nobody reads.
 
-```bash
-"$memory_cmd" add --plan <plan_slug> --kind postmortem \
-  --title "<the general lesson, not the symptom>" \
-  --body "<what the class of failure is, what invited it, what would prevent it elsewhere>" \
-  --about <areas>
-```
-
-```bash
-"$memory_cmd" link --type derives_from \
-  --from <the id the add above printed, at .record.id, pasted literally> \
-  --to <confirmed hypothesis id>
+```jsonl
+{"kind":"postmortem","title":"<the general lesson, not the symptom>","body":"<what the class of failure is, what invited it, what would prevent it elsewhere>","about":["<area>"],"edges":[{"type":"derives_from","to":"<confirmed hypothesis id>"}]}
 ```
 
 The edge is what makes it derived rather than a second opinion: `derives_from`
@@ -259,19 +295,48 @@ the reconstruction this subagent exists to avoid.
 
 Nothing about writing one is special; what is easy to get wrong is who reads it.
 An `adr` reaches a later `implement` as part of its `constraints`, pulled by area
-rather than by plan, so the `--about` tags are what decide whether the objective
+rather than by plan, so the `about` tags are what decide whether the objective
 it was written for ever sees it.
 
-```bash
-"$memory_cmd" add --plan <plan_slug> --kind adr \
-  --title "<the constraint the choice imposes, stated so a later session can check it>" \
-  --body "<what was chosen, what it displaced, and what it binds from here on>" \
-  --about <the areas the constraint reaches, not only the files this turn edited>
+```jsonl
+{"kind":"adr","title":"<the constraint the choice imposes, stated so a later session can check it>","body":"<what was chosen, what it displaced, and what it binds from here on>","about":["<the areas the constraint reaches, not only the files this turn edited>"]}
 ```
 
-No edge is required, which is why no id is captured above. When the choice came
-out of something already on disk — a `decision`, a rejected `hypothesis` — point
-a `derives_from` at that record, written like any other link.
+No edge is required. When the choice came out of something already on disk — a
+`decision`, a rejected `hypothesis` — put a `derives_from` on this line pointing
+at that record, like any other edge.
+
+## A record written by mistake
+
+Nothing is ever deleted or edited, so a record that should not have been written is
+**retired rather than removed**: a new record saying what it got wrong, and a
+`supersedes` edge from the new one to the mistaken one. After that a read with
+`--current` stops returning the mistake and a read without it still does, which is
+what keeps the history honest — the wrong record is still on disk, and so is the
+record saying it was wrong.
+
+The new record is one batch line, so both halves land together:
+
+```jsonl
+{"kind":"decision","title":"<what the mistaken record got wrong, and what is true instead>","body":"<why it was written, why it is wrong, what replaces it>","about":["<the same areas the mistaken record carries>"],"edges":[{"type":"supersedes","to":"<the mistaken record's id>"}]}
+```
+
+If the batch has already gone in, the edge is written on its own:
+
+```bash
+"$memory_cmd" link --type supersedes --from <the new record> --to <the mistaken record>
+```
+
+**The direction is `--from <new> --to <mistaken>`, and drawn backwards it is not
+refused.** `"to"` on the batch line above is what puts the new record on the
+`from` side. The reverse — an edge from the mistaken record to the new one — is
+accepted at exit 0 and silently retires the *replacement*, leaving the mistake as
+the live answer. Nothing warns you, because both are legal edges; the only way to
+see it is to read the direction before writing it, or to check `--current`
+afterwards and find the wrong record still coming back.
+
+`--about` matters here more than usual: a retirement filed under different tags
+from the record it retires is invisible to the reader who finds the mistake.
 
 ## Rules
 
@@ -301,10 +366,13 @@ a `derives_from` at that record, written like any other link.
 6. **Check exit codes, not prose.** Every command prints JSON on success and on
    failure alike, so a failed `add` or `link` looks like output. Exit 1 means the
    command refused, and the JSON says why.
-7. **Report a failure, do not paper over it.** If a `link` refuses, say so in
-   `failures` and set `ok: false` on that edge. The orchestrator re-reads the log
-   to confirm the close landed, and a failure you swallowed becomes an objective
-   that reads open forever. Do not retry the same rejected command more than once.
+7. **Report a failure, do not paper over it.** If the batch is refused, say so in
+   `failures` with the line and field its problems named, and report the records as
+   what they are: nothing was written, so `records` is empty and every `ok` is
+   false. Fix the line and re-run the batch once — the refusal wrote nothing, so
+   there is no half to work around. The orchestrator re-reads the log to confirm
+   the close landed, and a failure you swallowed becomes an objective that reads
+   open forever. Do not retry the same rejected command more than once.
 8. **Finish with `"$memory_cmd" validate`** and return its `ok`. It is a read,
    and it is the cheapest way to notice that something you appended left the log
    unsound while you are still the one who can explain it.

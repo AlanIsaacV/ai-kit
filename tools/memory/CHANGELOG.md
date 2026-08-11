@@ -2,6 +2,101 @@
 
 ## Unreleased
 
+### `add --batch`, a guard on unsplit arguments, and how a record is retired
+
+Two steps of the workflow write records by the dozen, each one a separate `add`
+carrying a multi-paragraph `--body` typed into whatever shell the turn happens to
+have. That is a large quoting surface bought for nothing — and the failure that
+actually happened was the shell's: an argument arrived as one word looking like
+`--kind decision`, which Go's `flag` reports as an undefined flag named
+`kind decision` and which reads like a bug in this tool.
+
+```bash
+memory add --plan jwt-migration --batch close.jsonl   # 25 entries and 3 edges, one write
+memory add --plan jwt-migration --batch -             # or from stdin
+```
+
+- **Every entry in one write, or nothing at all.** REJECTED: appending the valid
+  lines and reporting the rest, which in an append-only log leaves a caller to work
+  out which half landed. A bad line refuses the whole batch, names the line and the
+  field, and the log's bytes are what they were. No new store primitive was needed:
+  `Store.Append` was already variadic and already takes the advisory lock once for
+  the whole call.
+- **A line carries the fields the flags carry and never the ones the tool stamps.**
+  REJECTED: accepting whole records in their on-disk shape, which would let a caller
+  stamp a version or an id — the two fields whose only value is that no caller
+  chooses them. An unknown key is refused by name, which is also where the flag
+  parser's typo protection went: `titel` in a batch fails the way `--titel` does.
+- **A key whose value is the wrong shape is refused by that key too.** `about` and
+  `anchor` take a string or an array, and a refusal from the type accepting both used
+  to carry no field at all — so `{"about": 5}` and `{"anchor": 7}` produced
+  byte-identical refusals, and `raw` truncates at 120 characters, which on a line
+  carrying a multi-paragraph body ends long before the key. REJECTED: naming the key
+  in the message from inside the unmarshaller, which cannot know it: a method is
+  handed the value and nothing else. The refusal is a `*json.UnmarshalTypeError`,
+  the one error type the decoder fills a field in on as it unwinds, and the wording
+  is rendered from that rather than from json's own, which names a Go type nobody
+  reading a JSONL file has in front of them.
+- **An edge on a line names exactly one endpoint, by an id already in the log.**
+  The entry on that line is the other end, on the side the line left out. REJECTED:
+  caller-invented local refs spanning the batch, which buys edges between two new
+  records — something neither caller needs — at the price of a ref namespace and a
+  dangling-ref failure class. It is also why edges *within* one batch are
+  inexpressible rather than forbidden: neither entry has an id until the write.
+- **A batched edge passes the same three log-wide checks `link` applies** —
+  dangling endpoints, state-edge justification, the objective tree — and any of them
+  refuses the whole batch. A second write path for edges that skipped them would
+  have been a hole in all three. Each edge is judged against the log plus the batch
+  edges *before* it, never against itself.
+- **A refusal about a batched edge names the line, never the id the run stamped.**
+  The tree check states its refusal in ids, which is right for `link` — both
+  endpoints are on disk and either can be looked up. In a batch one of them is the id
+  stamped for an entry the refusal means will never be written, so it names nothing
+  that exists or ever will, and a reader takes it for a record and searches the log.
+  Any such id is now rendered as *the record on line N*; the ids left in a message
+  are the ones the log holds.
+- **The origin every batched record carries is built once per run, not once per
+  line.** Building one spawns two processes — `git remote get-url origin` and
+  `git config user.name` — and `firstNonEmpty` evaluates every argument it is given,
+  so a set `--author` or `AI_KIT_AUTHOR` does not skip the call. Measured with a
+  counting wrapper on `PATH`: 2 spawns for one line, 20 for ten, 400 for two hundred,
+  where a 200-line batch spent 2.3s almost entirely waiting on subprocesses; now 2 at
+  every size, and 0.04s at 200 lines. REJECTED: memoizing inside the origin builder,
+  which leaves a process spawn hiding behind a call that reads as pure. The plan is
+  the only part of an origin a line may speak for itself, so the base is copied per
+  line by value and only that field is written into the copy.
+- **`--batch` and the flags that describe one record are refused together.**
+  REJECTED: letting the file win silently, which would put a `--title` nobody sees
+  into a log that cannot take it back.
+- **An empty batch is a refusal.** At exit 0 it is indistinguishable from a file
+  whose lines went somewhere else.
+- **Every subcommand refuses an argument in flag position that begins with `-` and
+  contains a space**, before parsing a single flag, quoting the argument and asking
+  whether an unquoted variable failed to split. REJECTED: a scan over `os.Args` in
+  `main`, which would refuse `--body "--about persistence"` — a legitimate body this
+  repository's own log contains. Telling a flag from a flag's value needs the
+  FlagSet, so the guard is one helper each of the thirteen subcommands calls in
+  place of `fs.Parse`. REJECTED: exempting the inline `--flag=value` form, which
+  would let a space through in the one shape where it is legitimate; the cost is
+  that `--text='key rotation'` must be passed as two arguments, and no command block
+  in this repository writes it the other way. The one argument that is not a flag's
+  value and is still in flag position is `search`'s text, so `search '--about auth'`
+  is refused while `search 'key rotation'` is not — narrower than it sounds, since a
+  text beginning with `-` was already refused as an undefined flag at exit 2, and the
+  README says so rather than claiming a search text may say anything.
+- **A record written by mistake is retired with `supersedes`, and the README now
+  says so.** REJECTED: a `retract` subcommand with a tombstone kind, a `retracts`
+  edge type and a read that skips it by default — measured against one junk record
+  in 806 entries, and a second invisible filter would contradict the one claim this
+  log makes, which is that a read returns what was appended. What was missing was
+  the sentence, including that `--from <new> --to <old>` drawn backwards is accepted
+  at exit 0 and leaves the wrong record live.
+- **No schema obligation is triggered.** No kind, no edge type, no scope and no
+  record field changed; `CurrentSchemaVersion` stays at 3 and the closed sets are
+  untouched. `--batch` and the guard are CLI-level, and a batched entry goes through
+  the same write gate a flagged one does — `currentRules`, which never dispatches on
+  a record's declared version.
+
 ### `areas` enumerates what a log can be asked about
 
 `--about` is the only carrier of a preference's identity and it is freeform, so a

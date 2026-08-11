@@ -27,6 +27,7 @@ const usage = `memory — append-only knowledge log
 Usage:
   memory init      [--scope repo|user]
   memory add       --kind KIND --title TEXT --about TAG[,TAG...] [--plan SLUG] [--body TEXT] [--slug SLUG] [--anchor PATH:LINE] [--repo-root PATH]
+  memory add       --batch PATH|- [--plan SLUG] [--repo-root PATH]
   memory link      --type TYPE --from ID --to ID
   memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--current] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
@@ -59,6 +60,18 @@ The first command that resolves a location creates it, read or write, and writes
 a .gitignore containing '*' inside it — so nothing the loop leaves behind reaches
 a commit, and no repository's own .gitignore is ever edited. A read that cannot
 create it answers anyway; a write refuses with code 'init_failed'.
+
+'add --batch' takes one JSON object per line — '-' reads stdin — carrying the
+fields the flags carry (kind, title, body, slug, about, anchor, plan) and never
+the ones the tool stamps. A line may declare an 'edges' array, each edge naming
+exactly one endpoint by an id already in the log: the entry on that line is the
+other end, on the side the line left out. Every entry in the file is appended in
+one write, or nothing is — one bad line refuses all of it.
+
+An argument in flag position that begins with '-' and contains a space is refused
+before any flag is parsed, whatever the subcommand. It is one argument where the
+command line meant two, and an unquoted variable that failed to split is what
+produces it. A flag's *value* is never inspected, so a body may say anything.
 
 Every command prints JSON on stdout, on success and on failure alike, except
 'render' which prints markdown. Exit 0 means the command ran; exit 1 means it
@@ -162,6 +175,60 @@ func (c *common) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.scope, "scope", "repo", "repo|user")
 	fs.StringVar(&c.plan, "plan", "", "plan slug: stamped by add, bounds query and search")
 	fs.StringVar(&c.dir, "dir", "", "start directory for repo discovery")
+}
+
+// parseFlags is fs.Parse plus one refusal, and every subcommand calls it instead
+// of calling fs.Parse itself.
+//
+// The refusal is for an argument in flag position that begins with `-` and
+// contains a space. That is one argument where the command line meant two, and
+// what produces it is an unquoted variable that failed to split — a shell handed
+// `--kind decision` as a single word, which Go's flag package reports as an
+// undefined flag named `kind decision`. The tool then looks like it has invented
+// a flag, and the write that was refused looks like the tool's fault rather than
+// the shell's.
+//
+// **In flag position, and that is why this cannot be a scan over os.Args.**
+// `--body "--about persistence is a legitimate body"` is a body this repository's
+// own log contains, and a bare scan would refuse it. Telling a flag from a flag's
+// value needs to know which flags take a value, which is knowledge only the
+// FlagSet has — so the guard sits here, where the FlagSet is, and covers every
+// subcommand by being the one thing they all call.
+//
+// There is no escape hatch. A caller who genuinely means an argument of that
+// shape is passing it as a flag's value, which this never looks at.
+func parseFlags(fs *flag.FlagSet, args []string) error {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		// Where the flag package stops parsing, this stops looking: `--` ends the
+		// flags, and so does the first argument that is not one — `search`'s text,
+		// for instance, which may say anything.
+		if a == "--" {
+			break
+		}
+		if len(a) < 2 || a[0] != '-' {
+			break
+		}
+		if strings.ContainsAny(a, " \t") {
+			return fail("unsplit_argument",
+				"argument %q is in flag position, begins with - and contains a space: it is one argument "+
+					"where the command line meant two. Did an unquoted variable fail to split? Pass the flag "+
+					"and its value as separate arguments.", a)
+		}
+		name := strings.TrimLeft(a, "-")
+		if eq := strings.Index(name, "="); eq >= 0 {
+			continue // --flag=value carries its value inline, so the next argument is a flag again
+		}
+		f := fs.Lookup(name)
+		if f == nil {
+			continue // an unknown flag: fs.Parse refuses it, and guessing whether it takes a value would be inventing one
+		}
+		if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+			continue
+		}
+		i++ // the next argument is this flag's value, and a value is never inspected
+	}
+	return fs.Parse(args)
 }
 
 // locate resolves a location without creating it. Nearly everything goes through
@@ -291,7 +358,7 @@ func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	var c common
 	c.bind(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	// c.locate() and not c.resolve(): resolve initializes as a side effect, which
@@ -326,7 +393,8 @@ func cmdAdd(args []string) error {
 	unit := fs.String("unit", "", "id of the unit of work this came out of")
 	author := fs.String("author", "", "who recorded it; defaults to git config user.name")
 	repo := fs.String("repo", "", "repo label; defaults to the repo directory name")
-	if err := fs.Parse(args); err != nil {
+	batch := fs.String("batch", "", "JSONL file of entries to append in one write, or - for stdin")
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 
@@ -342,6 +410,21 @@ func cmdAdd(args []string) error {
 		return err
 	}
 
+	st := stamp{anchorRoot: *anchorRoot, repo: *repo, author: *author, unit: *unit}
+
+	if *batch != "" {
+		// The flags that describe one record are refused alongside --batch rather
+		// than ignored. Each of them has a per-line spelling, so a caller who passed
+		// both meant one of the two to win, and silently picking the file would put a
+		// title nobody sees into a log that cannot take it back.
+		if named := namedFlags(fs, "kind", "title", "body", "slug", "about", "anchor"); len(named) > 0 {
+			return fail("batch_and_record_flags",
+				"--batch takes those fields from each line of the file, so %s cannot also be passed on the "+
+					"command line: put them in the batch, or drop --batch", strings.Join(named, ", "))
+		}
+		return runBatch(&c, loc, *batch, plan, st)
+	}
+
 	id, err := memory.NewULID(time.Now())
 	if err != nil {
 		return fail("id_failed", "%s", err.Error())
@@ -355,34 +438,9 @@ func cmdAdd(args []string) error {
 	// The anchors are resolved against the working tree before the record exists,
 	// so a citation that names nothing refuses the whole write. The alternative is
 	// an anchor nobody can check sitting in an append-only log.
-	//
-	// --repo-root is what makes an anchored record writable at user scope, where
-	// the log resolves to a home directory and loc.Repo is empty. The requirement
-	// itself never bends: a `gotcha` is refused without an anchor in every scope,
-	// so what this flag changes is that the root can be supplied rather than only
-	// inferred.
-	anchorRepo := firstNonEmpty(*anchorRoot, loc.Repo)
-	built, err := buildAnchors(anchorRepo, anchors)
+	built, err := buildAnchors(st.anchorRepo(loc), anchors)
 	if err != nil {
 		return err
-	}
-
-	origin := &memory.Origin{
-		// The repository the anchors were read out of is the repository this
-		// record came from, and at user scope it is the only one there is:
-		// loc.Repo is empty there, and filepath.Base("") is ".", which names
-		// nothing. An anchor's path says where in a repository and never which
-		// one, so a user-scope record whose origin.repo read "." would carry a
-		// citation nobody could resolve.
-		Repo: firstNonEmpty(*repo, repoLabel(loc.Repo), repoLabel(anchorRepo)),
-		// The label and the identity are read off the same root but answer
-		// different questions, so --repo overrides the first and not the second: a
-		// caller may rename what a record calls its repository, and nothing it can
-		// type makes two repositories the same one.
-		RepoID: repoIdentity(firstNonEmpty(loc.Repo, anchorRepo)),
-		Plan:   plan,
-		Author: firstNonEmpty(*author, os.Getenv("AI_KIT_AUTHOR"), gitUserName(loc.Repo)),
-		Unit:   *unit,
 	}
 
 	// The schema version is stamped, never passed in. The tool knows which
@@ -400,7 +458,7 @@ func cmdAdd(args []string) error {
 		Title:   strings.TrimSpace(*title),
 		Body:    strings.TrimSpace(*body),
 		Anchors: built,
-		Origin:  origin,
+		Origin:  st.origin(loc, plan),
 	}
 
 	// Validate before writing. The log is append-only, so a bad record cannot
@@ -417,6 +475,349 @@ func cmdAdd(args []string) error {
 	return nil
 }
 
+// stamp is what a write takes from the command line about where it came from,
+// as opposed to what it says. One record or two hundred, the answers are the same:
+// the plan is the only part of an origin a batch line may speak for itself, so
+// everything else is resolved once per run and copied. See originBase for what
+// makes that a requirement rather than a tidiness.
+type stamp struct {
+	anchorRoot string
+	repo       string
+	author     string
+	unit       string
+}
+
+// anchorRepo is the working tree the --anchor paths are read out of.
+//
+// --repo-root is what makes an anchored record writable at user scope, where the
+// log resolves to a home directory and loc.Repo is empty. The requirement itself
+// never bends — a `gotcha` is refused without an anchor in every scope — so what
+// the flag changes is that the root can be supplied rather than only inferred.
+func (s stamp) anchorRepo(loc memory.Location) string {
+	return firstNonEmpty(s.anchorRoot, loc.Repo)
+}
+
+// origin is the whole origin for one record: the base, plus the plan that record
+// belongs to.
+func (s stamp) origin(loc memory.Location, plan string) *memory.Origin {
+	o := s.originBase(loc)
+	o.Plan = plan
+	return &o
+}
+
+// originBase is every part of an origin except the plan, and it is built once per
+// run because building it spawns two processes: `git remote get-url origin` for the
+// identity and `git config user.name` for the author.
+//
+// **Neither is skipped by a value already in hand.** firstNonEmpty evaluates every
+// argument it is given, so `--author` or AI_KIT_AUTHOR set does not stop
+// gitUserName from running — the call happens while the arguments are being
+// assembled, before anything chooses between them. Measured with a counting wrapper
+// on PATH before this was hoisted out of the per-line path: 2 spawns for a 1-line
+// batch, 20 for 10 lines, 400 for 200 lines, at which point a batch spent 2.3s
+// almost entirely waiting on subprocesses. It returns a value rather than a pointer
+// so that a caller copying it per line cannot alias the plan of the one before.
+func (s stamp) originBase(loc memory.Location) memory.Origin {
+	anchorRepo := s.anchorRepo(loc)
+	return memory.Origin{
+		// The repository the anchors were read out of is the repository this
+		// record came from, and at user scope it is the only one there is:
+		// loc.Repo is empty there, and filepath.Base("") is ".", which names
+		// nothing. An anchor's path says where in a repository and never which
+		// one, so a user-scope record whose origin.repo read "." would carry a
+		// citation nobody could resolve.
+		Repo: firstNonEmpty(s.repo, repoLabel(loc.Repo), repoLabel(anchorRepo)),
+		// The label and the identity are read off the same root but answer
+		// different questions, so --repo overrides the first and not the second: a
+		// caller may rename what a record calls its repository, and nothing it can
+		// type makes two repositories the same one.
+		RepoID: repoIdentity(firstNonEmpty(loc.Repo, anchorRepo)),
+		Author: firstNonEmpty(s.author, os.Getenv("AI_KIT_AUTHOR"), gitUserName(loc.Repo)),
+		Unit:   s.unit,
+	}
+}
+
+// namedFlags returns which of the given flags the caller actually passed. Set
+// reports what was set rather than what differs from a default, so a flag passed
+// with its default value still counts — the question here is what the command
+// line said, not what it changed.
+func namedFlags(fs *flag.FlagSet, names ...string) []string {
+	passed := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+	out := []string{}
+	for _, n := range names {
+		if passed[n] {
+			out = append(out, "--"+n)
+		}
+	}
+	return out
+}
+
+// runBatch is `add` over a JSONL file: every entry in it appended in one write,
+// or nothing appended at all.
+//
+// The atomicity is the point and it is not new machinery: Store.Append is
+// variadic and takes the advisory lock once for the whole call, so the whole
+// batch is one write to the file. What this function adds is that every line is
+// judged before that call happens. A batch that appended its good lines and
+// reported the rest would leave a caller holding an append-only log and no way to
+// tell which half landed.
+//
+// The edges are judged here too, against the same three log-wide checks `link`
+// applies — dangling endpoints, state-edge justification, and the objective tree.
+// A second write path for edges that skipped them would be a hole in all three.
+func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error {
+	entries, problems, err := readBatch(path)
+	if err != nil {
+		return err
+	}
+
+	lines, err := readLog(loc)
+	if err != nil {
+		return err
+	}
+	// Both views of the log, taken once: the kinds every edge check needs, and the
+	// edges the tree check walks. Each batch entry joins the first as it is built
+	// and each batch edge joins the second, so a batch that gives one objective two
+	// parents is refused on its own second edge rather than only against the log.
+	known := map[string]memory.Kind{}
+	for _, e := range memory.Entries(lines) {
+		known[e.ID] = e.Kind
+	}
+	edges := memory.Edges(lines)
+
+	// Everything the batch will write, in the order it will be written: each entry
+	// followed by the edges that entry declared.
+	records := []any{}
+	written := []*memory.Entry{}
+	newEdges := []*memory.Edge{}
+	// Where each edge came from, so a log-wide refusal can name the line to fix.
+	edgeLine := map[*memory.Edge]int{}
+	// And which line each stamped id belongs to, so a refusal that would otherwise
+	// quote one can name the line instead. See lineNames.
+	entryLine := map[string]int{}
+
+	// The origin every entry shares, built once. See originBase: building one spawns
+	// two git processes, and doing it per line is how a 200-line batch spent most of
+	// its time in subprocesses.
+	base := st.originBase(loc)
+
+	for _, bl := range entries {
+		e, ps := buildBatchEntry(c, base, st.anchorRepo(loc), plan, bl)
+		problems = append(problems, ps...)
+		if e == nil {
+			continue
+		}
+		known[e.ID] = e.Kind
+		entryLine[e.ID] = bl.Num
+		records = append(records, e)
+		written = append(written, e)
+
+		for i, be := range bl.Entry.Edges {
+			// A line that named both endpoints or neither was already reported by the
+			// parser; there is nothing left here to build an edge out of.
+			if (be.From == "") == (be.To == "") {
+				continue
+			}
+			edge := &memory.Edge{
+				Version: memory.CurrentSchemaVersion,
+				Kind:    memory.KindEdge,
+				Type:    be.Type,
+				From:    firstNonEmpty(be.From, e.ID),
+				To:      firstNonEmpty(be.To, e.ID),
+				At:      time.Now().UTC().Format(time.RFC3339),
+			}
+			for _, p := range memory.ValidateEdge(edge) {
+				p.Line = bl.Num
+				p.Field = fmt.Sprintf("edges[%d].%s", i, p.Field)
+				problems = append(problems, p)
+			}
+			records = append(records, edge)
+			newEdges = append(newEdges, edge)
+			edgeLine[edge] = bl.Num
+		}
+	}
+
+	if len(problems) > 0 {
+		emit(map[string]any{"error": "batch rejected", "code": "invalid_batch",
+			"path": loc.Path, "problems": problems})
+		os.Exit(1)
+	}
+	if len(written) == 0 {
+		return fail("empty_batch", "%s holds no entries: a batch that writes nothing is a batch whose "+
+			"lines went somewhere else", batchName(path))
+	}
+
+	// The three log-wide checks, in `link`'s order and with `link`'s codes, one
+	// refusal at a time: each of them is a single sentence about one edge, and the
+	// line number is what turns it back into the line to fix.
+	//
+	// Each edge is judged against the log plus the batch edges *before* it and
+	// never against itself: the tree check reads the parent relation out of the
+	// edges it is given, so an edge included in its own input would report that its
+	// source already has the parent this edge is about to give it.
+	prior := make([]*memory.Edge, 0, len(edges)+len(newEdges))
+	prior = append(prior, edges...)
+	for _, edge := range newEdges {
+		var missing []string
+		if _, ok := known[edge.From]; !ok {
+			missing = append(missing, "from="+edge.From)
+		}
+		if _, ok := known[edge.To]; !ok {
+			missing = append(missing, "to="+edge.To)
+		}
+		if len(missing) > 0 {
+			return fail("dangling_edge", "line %d: no entry in %s for %s — an edge in a batch names one "+
+				"endpoint by an id already in the log", edgeLine[edge], loc.Path, strings.Join(missing, ", "))
+		}
+		if err := memory.CheckJustification(edge.Type, known[edge.To]); err != nil {
+			return fail("unjustified_state", "line %d: %s", edgeLine[edge], err.Error())
+		}
+		if err := memory.CheckParent(edge.Type, edge.From, edge.To, known, prior); err != nil {
+			return fail("not_a_tree", "line %d: %s", edgeLine[edge], lineNames(err.Error(), entryLine))
+		}
+		prior = append(prior, edge)
+	}
+
+	if err := memory.Open(loc.Path).Append(records...); err != nil {
+		return fail("write_failed", "%s", err.Error())
+	}
+
+	// The ids and nothing else of what was written. `add` prints the whole record
+	// because there is one; twenty-five bodies printed back would spend as much of
+	// the caller's context as writing them did, and the reason to declare an edge on
+	// the line rather than link afterwards is precisely that nobody has to read
+	// these ids back to draw one.
+	report := make([]map[string]string, 0, len(written))
+	for _, e := range written {
+		report = append(report, map[string]string{
+			"id": e.ID, "kind": string(e.Kind), "slug": e.Slug, "title": e.Title,
+		})
+	}
+	emit(map[string]any{
+		"path": loc.Path, "count": len(written), "edges": len(newEdges), "records": report,
+	})
+	return nil
+}
+
+// readBatch reads the JSONL from a path or, for `-`, from stdin.
+//
+// A path is the shape that removes the shell entirely: the file is written with
+// whatever writes files and then named here, where a pipeline would have put a
+// heredoc or an echo back into the command line. `-` is for the caller that
+// already has the bytes.
+func readBatch(path string) ([]memory.BatchLine, []memory.Problem, error) {
+	if path == "-" {
+		entries, ps := memory.ParseBatch(os.Stdin)
+		return entries, ps, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, fail("batch_unreadable", "--batch %s: %s", path, err.Error())
+	}
+	defer f.Close()
+	entries, ps := memory.ParseBatch(f)
+	return entries, ps, nil
+}
+
+func batchName(path string) string {
+	if path == "-" {
+		return "the batch on stdin"
+	}
+	return path
+}
+
+// lineNames rewrites a batch entry's own id, wherever a refusal quotes one, as the
+// line that was going to carry it.
+//
+// The tree check states its refusal in ids, which is right for `link`: both of them
+// are on disk and either can be looked up. In a batch one of them is the id this run
+// stamped for an entry it is about to write — and a refusal means it never writes,
+// so the id names nothing that exists and nothing that ever will. A reader who takes
+// it for a record goes looking through the log for it. The line number is the only
+// handle they actually have.
+func lineNames(msg string, entryLine map[string]int) string {
+	for id, num := range entryLine {
+		msg = strings.ReplaceAll(msg, id, fmt.Sprintf("the record on line %d", num))
+	}
+	return msg
+}
+
+// buildBatchEntry stamps one batch line into the entry that will be written, and
+// returns the problems that stop it. A nil entry means the line cannot be built
+// at all, and the problems say why.
+//
+// It stamps id, at, version and scope exactly as the flagged path does, because
+// they are the fields whose whole point is that no caller chooses them. `base` and
+// `anchorRepo` arrive already resolved rather than being derived here, so that
+// nothing in this function can be made to run per line that should run once.
+func buildBatchEntry(c *common, base memory.Origin, anchorRepo, plan string, bl memory.BatchLine) (*memory.Entry, []memory.Problem) {
+	var ps []memory.Problem
+	at := func(field, format string, args ...any) {
+		ps = append(ps, memory.Problem{Line: bl.Num, Field: field, Message: fmt.Sprintf(format, args...)})
+	}
+
+	// A line's own plan wins over the batch's, and an absent one is not an empty
+	// one: it means this line is stamped with whatever the batch was. PlanSlug is
+	// not reached for the absent case on purpose — it would fall back to
+	// AI_KIT_PLAN, which the batch's own stamp has already consulted.
+	linePlan := plan
+	if bl.Entry.Plan != "" {
+		slug, err := memory.PlanSlug(bl.Entry.Plan)
+		if err != nil {
+			at("plan", "%s", err.Error())
+		}
+		linePlan = slug
+	}
+
+	// An anchor that names nothing stops the line here rather than falling through
+	// to the rest of the rules. The entry cannot be built without it, and the
+	// anchored-kind rule would otherwise add "at least one anchor is required" under
+	// the line that did pass one — sending the reader to add a second citation when
+	// what is wrong is the first.
+	built, err := buildAnchors(anchorRepo, anchorSpecs(bl.Entry.Anchor))
+	if err != nil {
+		at("anchor", "%s", err.Error())
+		return nil, ps
+	}
+
+	id, err := memory.NewULID(time.Now())
+	if err != nil {
+		at("", "%s", err.Error())
+		return nil, ps
+	}
+
+	slug := bl.Entry.Slug
+	if slug == "" {
+		slug = deriveSlug(bl.Entry.Title)
+	}
+
+	// A copy of the shared origin, with this line's plan written into it. The copy
+	// is what keeps the batch's own stamp intact for the lines that follow: base is
+	// taken by value, so writing Plan here cannot reach the line after this one.
+	origin := base
+	origin.Plan = linePlan
+
+	e := &memory.Entry{
+		Version: memory.CurrentSchemaVersion,
+		ID:      id,
+		Kind:    bl.Entry.Kind,
+		Slug:    slug,
+		Scope:   memory.Scope(c.scope),
+		At:      time.Now().UTC().Format(time.RFC3339),
+		About:   bl.Entry.About,
+		Title:   strings.TrimSpace(bl.Entry.Title),
+		Body:    strings.TrimSpace(bl.Entry.Body),
+		Anchors: built,
+		Origin:  &origin,
+	}
+	for _, p := range memory.ValidateEntry(e) {
+		p.Line = bl.Num
+		ps = append(ps, p)
+	}
+	return e, ps
+}
+
 func cmdLink(args []string) error {
 	fs := flag.NewFlagSet("link", flag.ExitOnError)
 	var c common
@@ -424,7 +825,7 @@ func cmdLink(args []string) error {
 	typ := fs.String("type", "", "edge type (see `memory kinds`)")
 	from := fs.String("from", "", "source entry id")
 	to := fs.String("to", "", "target entry id")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 
@@ -504,7 +905,7 @@ func cmdQuery(args []string) error {
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "return at most N, most recent first")
 	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	plan, err := c.planFilter()
@@ -530,7 +931,7 @@ func cmdSearch(args []string) error {
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "return at most N, most recent first")
 	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	text := strings.Join(fs.Args(), " ")
@@ -577,7 +978,7 @@ func cmdAreas(args []string) error {
 	fs.StringVar(&c.plan, "plan", "", "plan slug: bounds the enumeration exactly as it bounds query")
 	fs.StringVar(&c.dir, "dir", "", "start directory for repo discovery")
 	kinds := fs.String("kind", "", "comma-separated kinds")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	plan, err := c.planFilter()
@@ -629,7 +1030,7 @@ func cmdAnchors(args []string) error {
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "check at most N, most recent first")
 	repoRoot := fs.String("repo-root", "", "repository to check against (default: the repo the log lives in)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	plan, err := c.planFilter()
@@ -722,7 +1123,7 @@ func cmdState(args []string) error {
 	var c common
 	c.bind(fs)
 	id := fs.String("id", "", "report one objective instead of every one")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	loc, lines, err := c.load()
@@ -771,7 +1172,7 @@ func cmdGraph(args []string) error {
 	c.bind(fs)
 	from := fs.String("from", "", "entry id to walk from")
 	depth := fs.Int("depth", 1, "how many hops")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	if *from == "" {
@@ -794,7 +1195,7 @@ func cmdRender(args []string) error {
 	var c common
 	c.bind(fs)
 	as := fs.String("as", "", "kind to render, e.g. adr")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	if *as == "" {
@@ -816,7 +1217,7 @@ func cmdPromote(args []string) error {
 	kinds := fs.String("kind", "", "comma-separated kinds to promote as a class (see `memory kinds`)")
 	to := fs.String("to", "", "target scope: user")
 	dryRun := fs.Bool("dry-run", false, "print what would be promoted and write nothing")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	want := splitList(*ids)
@@ -937,7 +1338,7 @@ func cmdValidate(args []string) error {
 	var c common
 	c.bind(fs)
 	all := fs.Bool("all", false, "validate every log reachable from here")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 
@@ -1021,7 +1422,7 @@ func cmdValidate(args []string) error {
 
 func cmdKinds(args []string) error {
 	fs := flag.NewFlagSet("kinds", flag.ExitOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	// The justification allowlist is published beside the closed sets, and for

@@ -137,10 +137,11 @@ git -C "<the path the user named, or the session's cwd>" rev-parse --show-toplev
 ```
 
 It is written bare, with no `TARGET=$(…)` around it, and that is not an oversight:
-`fish` does not parse a POSIX assignment, and the session's shell may be `fish`.
-Nothing is lost by leaving it off — a variable would not survive to the next
-command either, and what this line is for is putting the path on stdout where you
-can read it and copy it.
+**nothing in this turn says which shell it got**, and an assignment of a command
+substitution is one of the shapes a shell may refuse outright — at parse time, so
+that a block carrying it runs none of its lines. Nothing is lost by leaving it off
+— a variable would not survive to the next command either, and what this line is
+for is putting the path on stdout where you can read it and copy it.
 
 **Empty output means the derivation failed, and a failed derivation stops the
 skill.** `rev-parse` prints nothing on stdout when the path is missing or is not

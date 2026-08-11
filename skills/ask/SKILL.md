@@ -136,16 +136,15 @@ git -C "<the path the user named, or the session's cwd>" rev-parse --show-toplev
 ```
 
 It is written bare, with no `TARGET=$(…)` around it, and that is not an oversight:
-`fish` does not parse a POSIX assignment, and the session's shell may be `fish`.
-Nothing is lost by leaving it off — a variable would not survive to the next
-command either, and what this line is for is putting the path on stdout where you
-can read it and copy it. **No block in this skill captures one command's output
-for a later command**, for that same reason: run verbatim under `fish` 4.8.1 a
-block containing that shape fails with `Unsupported use of '='` at exit 127, and
-it fails before any of its lines have run, while under a shell that accepts the
-shape the same block runs — so which of the two a turn gets is decided by
-whichever shell it happens to have. Step 7's pair, where a write and the edge
-that qualifies it are two runs, is where that matters most.
+**nothing in this turn says which shell it got**, and an assignment of a command
+substitution is one of the shapes a shell may refuse outright. Nothing is lost by
+leaving it off — a variable would not survive to the next command either, and what
+this line is for is putting the path on stdout where you can read it and copy it.
+**No block in this skill captures one command's output for a later command**, for
+that same reason: a shell that refuses the shape refuses it at parse time, so none
+of the block's lines have run, while a shell that accepts it runs the block
+through. Step 7's pair, where a write and the edge that qualifies it are two runs,
+is where that matters most.
 
 **Empty output means the derivation failed, and a failed derivation stops the
 skill.** `rev-parse` prints nothing on stdout when the path is missing or is not

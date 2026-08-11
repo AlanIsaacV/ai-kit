@@ -57,10 +57,11 @@ CLI. Never edit the `.jsonl` by hand.
 
 Every command below spells that path out instead of holding it in a shell
 variable, and every placeholder in one is quoted. Both are the same precaution:
-`fish` refuses an assignment, refuses `${braces}`, and reads a bare `<…>` as a
-redirect, and a block it refuses aborts at parse time with none of its lines
-having run. A block written this way is one you can paste into whatever shell
-this turn happens to have.
+**nothing here says which shell this turn got**, and three shapes vary between
+them — an assignment, `${braces}`, and a bare `<…>` that a shell may read as a
+redirect. A shell that refuses one of them refuses the whole block at parse time,
+with none of its lines having run. A block written this way is one you can paste
+into whatever shell this turn happens to have.
 
 **The writes in step 6 name their tree with `--plan`.** The reads in steps 1 and
 3 do not, and they are prefixed `env -u AI_KIT_PLAN`: step 1 is looking for an
@@ -298,13 +299,11 @@ it literally into the edge:
 ```
 
 Nothing captures the first command's output into a shell variable for the second,
-and that is not an oversight. `fish` rejects an assignment of a command
-substitution outright: run verbatim under `fish` 4.8.1 such a block fails
-with `Unsupported use of '='` at exit 127 *before any of its lines have run*,
-while under a shell that accepts it the same block runs through — and nothing
-tells you which shell this turn got. Nothing in an append-only log undoes
-whichever half already landed. An id you can read in the command is an id you can
-see is wrong.
+and that is not an oversight. An assignment of a command substitution is one of the
+shapes a shell may reject outright, *before any of the block's lines have run*,
+while a shell that accepts it runs the block through — and nothing tells you which
+shell this turn got. Nothing in an append-only log undoes whichever half already
+landed. An id you can read in the command is an id you can see is wrong.
 
 `met` takes a `decision` or a `review-finding` as its justification, so the
 finding is enough on its own and no `decision` needs inventing to hold the edge.

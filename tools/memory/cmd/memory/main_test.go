@@ -85,8 +85,32 @@ func run(t *testing.T, r repo, args ...string) result {
 // itself needs — whether it is absent, invalid, or one of several.
 func runBare(t *testing.T, r repo, args ...string) result {
 	t.Helper()
-	cmd := exec.Command(memoryBin, afterSubcommand(t, args, "--dir", r.root)...)
+	return runStdin(t, r, "", args...)
+}
+
+// runStdin is runBare with something on the process's standard input, for the one
+// flag that reads it.
+func runStdin(t *testing.T, r repo, stdin string, args ...string) result {
+	t.Helper()
+	return execMemory(t, r, stdin, afterSubcommand(t, args, "--dir", r.root))
+}
+
+// execMemory runs the binary with the arguments exactly as given — no --dir, no
+// --plan — which is what a test about `kinds` needs, since that is the one
+// subcommand binding neither. The environment is set here and only here, so no
+// way of running the binary can reach the real logs.
+//
+// extraEnv is appended last, and os/exec keeps the last occurrence of a name, so a
+// caller may override one of the three set here — PATH included, which is how a
+// test counts what the tool shells out to.
+func execMemory(t *testing.T, r repo, stdin string, args []string, extraEnv ...string) result {
+	t.Helper()
+	cmd := exec.Command(memoryBin, args...)
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	cmd.Env = append(os.Environ(), "HOME="+r.home, "AI_KIT_AUTHOR=test-suite", "AI_KIT_PLAN=")
+	cmd.Env = append(cmd.Env, extraEnv...)
 	// Belt as well as braces: --dir already points at the throwaway repo, and so
 	// does the working directory, so a helper that ever failed to pass the flag
 	// still could not reach the log of the repo these tests run inside.

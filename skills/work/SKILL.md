@@ -300,8 +300,8 @@ is the no-draft branch and exit 0 is not**, which is why this is not an `ls` ove
 both paths: `ls` exits 1 whenever either argument is missing, so an objective whose
 draft sits in exactly one location looks found and failed at once, and the next edit
 that chains it with `&&` sends a draft that exists down the no-draft branch. The
-`sh -c` wrapper is not decoration either — the session's shell may be `fish`, where
-this loop does not parse.
+`sh -c` wrapper is not decoration either — nothing here says which shell this turn
+got, and a `for` loop written this way is not something every shell parses.
 
 `plan` wrote that file. Open it and check two things, and nothing else:
 
@@ -425,13 +425,13 @@ JSON on success and on failure alike, so check the exit code rather than
 scanning the text.
 
 Neither this pair nor the blocker pair in step 5 wraps the write in
-`FREEZE=$(…)`, and that is not an oversight: run verbatim under `fish` 4.8.1, a
-block carrying that shape fails with `Unsupported use of '='` at exit 127 before
-any of its lines have run, while a shell that accepts the shape runs the same
-block through — and nothing here tells the turn which one it has. The write and
-the edge are one run each, in that order, and nothing in this log undoes
-whichever of them already went in. Read the id and paste it: one you can read in
-the command is one you can see is wrong.
+`FREEZE=$(…)`, and that is not an oversight: an assignment of a command
+substitution is one of the shapes a shell may refuse, and it refuses the whole
+block at parse time before any of its lines have run, while a shell that accepts
+the shape runs the same block through — and nothing here tells the turn which one
+it has. The write and the edge are one run each, in that order, and nothing in this
+log undoes whichever of them already went in. Read the id and paste it: one you can
+read in the command is one you can see is wrong.
 
 ### 5 — Implement
 

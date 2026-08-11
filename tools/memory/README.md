@@ -921,6 +921,9 @@ memory add   --kind preference \
              --body "Hand-written scripts drifted from the schema twice in 2025." \
              --about persistence,migrations     # no --plan: the repo owns this
 
+memory add   --plan jwt-migration --batch close.jsonl   # every line in one write
+cat close.jsonl | memory add --plan jwt-migration --batch -
+
 memory query --plan jwt-migration --about auth --kind decision --current
 memory search --plan jwt-migration "key rotation"
 memory areas --kind preference   # what can be asked about, in both logs
@@ -963,6 +966,95 @@ sweep is not silently narrowed by a plan slug somebody passed out of habit.
 `--about` matches by exact tag or by path prefix: a tag ending in `/` catches
 everything under it, so `--about pkg/auth/` finds a record tagged
 `pkg/auth/middleware.go`.
+
+### Writing many records at once
+
+`add --batch` takes one JSON object per line — a path, or `-` for stdin — and
+appends every entry in it in a single write, or appends nothing at all. One line the
+tool refuses refuses the whole batch, names the line and the field, and leaves the
+log byte-identical.
+
+A line carries the fields the flags carry and never the ones the tool stamps:
+
+```jsonl
+{"kind":"decision","title":"RS256 over HS256","body":"Per-service key rotation.","about":["auth","pkg/auth/"]}
+{"kind":"review-finding","title":"Six criteria met, one unverified","about":["auth"],"edges":[{"type":"met","from":"<objective-id>"}]}
+{"kind":"gotcha","title":"The lock is taken before the write","about":["auth"],"anchor":["pkg/auth/token.go:41-43"]}
+```
+
+- `kind`, `title`, `body`, `slug`, `about`, `anchor`, `plan`, `edges`. Anything else
+  is refused by name, which is where the flag parser's typo protection went — and it
+  is what refuses `id`, `at`, `version`, `scope` and `origin`, the fields whose whole
+  point is that no caller chooses them.
+- `about` takes an array or one comma-separated string; `anchor` takes an array or
+  one string, and never splits on a comma, because a path may contain one.
+- `--plan` stamps the batch and a line's own `plan` wins for that line. A batch that
+  names no plan writes records the [repository owns](#records-the-repository-owns).
+- **An edge on a line names exactly one endpoint, by an id already in the log.** The
+  entry on that line is the other end: `"to"` puts it at the edge's source, `"from"`
+  puts it at the target. There is no way to draw an edge between two entries of the
+  same batch, because neither of them has an id until the write happens.
+- Each edge passes the same three log-wide checks `link` applies — dangling
+  endpoints, [state-edge justification](#edge-types) and the
+  [objective tree](#the-objective-tree) — and any of them refuses the whole batch.
+
+### An argument in flag position may not contain a space
+
+Every subcommand refuses, before it parses a single flag, an argument in flag
+position that begins with `-` and contains a space. It is one argument where the
+command line meant two, and an unquoted variable that failed to split is what
+produces it: a shell hands over `--kind decision` as one word, Go's `flag` reports an
+undefined flag named `kind decision`, and the tool looks like it invented a flag.
+
+A flag's *value* is never inspected, so `--body '--about persistence'` is written
+intact.
+
+`search`'s text is not a flag's value — it is the first argument, and therefore in
+flag position — so `memory search '--about auth'` is refused like any other unsplit
+argument. That is narrower than it sounds: a text beginning with `-` was never
+usable, because `flag` reads it as a flag and refuses it as undefined. A text that
+begins with anything else may hold whatever it likes, spaces included:
+`memory search 'key rotation'`.
+
+The cost that is a real trade-off, and it is deliberate: the inline
+`--text='key rotation'` form is refused too, because the guard reads the whole
+argument rather than only the part before the `=`. Pass the value as its own
+argument.
+
+## Retiring a record written by mistake
+
+A record that should not have been written is **retired, never removed**: nothing in
+this log is ever deleted or edited. What retires it is a new record saying what it
+got wrong, plus a `supersedes` edge:
+
+```bash
+memory add  --kind decision --title "The probe record was a smoke test, not knowledge" \
+            --body "What it got wrong, and what is true instead." --about <the mistake's own tags>
+memory link --type supersedes --from <the new record> --to <the mistaken record>
+```
+
+or, as one batch line, which lands both halves in one write:
+
+```jsonl
+{"kind":"decision","title":"<what it got wrong>","body":"<...>","about":["<tags>"],"edges":[{"type":"supersedes","to":"<the mistaken record>"}]}
+```
+
+Afterwards a read with `--current` no longer returns the mistake and a read without
+it still does — the wrong record stays on disk, and so does the record saying it was
+wrong. That is the whole mechanism: there is no `retract`, no tombstone kind and no
+read that skips a record by default, because a second invisible filter would
+contradict the one claim this log makes, which is that a read returns what was
+appended.
+
+**The direction is `--from <new> --to <mistaken>`, and drawn backwards it is not
+refused.** The reverse edge is accepted at exit 0 and retires the *replacement*,
+leaving the mistake as the live answer, with nothing in the output saying so: both
+directions are legal edges and only one of them is what you meant. Read the
+direction before writing it, and confirm with `--current` afterwards — the wrong
+record still coming back is what a backwards edge looks like.
+
+Tag the new record with the areas the mistaken one carries. A retirement filed
+under different tags is invisible to whoever finds the mistake.
 
 ## Guarantees under test
 
@@ -1122,6 +1214,55 @@ everything under it, so `--about pkg/auth/` finds a record tagged
 - Two `areas` runs over one log print byte-identical output, because the rows are
   sorted by area name and not by count — the order a caller diffs must not move
   every time something is written.
+- A 25-line batch appends 25 entries and reports every id; the same file with line
+  13 carrying an unknown kind is refused naming line 13 and the `kind` field, and
+  the log's bytes are identical to before the run.
+- A batch line's edge is written with its entry in both directions: `to` an existing
+  parent objective writes a `derives_from` out of the new record, `from` an existing
+  objective writes a `met` into it, and the tree then reports that objective `met`.
+- A batch edge naming an id absent from the log is refused `dangling_edge`; two
+  `derives_from` on one objective's line are refused `not_a_tree` on the second;
+  a `met` whose justification cannot carry it is refused `unjustified_state`. Every
+  refusal names the line and leaves the log byte-identical.
+- A `not_a_tree` refusal names *the record on line N* where the entry's own id would
+  otherwise appear, and every id left in the message is one the log actually holds.
+  The id a refused batch stamped is never written, so quoting it would send a reader
+  looking through the log for a record that does not exist and never will.
+- An edge naming both endpoints or neither is refused on its own `edges[N]` field,
+  before the log is consulted at all.
+- A batch line carrying `id`, `at`, `version`, `scope` or `origin` is refused by
+  name, and so is a mistyped key; what the tool stamps is stamped, and a batched
+  entry reads back at the current version and the resolved scope.
+- `--plan` stamps every line of a batch, a line's own `plan` wins for itself, and a
+  line whose plan is not kebab-case refuses the batch on that line.
+- `about` and `anchor` each take a string or an array and produce the same record;
+  a comma splits a tag and never a path. A `gotcha` in a batch is still refused
+  without an anchor, and an anchor past the end of the file is refused naming the
+  anchor rather than asking for a second one.
+- A wrong-shaped `about` or `anchor` is refused with that key as the problem's
+  `field` and a message saying both what was wanted and what the line carried —
+  `{"about": 5}` and `{"anchor": 7}` no longer refuse identically, and an array
+  holding a non-string is told what is wrong with the array rather than that it is
+  not one. Proven on a line whose body is long enough that `raw` truncates before
+  the key, which is the case where the field is the only thing naming it.
+- `--batch` together with any of `--kind`, `--title`, `--body`, `--slug`, `--about`
+  or `--anchor` is refused naming the flag; an empty batch and an unreadable path
+  are each their own refusal, and none of the three writes anything.
+- A batch's git work does not grow with its line count: the same number of `git`
+  spawns for a 10-line batch as for a 1-line one, counted through the built binary
+  with a wrapper ahead of the real `git` on `PATH`. Building an `Origin` shells out
+  twice and `firstNonEmpty` evaluates every argument, so a set `AI_KIT_AUTHOR` skips
+  nothing — 200 lines cost 400 spawns before the origin was hoisted out of the
+  per-line path.
+- Every one of the thirteen subcommands refuses `'--kind decision'` in flag position
+  at exit 1, quoting the argument and asking about the unquoted variable, before any
+  flag is parsed — while `--body '--about persistence is a legitimate body'` is
+  written intact, because a flag's value is never inspected.
+- `search`'s text is the one argument that is *not* a flag's value and is still in
+  flag position, so `search '--about auth'` is refused by the guard while
+  `search 'key rotation'` is not. `search -about` is refused too, at exit 2 by the
+  flag package as an undefined flag — a text beginning with `-` was never usable, and
+  the two refusals stay distinguishable.
 
 ```bash
 go test ./...

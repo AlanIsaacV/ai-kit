@@ -597,10 +597,11 @@ env -u AI_KIT_PLAN $MEMORY link --type supersedes \
 
 There is no `NEW=$(…)` around the first command, and that is not an oversight —
 it is the same correction `ask` and `bootstrap` already carry for their target
-paths. The session's shell may be `fish`, and **`fish` rejects the capture**: run
-verbatim there, that form fails with `Unsupported use of '='` at exit 127. The
-claim is about this shape and no wider one — the `env -u AI_KIT_PLAN` prefix in
-front of both commands is a different construction and runs fine.
+paths. **Nothing here says which shell this turn got**, and an assignment of a
+command substitution is one of the shapes a shell may reject outright, before any
+of the block's lines have run. The claim is about this shape and no wider one — the
+`env -u AI_KIT_PLAN` prefix in front of both commands is a different construction
+and runs everywhere.
 
 In most places that would be a formatting nit. Here it is not: these two commands
 land in an append-only log, and the failure is not symmetric — the `add` half
@@ -612,9 +613,11 @@ either — and `add` prints the whole record, so the id is on your screen at
 `.record.id`. Paste it. An id you can read in the command is an id you can see is
 wrong.
 
-Both commands were run under `fish` and under `sh` in the form written above: they
-behave identically in each, multi-line `--body` included, and leave one live
-answer.
+**This next sentence reports a measurement rather than stating a rule**, which is
+why it names shells at all: both commands were run in the form written above under
+`fish` and under `sh`, and they behave identically in each, multi-line `--body`
+included, leaving one live answer. What was measured is that this form survives two
+shells — not that yours is one of them.
 
 The edge runs from the new record to the one it replaces, and step 1 is what told
 you which id that is — the `live` field of the area. **Without the edge both

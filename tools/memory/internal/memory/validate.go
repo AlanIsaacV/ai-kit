@@ -16,11 +16,13 @@ var slugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // the one thing this schema's versioning is careful never to do.
 var hashRE = regexp.MustCompile(`^[a-z0-9]+:[0-9a-f]{32,}$`)
 
-// Problem is one thing wrong with the log, always anchored to a line number so
-// it can be found and fixed by hand.
+// Problem is one thing wrong with a record, anchored to a line number wherever
+// there is one so it can be found and fixed by hand.
 type Problem struct {
-	// Line is 0 when the problem comes from validating a record before it is
-	// written, where there is no line to point at yet.
+	// Line is the line of the file the record came out of: the log when the sweep
+	// reports it, the batch input when `add --batch` does. It is 0 when the problem
+	// comes from validating a single record before it is written, where there is no
+	// line to point at yet.
 	Line    int    `json:"line,omitempty"`
 	Field   string `json:"field,omitempty"`
 	Message string `json:"message"`

@@ -384,7 +384,8 @@ that has no honest way to run.
 
 Write `.ai-kit/plans/<objective-slug>/draft-objective.md`. No record exists yet,
 so you coin the slug here — and it is the record's own `slug` too, because step 7
-passes this same slug to `add --slug`, which takes it exactly as given. Derive it
+puts this same slug on the objective's batch line, where it is taken exactly as
+given. Derive it
 from the title the way the tool would if you left it out: lowercase, every run of
 characters outside `a-z0-9` collapsed to a single hyphen, no leading or trailing
 hyphen, at most 60 characters — truncate there and trim any hyphen the cut leaves
@@ -401,8 +402,8 @@ did.
 If a draft for that slug already exists, that slug belongs to another objective —
 two objectives can legitimately derive the same one — and writing there would
 overwrite somebody else's draft: pick a slug that distinguishes this objective, and
-pass that same slug to `--slug` in step 7. Look in **both** locations, the new one
-first:
+put that same slug on the objective's line in step 7. Look in **both** locations,
+the new one first:
 
 ```bash
 sh -c 'for p in .ai-kit/plans/<slug>/draft-objective.md plans/<slug>/draft-objective.md; do
@@ -418,8 +419,8 @@ It prints the first path that exists and **exits 0 only when it found one**, whi
 an `ls` over both paths does not: `ls` exits 1 whenever either argument is missing,
 so a draft that exists in one location comes back printed and failed at the same
 time, and the next edit that chains this with `&&` reads that as no draft. The
-`sh -c` wrapper is not decoration either — the session's shell may be `fish`, where
-this loop does not parse.
+`sh -c` wrapper is not decoration either — nothing here says which shell this turn
+got, and a `for` loop written this way is not something every shell parses.
 
 #### A parent objective's draft
 
@@ -594,76 +595,91 @@ objective tree, `init` is for a repo that has no log at all, and `link` refuses
 an endpoint it cannot see in the same log, so a child written into a log of its
 own could not be attached to its parent at all.
 
-```bash
-# The objective itself. `--slug` is taken exactly as given, so pass the slug the
-# draft directory already has.
-$MEMORY add --plan <tree-slug> --kind objective \
-  --slug "<the slug you derived in step 5>" \
-  --title "<objective one-liner>" \
-  --body "<Objective or Deliverable + Constraints + Out of scope + the criteria as written>" \
-  --about <area>,<area>
+What this step writes is the objective, one record per surviving assumption, one
+per open question, one per decision the conversation settled, and the edges that
+attach the objective to what it came out of. That is a dozen records carrying
+multi-paragraph bodies, which is a script rather than a command line — so it is
+written as one file and appended by one command.
+
+**Write the file with whatever writes files. Not with the shell.** One JSON object
+per line, each line carrying the fields `add`'s flags carry — `kind`, `title`,
+`body`, `slug`, `about`, `anchor` — plus the edges that line's record takes part
+in. No `echo`, no heredoc, no quoting to get wrong: a body with paragraphs in it is
+a JSON string, and the shell never sees it.
+
+That is the same precaution the rest of this file takes, applied where it matters
+most: **nothing here says which shell this turn got**, and three shapes vary
+between them — an assignment, `${braces}`, and a bare `<…>` that a shell may read
+as a redirect. A shell that refuses one of them refuses the whole block at parse
+time, with none of its lines having run. A dozen bodies going through a heredoc is
+a dozen chances to meet one of the three; a file the shell never opens has none.
+
+`.ai-kit/plans/<objective-slug>/records.jsonl`, one line per record:
+
+```jsonl
+{"kind":"objective","slug":"<the slug you derived in step 5>","title":"<objective one-liner>","body":"<Objective or Deliverable + Constraints + Out of scope + the criteria as written>","about":["<area>","<area>"],"edges":[{"type":"derives_from","to":"<parent-objective-id>"}]}
+{"kind":"assumption","title":"<what you assumed rather than established>","body":"Provenance: <you chose this | their words | my call>","about":["<area>"]}
+{"kind":"open-question","title":"<what is genuinely open>","about":["<area>"]}
+{"kind":"decision","title":"<the choice the conversation settled>","body":"<why this over the alternatives>","about":["<area>"]}
 ```
 
+Then one command, and it is the only one this step runs:
+
 ```bash
-# When it has a parent: one edge, now, while you still know which one it is.
-$MEMORY link --type derives_from \
-  --from <the id the add above printed, at .record.id, pasted literally> \
-  --to <parent-objective-id>
+$MEMORY add --plan <tree-slug> --batch .ai-kit/plans/<objective-slug>/records.jsonl
 ```
 
-Two runs, and nothing is captured between them. The `sh -c` note in step 5 says
-why a POSIX construct cannot be assumed here; a capture is the same problem with
-a worse ending, since nothing in this log undoes whichever half already ran. Run
-verbatim under `fish` 4.8.1 a block carrying `REC=$(…)` fails with `Unsupported
-use of '='` at exit 127 before any of its lines have run, while under a shell that
-accepts the shape the same block runs — and nothing in the turn tells you which
-one you have. Paste the id instead: one you can read in the command is one you can
-see is wrong.
+**Every entry in that file is appended in one write, or none of them is.** A line
+the tool refuses refuses the whole batch, names the line and the field, and leaves
+the log exactly as it was — which is what makes a file of a dozen records safe to
+write at all. A dozen separate commands had the failure this log cannot undo: the
+third lands, the fourth is refused, and half a plan is on disk forever.
 
-`work` finds the draft by the record's slug, and passing `--slug` is what makes
+So exit 1 here needs no repair, only a re-run: nothing landed, the file is still on
+disk, and the remedy is to fix the line the refusal named and run the same command
+again. Nothing is written twice, because nothing was written the first time.
+
+**Each line's edges name one endpoint, and the line's own record is the other.**
+`"to"` says this record is the edge's source, which is what `derives_from` wants —
+the child derives from the parent whose id you already have. Nothing is captured
+out of any command's output, and nothing needs to be: the objective's id does not
+exist until the write happens, and no edge here has to name it.
+
+`work` finds the draft by the record's slug, and passing `slug` is what makes
 that slug the draft directory's name too — one name, rather than two that have to
-be kept in step.
+be kept in step. It is taken exactly as given.
 
-An objective derives from at most one objective, and the second `derives_from`
-is refused naming the parent it already has. There is no taking a parent back
-afterwards, so link it to the one it is actually under. A root gets no edge at
-all.
+An objective derives from at most one objective, and a second `derives_from` is
+refused naming the parent it already has. There is no taking a parent back
+afterwards, so point it at the one it is actually under. **A root has no parent:
+drop the `edges` key from its line entirely.**
 
-```bash
-# When you were invoked from `debug`: point the objective at the hypothesis whose
-# verdict is `confirmed`, using the record id `debug` handed you.
-$MEMORY link --type caused_by \
-  --from <the objective record's id — the one the add at the top of this step printed, at .record.id, pasted literally> \
-  --to <confirmed-hypothesis-id>
+When you were invoked from `debug`, the objective also points at the hypothesis
+whose verdict is `confirmed`, and that is a second edge on the same line:
+
+```jsonl
+{"kind":"objective","slug":"...","title":"...","body":"...","about":["<area>"],"edges":[{"type":"derives_from","to":"<parent-objective-id>"},{"type":"caused_by","to":"<confirmed-hypothesis-id>"}]}
 ```
 
-Write it now, in the same breath as the objective, because this is the last
-moment anybody knows which hypothesis this work came out of. Left to a later
-step, the investigation and the work it produced are associated only by sharing a
-plan slug — which is to say by a string, findable by nobody who does not already
-know to look. `caused_by` already exists and points a record at what led to it;
-there is no new edge type here.
+It goes in now, on the objective's own line, because this is the last moment
+anybody knows which hypothesis this work came out of. Left to a later step, the
+investigation and the work it produced are associated only by sharing a plan slug —
+which is to say by a string, findable by nobody who does not already know to look.
+`caused_by` already exists and points a record at what led to it; there is no new
+edge type here.
 
 Only when `debug` ran. An objective planned from a request has nothing to point
-at, and inventing an endpoint for the edge is worse than not having it. When the
-investigation ended without a confirmed hypothesis, there is no target either:
-the objective you just wrote is the one that makes the thing observable, and it
-caused nothing yet.
+at, and inventing an endpoint for the edge is worse than not having it — a batch
+naming an id the log does not hold is refused whole, which is the loud version of
+that mistake. When the investigation ended without a confirmed hypothesis, there is
+no target either: the objective you just wrote is the one that makes the thing
+observable, and it caused nothing yet.
 
-```bash
-# One record per surviving assumption — these are open until something answers
-# them, and they are what a later verification pass is allowed to challenge. The
-# provenance label goes in the body, on its own line, exactly as written here.
-$MEMORY add --plan <tree-slug> --kind assumption --title "..." \
-  --body "Provenance: <you chose this | their words | my call>" --about <area>
-
-# One record per open question.
-$MEMORY add --plan <tree-slug> --kind open-question --title "..." --about <area>
-
-# Any decision the conversation settled, especially a chosen option.
-$MEMORY add --plan <tree-slug> --kind decision --title "..." \
-  --body "<why this over the alternatives>" --about <area>
-```
+One line per surviving assumption — these are open until something answers them,
+and they are what a later verification pass is allowed to challenge. The provenance
+label goes in the body, on its own line, exactly as written above. One line per
+open question. One line per decision the conversation settled, especially a chosen
+option.
 
 That `Provenance:` line is read, not just stored — `work`'s step 1 puts these
 records in front of the user across later turns, and it can only show the label
@@ -682,15 +698,18 @@ repository actually does, and offers to carry them up to user scope — is `pref
 nothing in `plan` writes that kind of record: say in one line which of the settled
 choices looks like one, and leave the invoking to the user.
 
-Tag `--about` with the areas and paths a future session would search by. A
-record nobody can find by filtering is a record nobody will read.
+Tag every line's `about` with the areas and paths a future session would search
+by. A record nobody can find by filtering is a record nobody will read.
 
-`add` prints the whole record; the id is at `.record.id` and the slug at
-`.record.slug`. Every command prints JSON on success and on failure alike, so
-check the exit code rather than scanning the text.
+`add --batch` prints `count`, how many edges went with it, and one row per record —
+id, kind, slug, title — and no bodies: they are already in the file you wrote. The
+objective's id is the row whose kind is `objective`, and it is what step 8 reports
+to the user. Every command prints JSON on success and on failure alike, so check the
+exit code rather than scanning the text.
 
-Leave the draft file on disk — it is the human-readable form of what was
-agreed, and the loop will want to look at it.
+Leave the draft file and the batch file on disk. The draft is the human-readable
+form of what was agreed and the loop will want to look at it; the batch is what was
+actually appended, and `.ai-kit/` is already out of git.
 
 ### 8 — Descend, or hand off
 
