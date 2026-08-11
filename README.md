@@ -37,6 +37,7 @@ implementation.
 skills/plan    turn a request into a written objective, reviewable in full
 skills/debug   turn a symptom into a stated cause, with the evidence that established it
 skills/work    run one objective: pick, gate, implement, verify, review, record
+skills/brief   think a piece of work through, then hand you the map you implement from
 skills/ask     answer a question about a repo from its code and its log, every claim cited
 skills/bootstrap  give an unseen repo a README.md and a CLAUDE.md in one invocation
 skills/prefer  record why this repo chose what it chose, and carry it to the next one
@@ -46,8 +47,11 @@ tools/memory   the append-only knowledge log everything writes to
 
 `plan` runs once per objective, including each one opened underneath another.
 `work` runs one objective per turn and is resumable in a fresh session. Small
-work takes the same path — one turn of the loop instead of many — so there is no
-second door to pick and no escalation path to get wrong.
+work takes the same path — one turn of the loop instead of many — so size is
+never what picks a door and there is no escalation path to get wrong. What does
+pick one is who writes the code: when that is you rather than the agent, `brief`
+is the other door — a design conversation that ends in a map you implement from,
+with nothing in it for `work` to run.
 
 `debug` is the second front-end onto the same vocabulary, not a second loop. It
 runs when what arrived is a symptom rather than a request: it narrows the cause
