@@ -125,8 +125,8 @@ Then take the answer, confirm the path printed, and use it. **What must never
 happen is a `memory` call with `--dir` empty**, because that is not an error: it
 falls straight back to resolving the log from the current directory — measured,
 exit 0. The refusal above covers a path that *is* passed and is not a repo; it
-never fires on the empty string, so this stop is the only thing between a
-`$LOOP_REPO` left unsubstituted and an investigation filed in the wrong repository.
+never fires on the empty string, so this stop is the only thing between a `--dir`
+that lost its value and an investigation filed in the wrong repository.
 
 That failure is worth stating in full, because it is what stops a later edit from
 dropping the flag as noise. Resolved from the current directory, the log is
@@ -137,11 +137,21 @@ leaves an `.ai-kit/` behind wherever cwd happens to be — a directory appearing
 a tree hard rule 6 promises never to touch, and the hypotheses ending up in a log
 nobody will read again.
 
-`$LOOP_REPO` in the commands below is notation for the path this derivation prints,
-and nothing anywhere assigns it. **Substitute that absolute path into every
-command**: each command runs in its own shell, `$LOOP_REPO` pasted as it is written
-expands to nothing, and `--dir ""` is exactly the silent fallback above. A path you
-can read in the command is a path you can see is wrong.
+`<loop-repo>` in the commands below is a placeholder for the path this derivation
+prints — the same notation as `<tree-slug>` and `<area>`, and not a variable
+anything sets. **Substitute that absolute path into every command**: each command
+runs in its own shell, so nothing carries the value forward for you.
+
+The notation is what makes forgetting survivable. `--dir "$LOOP_REPO"` left
+unsubstituted is `--dir ""`, which is the silent fallback above — exit 0, in
+whatever repository cwd happens to sit in. `--dir <loop-repo>` left unsubstituted
+is not a command at all: the shell reads `<` as a redirection, the command fails
+with a non-zero exit, and `memory` never runs. Which failure you get differs by
+shell and by where the placeholder falls in the line; the measured exits and
+messages are in the log. It is the same reasoning step 4's scratch path is
+spelled in, one section down. A path you can read in the command is a path you
+can see is wrong. Leave the brackets unquoted: `--dir "<loop-repo>"` parses, so
+the command runs unsubstituted and the brackets stop nothing.
 
 `$MEMORY kinds` lists every valid record kind and edge type. The kind this skill
 writes is `hypothesis`, and it is the only one it writes: a confirmed root cause
@@ -176,7 +186,7 @@ Then settle which **objective tree** these records belong to, because `--plan`
 bounds everything you are about to read and everything you are about to write:
 
 ```bash
-$MEMORY state --dir "$LOOP_REPO"
+$MEMORY state --dir <loop-repo>
 ```
 
 When an open objective already covers this surface, take its `origin.plan` —
@@ -189,8 +199,8 @@ Now read the log, because the most expensive thing an investigation can do is
 re-eliminate something a previous session already eliminated:
 
 ```bash
-$MEMORY query --dir "$LOOP_REPO" --plan <tree-slug> --kind hypothesis --about <area>
-$MEMORY query --dir "$LOOP_REPO" --plan <tree-slug> --kind wont-fix --about <area>
+$MEMORY query --dir <loop-repo> --plan <tree-slug> --kind hypothesis --about <area>
+$MEMORY query --dir <loop-repo> --plan <tree-slug> --kind wont-fix --about <area>
 ```
 
 Prior hypotheses are the point of the first read. A `rejected` one is a branch you
@@ -354,7 +364,7 @@ the next one nothing at all if the writing was saved for a close that never came
 and the rejected ones are precisely what nobody would reconstruct.
 
 ```bash
-$MEMORY add --dir "$LOOP_REPO" --plan <tree-slug> --kind hypothesis \
+$MEMORY add --dir <loop-repo> --plan <tree-slug> --kind hypothesis \
   --title "<the claim in one line, stated so it could be false>" \
   --body "Claim: <what you think is happening, specifically>
 Tested by: <the single-variable experiment you ran>

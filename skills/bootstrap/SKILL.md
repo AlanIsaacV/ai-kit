@@ -161,19 +161,34 @@ below covers a path that *is* passed and is not a repo; it never fires on the
 empty string, so this stop is the only thing standing between a mistyped path and
 another repository's tree gaining a directory it never asked for.
 
-`$TARGET` below is notation for the path this derivation prints, and nothing
-anywhere assigns it. **Substitute that absolute path literally into every
-command**: each command runs in its own shell, `$TARGET` pasted as it is written
-expands to nothing, and `--dir ""` is exactly the silent fallback above. The same
-goes for every file you read and both files you write — `"$TARGET/README.md"`, not
-`README.md`, because a relative path here writes into whatever directory the
-session is standing in.
+`<target-repo>` in the commands below is a placeholder for the path this
+derivation prints — the same notation as `<area>` and `<path-prefix>`, and not a
+variable anything sets. **Substitute that absolute path literally into every
+command**: each command runs in its own shell, so nothing carries the value
+forward for you. The same goes for every file you read and both files you write —
+`<target-repo>/README.md`, not `README.md`, because a relative path here writes
+into whatever directory the session is standing in.
+
+The notation is what makes forgetting survivable. `--dir "$TARGET"` left
+unsubstituted is `--dir ""`, which is the silent fallback above — exit 0, in
+whatever repository cwd happens to sit in. `--dir <target-repo>` left
+unsubstituted is not a command at all: the shell reads `<` as a redirection, the
+command fails with a non-zero exit, and `memory` never runs. Which failure you
+get differs by shell and by where the placeholder falls in the line; the measured
+exits and messages are in the log. A path you can read in the command is a path
+you can see is wrong. Leave the brackets unquoted: `--dir "<target-repo>"`
+parses, so the command runs unsubstituted and the brackets stop nothing, and
+step 1's `[ -f <target-repo>/README.md ]` quoted and unsubstituted answers false
+without a word. The quotes go in at substitution time instead, when the absolute
+path you paste contains a space: unquoted, that test errors instead of answering,
+and an error prints no `readme-exists` — indistinguishable from a README that is
+not there, which sends the run to step 5 to author a new one.
 
 Two flags carry the target, and both appear on every command that accepts them:
 
-- **`--dir "$TARGET"`** resolves *which log* — `<repo>/.ai-kit/memory.jsonl`.
+- **`--dir <target-repo>`** resolves *which log* — `<repo>/.ai-kit/memory.jsonl`.
   Accepted by `query`, `search`, `anchors`, `add`, `link`, `graph`.
-- **`--repo-root "$TARGET"`** resolves *which working tree* the anchors are
+- **`--repo-root <target-repo>`** resolves *which working tree* the anchors are
   relative to and read out of. Accepted by `anchors` and `add`, and by nothing
   else — do not put it on `query` or `link`, which refuse an undefined flag.
 
@@ -241,10 +256,10 @@ Then read four things about it, in this order, because each one changes what the
 rest of the run does:
 
 ```bash
-ls -a "$TARGET"
-[ -f "$TARGET/README.md" ] && echo readme-exists
-[ -f "$TARGET/CLAUDE.md" ] && echo claude-exists
-$MEMORY query --dir "$TARGET" --limit 1 \
+ls -a <target-repo>
+[ -f <target-repo>/README.md ] && echo readme-exists
+[ -f <target-repo>/CLAUDE.md ] && echo claude-exists
+$MEMORY query --dir <target-repo> --limit 1 \
   | python3 -c 'import sys,json; print("log-has-records" if json.load(sys.stdin)["count"] else "log-is-empty")'
 ```
 
@@ -283,9 +298,9 @@ before this is where half the `CLAUDE.md` comes from and none of it should be
 re-asked:
 
 ```bash
-$MEMORY query   --dir "$TARGET" --kind gotcha --current
-$MEMORY anchors --dir "$TARGET" --repo-root "$TARGET" --kind gotcha --current
-$MEMORY query   --dir "$TARGET" --kind adr,decision --current
+$MEMORY query   --dir <target-repo> --kind gotcha --current
+$MEMORY anchors --dir <target-repo> --repo-root <target-repo> --kind gotcha --current
+$MEMORY query   --dir <target-repo> --kind adr,decision --current
 ```
 
 No `--plan` on any of the three: a constraint or a decision about this repository
@@ -305,7 +320,7 @@ outcome, not the exotic one.
 When it breaches, **narrow it — do not raise the limit and do not raise the
 threshold**. Add `--about` with the path prefix of the surface you are about to
 document (a tag ending in `/` matches by path prefix) and run the pair again, or
-take one kind at a time, or reach for `$MEMORY search --dir "$TARGET" "<a
+take one kind at a time, or reach for `$MEMORY search --dir <target-repo> "<a
 distinctive phrase>"`. Narrow **both** the `query` and the `anchors` line
 together, by the identity rule above. Raising `--limit` instead hands back the N
 most recent and reports only how many older matches it dropped, and an `adr` is
@@ -476,7 +491,7 @@ content for a `CLAUDE.md`. Take "I don't know" as a complete answer and record t
 probe rather than filling it:
 
 ```bash
-$MEMORY add --dir "$TARGET" --plan repo-bootstrap --kind open-question \
+$MEMORY add --dir <target-repo> --plan repo-bootstrap --kind open-question \
   --title "Where does this repository's code mislead a reader who only reads it? — unanswered at bootstrap" \
   --body "Asked during bootstrap; nobody in the conversation had worked in this repository.
 The CLAUDE.md points at the gotcha log, which is empty on this surface for that reason and not because the code holds no traps." \
@@ -512,7 +527,7 @@ checkable at all, and the person who just described the trap is the only one who
 can point at it:
 
 ```bash
-$MEMORY add --dir "$TARGET" --repo-root "$TARGET" --plan repo-bootstrap --kind gotcha \
+$MEMORY add --dir <target-repo> --repo-root <target-repo> --plan repo-bootstrap --kind gotcha \
   --title "<the constraint, stated so a later session can check it>" \
   --body "<why the code is shaped this way, and what a reader of it would conclude instead>" \
   --about <area>,<path-prefix>/ \
@@ -524,7 +539,7 @@ $MEMORY add --dir "$TARGET" --repo-root "$TARGET" --plan repo-bootstrap --kind g
 `gotcha` carrying no anchor — `"at least one anchor is required: pass --anchor
 path:line or --anchor path:first-last"`, exit 1 — and it refuses one whose file or
 line range does not exist, so a citation you fumbled fails here rather than
-surfacing months later as an unresolvable claim. `--repo-root "$TARGET"` is what
+surfacing months later as an unresolvable claim. `--repo-root <target-repo>` is what
 lets it read those lines out of the target's working tree. The flag repeats; cite
 every place the constraint reaches. Lines are 1-based and the range covers both
 ends.
@@ -552,7 +567,7 @@ Then confirm what landed, and **announce the log if this run is what put anythin
 in it**:
 
 ```bash
-$MEMORY anchors --dir "$TARGET" --repo-root "$TARGET" --plan repo-bootstrap --kind gotcha --current
+$MEMORY anchors --dir <target-repo> --repo-root <target-repo> --plan repo-bootstrap --kind gotcha --current
 ```
 
 `checked` equal to `matched` says every record under the filter is anchored;
@@ -573,7 +588,7 @@ And if step 1 printed `log-is-empty`, these are the first records this repositor
 log has ever held, so name the path in the same breath:
 
 > Este repo no tenía nada guardado: estos `<n>` gotchas son los primeros de su log
-> de memoria — `<$TARGET>/.ai-kit/memory.jsonl`. Es un archivo JSONL append-only, y
+> de memoria — `<target-repo>/.ai-kit/memory.jsonl`. Es un archivo JSONL append-only, y
 > queda fuera de git por su propio `.gitignore` adentro de `.ai-kit/`, sin tocar el
 > `.gitignore` del repo. El `CLAUDE.md` va a apuntar ahí.
 
@@ -824,7 +839,7 @@ enthusiasm about the content.** An edit they hand back is the decision; take it
 literally and do not re-litigate it.
 
 On agreement, write exactly the files that were shown, at absolute paths under
-`$TARGET`, and nothing else — no directory, no `docs/`, no scratch file left
+`<target-repo>`, and nothing else — no directory, no `docs/`, no scratch file left
 behind. Then say what landed: the two paths, and the log path if step 4 wrote the
 first records into it.
 

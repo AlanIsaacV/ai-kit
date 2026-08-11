@@ -166,17 +166,28 @@ below covers a path that *is* passed and is not a repo; it never fires on the em
 string, so this stop is the only thing standing between a mistyped path and a claim
 about one repository filed in another.
 
-`$TARGET` below is notation for the path this derivation prints, and nothing
-anywhere assigns it. **Substitute that absolute path literally into every
-command**: each command runs in its own shell, `$TARGET` pasted as it is written
-expands to nothing, and `--dir ""` is exactly the silent fallback above. A path you
-can read in the command is a path you can see is wrong.
+`<target-repo>` in the commands below is a placeholder for the path this
+derivation prints — the same notation as `<area>` and `<path-prefix>`, and not a
+variable anything sets. **Substitute that absolute path literally into every
+command**: each command runs in its own shell, so nothing carries the value
+forward for you.
+
+The notation is what makes forgetting survivable. `--dir "$TARGET"` left
+unsubstituted is `--dir ""`, which is the silent fallback above — exit 0, in
+whatever repository cwd happens to sit in. `--dir <target-repo>` left
+unsubstituted is not a command at all: the shell reads `<` as a redirection, the
+command fails with a non-zero exit, and `memory` never runs. Which failure you
+get differs by shell and by where the placeholder falls in the line; the measured
+exits and messages are in the log. A path you can read in the command is a path
+you can see is wrong. Leave the brackets unquoted — including when it looks
+inconsistent beside the quoted `git -C` line above: `--dir "<target-repo>"`
+parses, so the command runs unsubstituted and the brackets stop nothing.
 
 Two flags carry the target, and both appear on every command that accepts them:
 
-- **`--dir "$TARGET"`** resolves *which log* — `<repo>/.ai-kit/memory.jsonl`.
+- **`--dir <target-repo>`** resolves *which log* — `<repo>/.ai-kit/memory.jsonl`.
   Accepted by `query`, `search`, `anchors`, `add`, `link`, `graph`.
-- **`--repo-root "$TARGET"`** resolves *which working tree* the anchors are
+- **`--repo-root <target-repo>`** resolves *which working tree* the anchors are
   relative to and read from. Accepted by `anchors` and `add`, and by nothing else
   — do not put it on `query` or `link`, which refuse an undefined flag.
 
@@ -258,8 +269,8 @@ worth knowing about, and finding out costs one Go process, no model call and no
 tokens. It runs before `explore`, by hard rule 8.
 
 ```bash
-$MEMORY query   --dir "$TARGET" --plan repo-questions --kind review-finding --about <area> --current
-$MEMORY anchors --dir "$TARGET" --repo-root "$TARGET" --plan repo-questions --kind review-finding --about <area> --current
+$MEMORY query   --dir <target-repo> --plan repo-questions --kind review-finding --about <area> --current
+$MEMORY anchors --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding --about <area> --current
 ```
 
 **The two lines carry the same filter, and that identity is the point.** A query
@@ -338,8 +349,8 @@ answers the question. Kinds worth weighing, with what each actually holds:
   surface. Worth consulting whenever the question is *what to do*.
 
 ```bash
-$MEMORY query  --dir "$TARGET" --kind <the kinds you chose> --about <area> --current
-$MEMORY search --dir "$TARGET" "<a distinctive phrase from the question>"
+$MEMORY query  --dir <target-repo> --kind <the kinds you chose> --about <area> --current
+$MEMORY search --dir <target-repo> "<a distinctive phrase from the question>"
 ```
 
 **No `--plan` on these**, and that is a judgment worth stating: rationale about a
@@ -376,7 +387,7 @@ it. Reconstructing them at write-up time is how a citation ends up pointing at t
 wrong record — and going back for one is more awkward than it looks:
 
 ```bash
-$MEMORY graph --dir "$TARGET" --from <id> --depth 1
+$MEMORY graph --dir <target-repo> --from <id> --depth 1
 ```
 
 `graph` is the only command that resolves an arbitrary record by id. `query` takes
@@ -391,7 +402,7 @@ spent where the answer needed three, and this thread's job is the narrative.
 
 ```
 topic: <the mechanism half, as one question>
-repo_root: <$TARGET, absolute>
+repo_root: <target-repo, absolute>
 scope: code
 paths_hint: <what step 2 and step 3 already pointed at — the anchors of reused claims, the paths named in records>
 prior_findings: <only the step 2 claims whose verdict was `changed` or `could_not_check`, each with its claim and its evidence intact>
@@ -488,7 +499,7 @@ every node corresponds to something the answer cites — and the fix is a senten
 the prose, not an extra record.
 
 ```bash
-$MEMORY add --dir "$TARGET" --repo-root "$TARGET" --plan repo-questions --kind review-finding \
+$MEMORY add --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding \
   --title "<the claim in one line, stated so it could be false>" \
   --body "Claim: <what the code does, specifically>
 Question: <the question this was answering>" \
@@ -531,7 +542,7 @@ answer's code claims first — that number is what this command has to reconcile
 against, and counting it afterwards from the records you wrote proves nothing:
 
 ```bash
-$MEMORY anchors --dir "$TARGET" --repo-root "$TARGET" --plan repo-questions --kind review-finding --about <exactly what step 2's pair carried> --current
+$MEMORY anchors --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding --about <exactly what step 2's pair carried> --current
 ```
 
 **This is not a new filter — it is step 2's, copied.** If step 2 read with a path
@@ -585,7 +596,7 @@ re-explored, and whose revision **the user confirms**. Then it is a new record
 superseding the old, exactly the way a re-anchored `gotcha` is:
 
 ```bash
-$MEMORY add --dir "$TARGET" --repo-root "$TARGET" --plan repo-questions --kind review-finding \
+$MEMORY add --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding \
   --title "<the claim as it is true now>" \
   --body "Claim: <what the code does now>
 Question: <the question this was answering>
@@ -595,7 +606,7 @@ Revised because: the previous claim's anchor came back changed at <path:line>" \
 ```
 
 ```bash
-$MEMORY link --dir "$TARGET" --type supersedes \
+$MEMORY link --dir <target-repo> --type supersedes \
   --from <the id the add above printed, at .record.id, pasted literally> \
   --to <old-id>
 ```
