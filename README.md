@@ -38,10 +38,11 @@ skills/plan    turn a request into a written objective, reviewable in full
 skills/debug   turn a symptom into a stated cause, with the evidence that established it
 skills/work    run one objective: pick, gate, implement, verify, review, record
 skills/brief   think a piece of work through, then hand you the map you implement from
+skills/debrief read the code you wrote and say what you missed and what would be better
 skills/ask     answer a question about a repo from its code and its log, every claim cited
 skills/bootstrap  give an unseen repo a README.md and a CLAUDE.md in one invocation
 skills/prefer  record why this repo chose what it chose, and carry it to the next one
-agents/        explore · implement · verify · review · record
+agents/        explore · implement · verify · review · evaluate · record
 tools/memory   the append-only knowledge log everything writes to
 ```
 
