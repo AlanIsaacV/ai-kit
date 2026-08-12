@@ -116,11 +116,6 @@ four things that cannot be read are asked once in step 3.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the `.jsonl` by hand.
 
-```bash
-MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
-[ -x "$MEMORY" ] || ( cd "${CLAUDE_PLUGIN_ROOT}/tools/memory" && go build -o "$MEMORY" ./cmd/memory )
-```
-
 ### The one directory that decides everything: the target repository
 
 This skill is pointed at a repository, usually one other than the one it is
@@ -241,7 +236,7 @@ see step 3. It is not a placeholder for a `gotcha` you could not anchor; it is t
 record that says nobody in the room knew, so the next session does not read the
 silence as "there is nothing here".
 
-`$MEMORY kinds` is the authority on which kinds and edge types exist; `$MEMORY
+`memory kinds` is the authority on which kinds and edge types exist; `memory
 --help` on which flags do. A command this file does not show is one of those two
 reads away.
 
@@ -260,7 +255,7 @@ rest of the run does:
 ls -a <target-repo>
 [ -f <target-repo>/README.md ] && echo readme-exists
 [ -f <target-repo>/CLAUDE.md ] && echo claude-exists
-$MEMORY query --dir <target-repo> --limit 1 \
+memory query --dir <target-repo> --limit 1 \
   | python3 -c 'import sys,json; print("log-has-records" if json.load(sys.stdin)["count"] else "log-is-empty")'
 ```
 
@@ -299,9 +294,9 @@ before this is where half the `CLAUDE.md` comes from and none of it should be
 re-asked:
 
 ```bash
-$MEMORY query   --dir <target-repo> --kind gotcha --current
-$MEMORY anchors --dir <target-repo> --repo-root <target-repo> --kind gotcha --current
-$MEMORY query   --dir <target-repo> --kind adr,decision --current
+memory query   --dir <target-repo> --kind gotcha --current
+memory anchors --dir <target-repo> --repo-root <target-repo> --kind gotcha --current
+memory query   --dir <target-repo> --kind adr,decision --current
 ```
 
 No `--plan` on any of the three: a constraint or a decision about this repository
@@ -312,7 +307,7 @@ nobody loaded, and a check narrower than the query loads records nobody verified
 
 **Read `truncated` before you say anything about what came back.** These queries
 are deliberately unbounded by tree, which is exactly the shape that breaches the
-withholding threshold — `$MEMORY kinds` reports it as `25`. Above it, `query`
+withholding threshold — `memory kinds` reports it as `25`. Above it, `query`
 returns `count: N`, `returned: 0`, `truncated: true` at exit 0, which is a log
 full of records that this round has not read and which reads, at a glance, like an
 answer. On a repository the loop has worked in for a while that is the likely
@@ -321,7 +316,7 @@ outcome, not the exotic one.
 When it breaches, **narrow it — do not raise the limit and do not raise the
 threshold**. Add `--about` with the path prefix of the surface you are about to
 document (a tag ending in `/` matches by path prefix) and run the pair again, or
-take one kind at a time, or reach for `$MEMORY search --dir <target-repo> "<a
+take one kind at a time, or reach for `memory search --dir <target-repo> "<a
 distinctive phrase>"`. Narrow **both** the `query` and the `anchors` line
 together, by the identity rule above. Raising `--limit` instead hands back the N
 most recent and reports only how many older matches it dropped, and an `adr` is
@@ -492,7 +487,7 @@ content for a `CLAUDE.md`. Take "I don't know" as a complete answer and record t
 probe rather than filling it:
 
 ```bash
-$MEMORY add --dir <target-repo> --plan repo-bootstrap --kind open-question \
+memory add --dir <target-repo> --plan repo-bootstrap --kind open-question \
   --title "Where does this repository's code mislead a reader who only reads it? — unanswered at bootstrap" \
   --body "Asked during bootstrap; nobody in the conversation had worked in this repository.
 The CLAUDE.md points at the gotcha log, which is empty on this surface for that reason and not because the code holds no traps." \
@@ -528,7 +523,7 @@ checkable at all, and the person who just described the trap is the only one who
 can point at it:
 
 ```bash
-$MEMORY add --dir <target-repo> --repo-root <target-repo> --plan repo-bootstrap --kind gotcha \
+memory add --dir <target-repo> --repo-root <target-repo> --plan repo-bootstrap --kind gotcha \
   --title "<the constraint, stated so a later session can check it>" \
   --body "<why the code is shaped this way, and what a reader of it would conclude instead>" \
   --about <area>,<path-prefix>/ \
@@ -568,7 +563,7 @@ Then confirm what landed, and **announce the log if this run is what put anythin
 in it**:
 
 ```bash
-$MEMORY anchors --dir <target-repo> --repo-root <target-repo> --plan repo-bootstrap --kind gotcha --current
+memory anchors --dir <target-repo> --repo-root <target-repo> --plan repo-bootstrap --kind gotcha --current
 ```
 
 `checked` equal to `matched` says every record under the filter is anchored;

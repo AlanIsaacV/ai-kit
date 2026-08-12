@@ -23,7 +23,6 @@ source, no `docs/`, no commits, no subagents.
 - `repo_root` — absolute path.
 - `objective_id` — the executable objective's record id.
 - `plan_slug` — the objective tree slug, for `--plan`.
-- `memory_cmd` — absolute path to the `memory` binary.
 - `verify_result` — the `verify` subagent's returned JSON.
 - `review_result` — the `review` subagent's returned JSON.
 - `triage_outcome` — what the user decided for each finding, risk, assumption and
@@ -84,7 +83,7 @@ An edge on its own is not a batch line — every batch line is a record — so t
 the one case that goes through `link`, with both ids taken from your inputs:
 
 ```bash
-"$memory_cmd" link --type met --from <objective_id> --to <existing_closing_record>
+memory link --type met --from <objective_id> --to <existing_closing_record>
 ```
 
 ## Read the artifacts yourself
@@ -102,8 +101,8 @@ the thread you are relieving. What you get is pointers, and you open them:
   you take from the objective's own record and the files the diff names:
 
 ```bash
-"$memory_cmd" query --plan <plan_slug> --kind open-question,assumption --current --about <areas>
-"$memory_cmd" kinds
+memory query --plan <plan_slug> --kind open-question,assumption --current --about <areas>
+memory kinds
 ```
 
 Queries report their match count before handing over records, and withhold them
@@ -115,7 +114,7 @@ empty `records` array is never "nothing exists".** Read it that way once and you
 write the duplicate of a record already on disk, which is the one thing this
 check exists to prevent.
 
-`$memory_cmd kinds` is the authority on which record kinds and edge types exist
+`memory kinds` is the authority on which record kinds and edge types exist
 and on which record each state edge is allowed to point at. Resolve it, do not
 recall it.
 
@@ -143,7 +142,7 @@ in:
 ```
 
 ```bash
-"$memory_cmd" add --plan <plan_slug> --batch <the directory objective_draft is in>/close.jsonl
+memory add --plan <plan_slug> --batch <the directory objective_draft is in>/close.jsonl
 ```
 
 **Every entry lands in one write, or none of them does.** A line the tool refuses
@@ -324,7 +323,7 @@ The new record is one batch line, so both halves land together:
 If the batch has already gone in, the edge is written on its own:
 
 ```bash
-"$memory_cmd" link --type supersedes --from <the new record> --to <the mistaken record>
+memory link --type supersedes --from <the new record> --to <the mistaken record>
 ```
 
 **The direction is `--from <new> --to <mistaken>`, and drawn backwards it is not
@@ -373,7 +372,7 @@ from the record it retires is invisible to the reader who finds the mistake.
    there is no half to work around. The orchestrator re-reads the log to confirm
    the close landed, and a failure you swallowed becomes an objective that reads
    open forever. Do not retry the same rejected command more than once.
-8. **Finish with `"$memory_cmd" validate`** and return its `ok`. It is a read,
+8. **Finish with `memory validate`** and return its `ok`. It is a read,
    and it is the cheapest way to notice that something you appended left the log
    unsound while you are still the one who can explain it.
 

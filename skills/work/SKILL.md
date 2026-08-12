@@ -56,18 +56,13 @@ run, and invoke `plan` for the one that is.
 
 ## The memory log
 
-```bash
-MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
-[ -x "$MEMORY" ] || ( cd "${CLAUDE_PLUGIN_ROOT}/tools/memory" && go build -o "$MEMORY" ./cmd/memory )
-```
-
 Queries report their match count before handing over records, and withhold
 them above a threshold. When that happens, **narrow the query** — do not raise
 the limit to make the wall of text appear. If you genuinely need to read a lot
 of history, that is a job for a subagent, not for this context.
 
-`$MEMORY kinds` is the authority on which record kinds and edge types exist and
-on which record each state edge is allowed to point at; `$MEMORY --help` on
+`memory kinds` is the authority on which record kinds and edge types exist and
+on which record each state edge is allowed to point at; `memory --help` on
 which flags exist. A command this file does not show is one of those two reads
 away.
 
@@ -76,9 +71,9 @@ away.
 ### 1 — Resolve which objective you are on, load only the history that bears on this turn, and put it on the table
 
 ```bash
-$MEMORY query --plan <tree-slug> --kind objective --current
-$MEMORY state
-$MEMORY query --plan <tree-slug> --kind open-question,assumption --current
+memory query --plan <tree-slug> --kind objective --current
+memory state
+memory query --plan <tree-slug> --kind open-question,assumption --current
 ```
 
 Those three are where the turn starts, and they are bounded by the tree's shape
@@ -95,8 +90,8 @@ elsewhere can still bind what this turn changes.
 #### Read the gotchas for this turn's surface, and check they still point at code
 
 ```bash
-$MEMORY query   --plan <tree-slug> --kind gotcha --about <area> --current
-$MEMORY anchors --plan <tree-slug> --kind gotcha --about <area> --current
+memory query   --plan <tree-slug> --kind gotcha --about <area> --current
+memory anchors --plan <tree-slug> --kind gotcha --about <area> --current
 ```
 
 A `gotcha` is a constraint the code obeys without stating it, written because
@@ -393,14 +388,14 @@ On approval, and only on approval, freeze it — whether `plan` authored it minu
 ago or you were already on it:
 
 ```bash
-$MEMORY add --plan <tree-slug> --kind decision \
+memory add --plan <tree-slug> --kind decision \
   --title "Approved for execution: <short name>" \
   --body "<the acceptance criteria as approved, each with its required fidelity>" \
   --about <areas>
 ```
 
 ```bash
-$MEMORY link --type approved_for_execution --from <objective-id> \
+memory link --type approved_for_execution --from <objective-id> \
   --to <the id the add above printed, at .record.id, pasted literally>
 ```
 
@@ -488,7 +483,6 @@ than removing it, so the objective and the draft go to **each** part in full:
 objective: <the parent objective's title and body, verbatim — or this one's, if it is a root>
 objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
-memory_cmd: <absolute path to the memory binary>
 plan_slug: <tree-slug>
 objective_id: <the executable objective's id>
 constraints: <anything from memory that binds this surface — decisions, adr, wont-fix, and the gotchas step 1 loaded for this area with their anchor verdicts>
@@ -563,10 +557,9 @@ Codex does not read this skill and has no agent file behind it, so **everything
 objective, the draft path, this part's `scope`, the constraints, and the rules
 that actually bind — stay inside the draft's scope, match the code around you,
 no commits, nothing under `docs/`, no tests that only prove their own mocks
-work. The `memory` commands go in the same way, with the binary's absolute path
-and the plan slug already filled in, when you want deviations and gotchas
-recorded from that part: Codex has a shell and will run them, and it will not
-invent them.
+work. The `memory` commands go in the same way, with the plan slug already filled
+in, when you want deviations and gotchas recorded from that part: Codex has a
+shell and will run them, and it will not invent them.
 
 End the prompt by asking for the same JSON object `implement` returns, and read
 it off the **last line** of what comes back — everything above it is the
@@ -604,12 +597,12 @@ When the wall is external — a credential, an upstream decision, someone else's
 release — record what is being waited on and say so on the objective:
 
 ```bash
-$MEMORY add --plan <tree-slug> --kind open-question \
+memory add --plan <tree-slug> --kind open-question \
   --title "<what is being waited on>" --about <area>
 ```
 
 ```bash
-$MEMORY link --type blocked --from <objective-id> \
+memory link --type blocked --from <objective-id> \
   --to <the id the add above printed, at .record.id, pasted literally>
 ```
 
@@ -626,7 +619,7 @@ written the code:
 objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 changed_files: <the union across every part step 5 launched>
-memory_cmd: <path>   plan_slug: <tree-slug>   objective_id: <the objective's id>
+plan_slug: <tree-slug>   objective_id: <the objective's id>
 ```
 
 Read its result against three things:
@@ -694,7 +687,6 @@ objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 objective_id: <the executable objective's id>
 plan_slug: <tree-slug>
-memory_cmd: <absolute path to the memory binary>
 verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON>
 triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing>
@@ -714,7 +706,7 @@ writing it here to hand over would mean paying for it anyway.
 `debug` investigation, and then with the hypothesis record's id and its claim —
 nothing else, and never a note explaining that `debug` did not run. Read the id
 off the objective's own record rather than off your memory of the conversation:
-`plan` linked the two with a `caused_by` edge, and `$MEMORY graph --from
+`plan` linked the two with a `caused_by` edge, and `memory graph --from
 <objective-id> --depth 1` shows it. What the subagent needs the claim for is
 deciding whether the lesson generalizes past this bug, which is the one judgment
 at the close that cannot be reconstructed from the diff.
@@ -767,7 +759,7 @@ a `decision` instead, and neither counts toward the parent's completion.
 #### Confirm the close landed, do not trust the report
 
 ```bash
-$MEMORY state --id <objective-id>
+memory state --id <objective-id>
 ```
 
 Read the objective's `state` out of what comes back rather than out of the
@@ -796,7 +788,7 @@ still exited, so "closed" in a report is a claim and this is the evidence.
 Then, before anything else is chosen, look up at the parent:
 
 ```bash
-$MEMORY state --id <parent-objective-id>
+memory state --id <parent-objective-id>
 ```
 
 Report two things to the user, in this order. First the **parent's success
@@ -817,7 +809,7 @@ A root objective has no parent to look up. Point `--id` at the objective you jus
 closed instead and report its own tally, so the turn still ends by saying what is
 left rather than what was finished.
 
-Then `$MEMORY validate` to confirm the log is still sound.
+Then `memory validate` to confirm the log is still sound.
 
 ### 10 — Decide what comes next
 
@@ -847,7 +839,7 @@ Continuá el árbol `<tree-slug>` en <repo>. Corré el skill `work`: estábamos 
 If the parent's success criteria are all met — the tally in step 9 is what tells
 you — say so plainly and offer the promotion pass: which decisions, ADRs and
 postmortems are worth lifting out of this repo's log to the user level, where
-they outlive it (`$MEMORY promote --ids ... --to user`). That choice is the
+they outlive it (`memory promote --ids ... --to user`). That choice is the
 user's — suggest candidates, do not promote on your own.
 
 ## Key principles

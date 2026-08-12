@@ -51,17 +51,12 @@ is probably why it is the one that gets used.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the `.jsonl` by hand.
 
-```bash
-[ -x "$CLAUDE_PLUGIN_ROOT/bin/memory" ] || go build -C "$CLAUDE_PLUGIN_ROOT/tools/memory" -o "$CLAUDE_PLUGIN_ROOT/bin/memory" ./cmd/memory
-```
-
-Every command below spells that path out instead of holding it in a shell
-variable, and every placeholder in one is quoted. Both are the same precaution:
-**nothing here says which shell this turn got**, and three shapes vary between
-them — an assignment, `${braces}`, and a bare `<…>` that a shell may read as a
-redirect. A shell that refuses one of them refuses the whole block at parse time,
-with none of its lines having run. A block written this way is one you can paste
-into whatever shell this turn happens to have.
+Every placeholder in a command below is quoted, and that is a precaution rather
+than a habit: **nothing here says which shell this turn got**, and three shapes
+vary between them — an assignment, `${braces}`, and a bare `<…>` that a shell may
+read as a redirect. A shell that refuses one of them refuses the whole block at
+parse time, with none of its lines having run. A block written this way is one you
+can paste into whatever shell this turn happens to have.
 
 **The writes in step 6 name their tree with `--plan`.** The reads in steps 1 and
 3 do not, and they are prefixed `env -u AI_KIT_PLAN`: step 1 is looking for an
@@ -102,7 +97,7 @@ Then find the objective that brief opened. Its `--slug` is the name of the
 directory the brief sits in:
 
 ```bash
-env -u AI_KIT_PLAN "$CLAUDE_PLUGIN_ROOT/bin/memory" query --kind objective --slug "<that directory name>"
+env -u AI_KIT_PLAN memory query --kind objective --slug "<that directory name>"
 ```
 
 Two different strings come out of this and **collapsing them is the mistake to
@@ -117,7 +112,7 @@ the open objectives in the log and this is one of them, so it may already carry 
 `approved_for_execution` or a `met`:
 
 ```bash
-env -u AI_KIT_PLAN "$CLAUDE_PLUGIN_ROOT/bin/memory" state --id "<that objective id>"
+env -u AI_KIT_PLAN memory state --id "<that objective id>"
 ```
 
 The state is at `.objectives[0].state`.
@@ -181,7 +176,7 @@ Ask which areas exist before filtering on one, because a tag you guessed comes
 back empty and empty is exactly the answer that must not be misreported:
 
 ```bash
-env -u AI_KIT_PLAN "$CLAUDE_PLUGIN_ROOT/bin/memory" areas --kind gotcha,preference
+env -u AI_KIT_PLAN memory areas --kind gotcha,preference
 ```
 
 That names every area anybody recorded a gotcha or a preference against, in this
@@ -189,8 +184,8 @@ repository's log and the user's. Take the `--about` values from what it names �
 the ones the files step 2 named land in — and read them one at a time:
 
 ```bash
-env -u AI_KIT_PLAN "$CLAUDE_PLUGIN_ROOT/bin/memory" query              --kind gotcha,preference --about "<area>" --current
-env -u AI_KIT_PLAN "$CLAUDE_PLUGIN_ROOT/bin/memory" query --scope user --kind gotcha,preference --about "<area>" --current
+env -u AI_KIT_PLAN memory query              --kind gotcha,preference --about "<area>" --current
+env -u AI_KIT_PLAN memory query --scope user --kind gotcha,preference --about "<area>" --current
 ```
 
 **Both lines, always.** `query` reads one scope per call and defaults to this
@@ -204,7 +199,7 @@ nobody finds it by reading the diff. Check whether the code it cites is still
 where it was, and hand the verdict on to `evaluate` with the record:
 
 ```bash
-env -u AI_KIT_PLAN "$CLAUDE_PLUGIN_ROOT/bin/memory" anchors --kind gotcha --about "<area>" --current
+env -u AI_KIT_PLAN memory anchors --kind gotcha --about "<area>" --current
 ```
 
 A gotcha whose anchors came back `changed` is a constraint that may already have
@@ -281,7 +276,7 @@ built from what the agent returned and what survived step 5 — not from optimis
 six, recorded as six, is the one error in here that nobody can catch later.
 
 ```bash
-"$CLAUDE_PLUGIN_ROOT/bin/memory" add --plan "<tree-slug>" --kind review-finding \
+memory add --plan "<tree-slug>" --kind review-finding \
   --title "<what the second read established, in one line>" \
   --body "What was missed: <the findings that stood, with their reasoning>
 What would be better: <the same>
@@ -294,7 +289,7 @@ Not read: <whatever could_not_read named, or the word nothing>" \
 it literally into the edge:
 
 ```bash
-"$CLAUDE_PLUGIN_ROOT/bin/memory" link --type met --from "<the objective id from step 1>" \
+memory link --type met --from "<the objective id from step 1>" \
   --to "<the id the add above printed, at .record.id, pasted literally>"
 ```
 

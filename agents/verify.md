@@ -15,7 +15,7 @@ Read-only. No edits, no fixes, no subagents. Report and return.
 - `objective_draft` — absolute path to the executable objective's draft.
 - `repo_root` — absolute path.
 - `changed_files` — what the implementer reported changing.
-- `memory_cmd`, `plan_slug`, `objective_id` — optional, for context.
+- `plan_slug`, `objective_id` — optional, for context.
 
 ## The two rules that make this worth running
 

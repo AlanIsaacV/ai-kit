@@ -80,11 +80,6 @@ size what it finds.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the `.jsonl` by hand.
 
-```bash
-MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
-[ -x "$MEMORY" ] || ( cd "${CLAUDE_PLUGIN_ROOT}/tools/memory" && go build -o "$MEMORY" ./cmd/memory )
-```
-
 **Every `memory` call in this skill passes `--dir`, and it points at the repo the
 loop is running in** — the one whose `.ai-kit/` holds the log, where `plan` writes
 its drafts under `.ai-kit/plans/` and `work` reads them. That repo is usually also
@@ -154,7 +149,7 @@ spelled in, one section down. A path you can read in the command is a path you
 can see is wrong. Leave the brackets unquoted: `--dir "<loop-repo>"` parses, so
 the command runs unsubstituted and the brackets stop nothing.
 
-`$MEMORY kinds` lists every valid record kind and edge type. The kind this skill
+`memory kinds` lists every valid record kind and edge type. The kind this skill
 writes is `hypothesis`, and it is the only one it writes: a confirmed root cause
 is not a record of its own — it is the hypothesis whose verdict is `confirmed`,
 because one claim stored twice under two names leaves a reader to work out which
@@ -187,7 +182,7 @@ Then settle which **objective tree** these records belong to, because `--plan`
 bounds everything you are about to read and everything you are about to write:
 
 ```bash
-$MEMORY state --dir <loop-repo>
+memory state --dir <loop-repo>
 ```
 
 When an open objective already covers this surface, take its `origin.plan` —
@@ -200,8 +195,8 @@ Now read the log, because the most expensive thing an investigation can do is
 re-eliminate something a previous session already eliminated:
 
 ```bash
-$MEMORY query --dir <loop-repo> --plan <tree-slug> --kind hypothesis --about <area>
-$MEMORY query --dir <loop-repo> --plan <tree-slug> --kind wont-fix --about <area>
+memory query --dir <loop-repo> --plan <tree-slug> --kind hypothesis --about <area>
+memory query --dir <loop-repo> --plan <tree-slug> --kind wont-fix --about <area>
 ```
 
 Prior hypotheses are the point of the first read. A `rejected` one is a branch you
@@ -365,7 +360,7 @@ the next one nothing at all if the writing was saved for a close that never came
 and the rejected ones are precisely what nobody would reconstruct.
 
 ```bash
-$MEMORY add --dir <loop-repo> --plan <tree-slug> --kind hypothesis \
+memory add --dir <loop-repo> --plan <tree-slug> --kind hypothesis \
   --title "<the claim in one line, stated so it could be false>" \
   --body "Claim: <what you think is happening, specifically>
 Tested by: <the single-variable experiment you ran>

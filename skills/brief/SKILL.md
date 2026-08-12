@@ -68,11 +68,6 @@ document.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the `.jsonl` by hand.
 
-```bash
-MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
-[ -x "$MEMORY" ] || ( cd "${CLAUDE_PLUGIN_ROOT}/tools/memory" && go build -o "$MEMORY" ./cmd/memory )
-```
-
 **The write in step 8 always names its tree with `--plan`**, and so does step 1's
 objective read — placing this work in a tree is a question about that tree. The
 two lookups that ask what this repository already decided deliberately do not: a
@@ -84,7 +79,7 @@ Omitting the flag is not enough by itself. The CLI then falls back to the
 `AI_KIT_PLAN` environment variable — exit 0, no warning, bounded again to
 whatever tree an earlier session exported — so those two calls are prefixed with
 `env -u AI_KIT_PLAN`, which is the shape `prefer` uses for the same reason.
-`$MEMORY kinds` lists the valid kinds and edge types if you need them.
+`memory kinds` lists the valid kinds and edge types if you need them.
 
 ## Steps
 
@@ -93,8 +88,8 @@ whatever tree an earlier session exported — so those two calls are prefixed wi
 Find out whether this belongs under something that already exists:
 
 ```bash
-$MEMORY state
-$MEMORY query --plan <tree-slug> --kind objective --current
+memory state
+memory query --plan <tree-slug> --kind objective --current
 ```
 
 `state` takes no plan filter — it reports every objective in the log with its
@@ -122,7 +117,7 @@ exist before filtering on one, because a tag you guessed comes back empty and an
 empty result is exactly what the next paragraph must not misreport:
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY areas --kind decision,gotcha
+env -u AI_KIT_PLAN memory areas --kind decision,gotcha
 ```
 
 That names every area anybody has recorded a decision or a gotcha against, in
@@ -130,8 +125,8 @@ this repository's log and the user's, with which record is live in each. Take th
 `--about` values from what it names, then read those areas one at a time:
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY query              --kind decision,gotcha --about <area> --current
-env -u AI_KIT_PLAN $MEMORY query --scope user --kind decision,gotcha --about <area> --current
+env -u AI_KIT_PLAN memory query              --kind decision,gotcha --about <area> --current
+env -u AI_KIT_PLAN memory query --scope user --kind decision,gotcha --about <area> --current
 ```
 
 **Both lines, always**: `query` reads one scope per call and defaults to this
@@ -320,7 +315,7 @@ there — saying what they now say in chat is how the file stops being read.
 Once the brief is right. One record, and nothing else:
 
 ```bash
-$MEMORY add --plan <tree-slug> --kind objective \
+memory add --plan <tree-slug> --kind objective \
   --slug "<the brief's own slug — the one the directory has, not the tree slug>" \
   --title "<what this work is, in one line>" \
   --body "Brief: .ai-kit/plans/<slug>/brief.md

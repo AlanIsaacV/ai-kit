@@ -116,11 +116,6 @@ skill; a human invokes it, and it answers and stops.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the `.jsonl` by hand.
 
-```bash
-MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
-[ -x "$MEMORY" ] || ( cd "${CLAUDE_PLUGIN_ROOT}/tools/memory" && go build -o "$MEMORY" ./cmd/memory )
-```
-
 ### The one directory that decides everything: the target repository
 
 This skill can be pointed at a repository other than the one it is running in,
@@ -228,7 +223,7 @@ costs is real and worth knowing: these records share a kind with the findings
 `review` produces, so a `--kind review-finding` query that omits `--plan` will mix
 them. Always pass `--plan repo-questions` on both the read and the write.
 
-`$MEMORY kinds` is the authority on which kinds and edge types exist; `$MEMORY
+`memory kinds` is the authority on which kinds and edge types exist; `memory
 --help` on which flags do. A command this file does not show is one of those two
 reads away.
 
@@ -268,8 +263,8 @@ worth knowing about, and finding out costs one Go process, no model call and no
 tokens. It runs before `explore`, by hard rule 8.
 
 ```bash
-$MEMORY query   --dir <target-repo> --plan repo-questions --kind review-finding --about <area> --current
-$MEMORY anchors --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding --about <area> --current
+memory query   --dir <target-repo> --plan repo-questions --kind review-finding --about <area> --current
+memory anchors --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding --about <area> --current
 ```
 
 **The two lines carry the same filter, and that identity is the point.** A query
@@ -348,8 +343,8 @@ answers the question. Kinds worth weighing, with what each actually holds:
   surface. Worth consulting whenever the question is *what to do*.
 
 ```bash
-$MEMORY query  --dir <target-repo> --kind <the kinds you chose> --about <area> --current
-$MEMORY search --dir <target-repo> "<a distinctive phrase from the question>"
+memory query  --dir <target-repo> --kind <the kinds you chose> --about <area> --current
+memory search --dir <target-repo> "<a distinctive phrase from the question>"
 ```
 
 **No `--plan` on these**, and that is a judgment worth stating: rationale about a
@@ -386,7 +381,7 @@ it. Reconstructing them at write-up time is how a citation ends up pointing at t
 wrong record — and going back for one is more awkward than it looks:
 
 ```bash
-$MEMORY graph --dir <target-repo> --from <id> --depth 1
+memory graph --dir <target-repo> --from <id> --depth 1
 ```
 
 `graph` is the only command that resolves an arbitrary record by id. `query` takes
@@ -498,7 +493,7 @@ every node corresponds to something the answer cites — and the fix is a senten
 the prose, not an extra record.
 
 ```bash
-$MEMORY add --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding \
+memory add --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding \
   --title "<the claim in one line, stated so it could be false>" \
   --body "Claim: <what the code does, specifically>
 Question: <the question this was answering>" \
@@ -541,7 +536,7 @@ answer's code claims first — that number is what this command has to reconcile
 against, and counting it afterwards from the records you wrote proves nothing:
 
 ```bash
-$MEMORY anchors --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding --about <exactly what step 2's pair carried> --current
+memory anchors --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding --about <exactly what step 2's pair carried> --current
 ```
 
 **This is not a new filter — it is step 2's, copied.** If step 2 read with a path
@@ -595,7 +590,7 @@ re-explored, and whose revision **the user confirms**. Then it is a new record
 superseding the old, exactly the way a re-anchored `gotcha` is:
 
 ```bash
-$MEMORY add --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding \
+memory add --dir <target-repo> --repo-root <target-repo> --plan repo-questions --kind review-finding \
   --title "<the claim as it is true now>" \
   --body "Claim: <what the code does now>
 Question: <the question this was answering>
@@ -605,7 +600,7 @@ Revised because: the previous claim's anchor came back changed at <path:line>" \
 ```
 
 ```bash
-$MEMORY link --dir <target-repo> --type supersedes \
+memory link --dir <target-repo> --type supersedes \
   --from <the id the add above printed, at .record.id, pasted literally> \
   --to <old-id>
 ```
@@ -617,7 +612,7 @@ both records answer the same `--current` query and a later ask cannot tell which
 one describes the code — with it, the stale citation stops being checked the
 moment the replacement exists. The old id is not repeated in the body for the
 same reason the anchor is not: the edge is what carries it, and
-`$MEMORY graph --from <new-id>` walks to it. What the body adds is *why* the revision happened, which no edge holds.
+`memory graph --from <new-id>` walks to it. What the body adds is *why* the revision happened, which no edge holds.
 
 The user's confirmation is not a formality. A `changed` verdict says the lines
 moved, not what is true now, and writing a revision they never agreed to would put

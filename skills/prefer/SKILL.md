@@ -79,7 +79,7 @@ skill; a human invokes it, and it records what they settle and stops.
    write checks that `origin.plan` is absent from the record `add` prints back.
 4. **Preferences are read with `--kind preference`, per area, never in bulk.**
    `query` withholds its records once a match count runs past a limit it reports
-   in `$MEMORY kinds`, returning `count: N`, `returned: 0`, `truncated: true` at
+   in `memory kinds`, returning `count: N`, `returned: 0`, `truncated: true` at
    exit 0 — an answer-shaped non-answer. Reading one area at a time keeps every
    read far below that limit, and this skill never widens the setting.
 5. **What goes in front of the user is divergence, not an enumeration.** A
@@ -114,20 +114,15 @@ skill; a human invokes it, and it records what they settle and stops.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the `.jsonl` by hand.
 
-```bash
-MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
-[ -x "$MEMORY" ] || ( cd "${CLAUDE_PLUGIN_ROOT}/tools/memory" && go build -o "$MEMORY" ./cmd/memory )
-```
-
-`$MEMORY kinds` lists every valid record kind and edge type and reports the count
-at which `query` starts withholding; `$MEMORY --help` lists the flags each command
+`memory kinds` lists every valid record kind and edge type and reports the count
+at which `query` starts withholding; `memory --help` lists the flags each command
 takes. A command this file does not show is one of those two reads away.
 
 ### Every command here clears `AI_KIT_PLAN`
 
 That is why `env -u AI_KIT_PLAN` sits in front of every `memory` command in the
 steps below, and it is not decoration. When `--plan` carries nothing the CLI reads
-`AI_KIT_PLAN` from the environment — `$MEMORY --help` documents it as a supported
+`AI_KIT_PLAN` from the environment — `memory --help` documents it as a supported
 way to name a plan — so a user who exported it in a shell profile changes what
 this skill writes *and* what it reads, silently and at exit 0. Both halves,
 measured:
@@ -210,7 +205,7 @@ What that buys is worth stating, because it is easy to assume the opposite: a
 `--plan`-bounded read **does** return a record written with no plan. Measured:
 
 ```
-$MEMORY query --plan some-tree --kind preference --current   →   count: 1
+memory query --plan some-tree --kind preference --current   →   count: 1
 ```
 
 against a log whose only preference was written with no `--plan` at all. That line
@@ -222,7 +217,7 @@ read filters out is records belonging to a *different* plan, not records belongi
 to none.
 
 `--kind preference` is the kind for a choice and its reasoning. It requires no
-anchor — `$MEMORY kinds` reports `anchored_kinds` as `gotcha` alone — and that is
+anchor — `memory kinds` reports `anchored_kinds` as `gotcha` alone — and that is
 deliberate rather than a gap: a preference is about a choice, not about code that
 exists at a line.
 
@@ -243,7 +238,7 @@ same turn — it is the one value everything else lands in.
 
 ```bash
 git rev-parse --show-toplevel
-env -u AI_KIT_PLAN $MEMORY areas --kind preference
+env -u AI_KIT_PLAN memory areas --kind preference
 ```
 
 One call answers for both scopes. `areas` takes no `--scope` — it reports the
@@ -289,8 +284,8 @@ Read five things out of it, per scope:
 Then read the live preference for each area it named, one area at a time:
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY query --kind preference --about <area> --current
-env -u AI_KIT_PLAN $MEMORY query --scope user --kind preference --about <area> --current
+env -u AI_KIT_PLAN memory query --kind preference --about <area> --current
+env -u AI_KIT_PLAN memory query --scope user --kind preference --about <area> --current
 ```
 
 `--current` drops what something explicitly supersedes or answers, which for
@@ -306,7 +301,7 @@ also reached by `--about tools/`. Measured, on a log whose only live preference 
 tagged `persistence,tools/db/`:
 
 ```
-$MEMORY query --kind preference --about tools/ --current   →   count: 1
+memory query --kind preference --about tools/ --current   →   count: 1
 ```
 
 Close the step by saying in one line what came back, including nothing — a filter
@@ -506,7 +501,7 @@ writers from keying one question as `persistence` and `database`.
 *other* choice-shaped records use:
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY areas --kind decision,adr
+env -u AI_KIT_PLAN memory areas --kind decision,adr
 ```
 
 `--kind decision,adr` and not an unbounded call, for two reasons that hold whatever
@@ -531,7 +526,7 @@ Then propose the closest existing tag, name it to the user, and coin a new one
 only when they say so in words.
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY add --kind preference \
+env -u AI_KIT_PLAN memory add --kind preference \
   --title "<the choice, stated as a choice: 'Generated queries over an ORM for data access'>" \
   --body "<why this one, and what it displaced. The reasoning is the record: an
 alternative that was considered and rejected, the cost accepted, the constraint
@@ -544,7 +539,7 @@ Five things about that write carry the weight:
 
 **No `--plan`, by hard rule 3 — and the absent flag is only half of it.** When the
 flag carries nothing the CLI reads `AI_KIT_PLAN` from the environment, which
-`$MEMORY --help` documents as a supported way to name a plan, so a user who
+`memory --help` documents as a supported way to name a plan, so a user who
 exported it in a shell profile turns every write here into a plan-stamped record.
 Measured, with `AI_KIT_PLAN=some-tree` exported and no `--plan` on the command:
 
@@ -583,14 +578,14 @@ Two commands, not one, and the second is not optional. **They are two separate
 runs, with nothing captured between them:**
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY add --kind preference \
+env -u AI_KIT_PLAN memory add --kind preference \
   --title "<the choice as it is now>" \
   --body "<why it changed, and what the previous one got wrong or outlived>" \
   --about <area>,<path-prefix>/
 ```
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY link --type supersedes \
+env -u AI_KIT_PLAN memory link --type supersedes \
   --from <the id the add above printed, at .record.id, pasted literally> \
   --to <the id step 1 reported as `live` for that area>
 ```
@@ -646,7 +641,7 @@ answer for that case and does not fake one: **it writes no edge, the old record
 stays live, and the situation is recorded as what it is.**
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY add --kind open-question \
+env -u AI_KIT_PLAN memory add --kind open-question \
   --title "<the preference, named> was reported as no longer true, and nothing replaced it" \
   --body "The user said this preference no longer holds but did not name a
 successor. It is still returned by --current, because supersedes needs a record to
@@ -663,7 +658,7 @@ An area the user could not settle — they inherited the repository, the person 
 chose is gone — is an `open-question`, not a guessed preference:
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY add --kind open-question \
+env -u AI_KIT_PLAN memory add --kind open-question \
   --title "<the question, as it was asked>" \
   --body "Asked during a prefer run; nobody in the conversation knew why this
 choice was made." \
@@ -676,8 +671,8 @@ indistinguishable from a recorded one and nothing will ever check it.
 #### Confirm what landed
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY areas --kind preference
-env -u AI_KIT_PLAN $MEMORY query --kind preference --about <each area you wrote to> --current
+env -u AI_KIT_PLAN memory areas --kind preference
+env -u AI_KIT_PLAN memory query --kind preference --about <each area you wrote to> --current
 ```
 
 **These two carry the same filter as each other and as step 1's**, and that
@@ -701,7 +696,7 @@ hard rule 8.
 Show what it would do before asking, rather than describing it:
 
 ```bash
-env -u AI_KIT_PLAN $MEMORY promote --kind preference --to user --dry-run
+env -u AI_KIT_PLAN memory promote --kind preference --to user --dry-run
 ```
 
 `--dry-run` writes nothing at all — not the records, not the edges, not the

@@ -16,7 +16,7 @@ work here and return.
 - `objective_draft` — absolute path to the executable objective's draft
   (`draft-objective.md`).
 - `repo_root` — absolute path.
-- `memory_cmd`, `plan_slug`, `objective_id` — for recording deviations.
+- `plan_slug`, `objective_id` — for recording deviations.
 - `constraints` — `decision`, `adr` and `wont-fix` records that bind this
   surface.
 - `scope` — optional. When present, the files this run owns out of a draft that
@@ -96,7 +96,7 @@ That is not licence to expand scope. Say it, do not silently fix it.
 Log a deviation as you go, so it survives even if the batch stops early:
 
 ```bash
-"$memory_cmd" add --plan <plan_slug> --kind deviation \
+memory add --plan <plan_slug> --kind deviation \
   --title "<what differed from the draft>" --about <area>
 ```
 
@@ -105,7 +105,7 @@ than at the close. The close reads the diff, and a constraint the code obeys
 without stating it is the one thing the diff does not show:
 
 ```bash
-"$memory_cmd" add --plan <plan_slug> --kind gotcha \
+memory add --plan <plan_slug> --kind gotcha \
   --title "<the constraint, stated so a later session can check it>" \
   --body "<why the code is shaped this way>" \
   --about <area> \

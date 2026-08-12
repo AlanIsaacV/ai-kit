@@ -68,16 +68,11 @@ child is worth opening, which is the only thing the descent needs from you.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the `.jsonl` by hand.
 
-```bash
-MEMORY="${CLAUDE_PLUGIN_ROOT}/bin/memory"
-[ -x "$MEMORY" ] || ( cd "${CLAUDE_PLUGIN_ROOT}/tools/memory" && go build -o "$MEMORY" ./cmd/memory )
-```
-
-`$MEMORY kinds` lists every valid record kind and edge type. `$MEMORY state`
-reports the objectives in the log with each one's `parent`, `children` and
-`depth`. Read `${CLAUDE_PLUGIN_ROOT}/tools/memory/README.md` if you need the
-retrieval contract or the scope model in detail; the commands used here are
-below and that is usually enough.
+`memory kinds` lists every valid record kind and edge type and reports the count
+at which `query` starts withholding; `memory --help` lists the flags each command
+takes and how naming a plan bounds what a read returns. `memory state` reports
+the objectives in the log with each one's `parent`, `children` and `depth`. A
+command this file does not show is one of those reads away.
 
 ## Steps
 
@@ -86,8 +81,8 @@ below and that is usually enough.
 Read what the user asked for. Then find out where it sits:
 
 ```bash
-$MEMORY state
-$MEMORY query --plan <tree-slug> --kind objective --current
+memory state
+memory query --plan <tree-slug> --kind objective --current
 ```
 
 `state` is given no plan filter on purpose: `--plan` is accepted there and
@@ -253,9 +248,9 @@ Before presenting them, read what this repository already chose in the areas the
 options touch, one area at a time:
 
 ```bash
-$MEMORY areas --kind preference
-$MEMORY query              --kind preference --about <one of the areas the options touch> --current
-$MEMORY query --scope user --kind preference --about <the same area> --current
+memory areas --kind preference
+memory query              --kind preference --about <one of the areas the options touch> --current
+memory query --scope user --kind preference --about <the same area> --current
 ```
 
 `areas` names the areas anybody has a recorded choice about, in this repo's log
@@ -626,7 +621,7 @@ a dozen chances to meet one of the three; a file the shell never opens has none.
 Then one command, and it is the only one this step runs:
 
 ```bash
-$MEMORY add --plan <tree-slug> --batch .ai-kit/plans/<objective-slug>/records.jsonl
+memory add --plan <tree-slug> --batch .ai-kit/plans/<objective-slug>/records.jsonl
 ```
 
 **Every entry in that file is appended in one write, or none of them is.** A line
