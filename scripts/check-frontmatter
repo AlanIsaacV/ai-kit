@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Refuse a YAML frontmatter `description` that spans more than one physical line.
+
+A description broken across two lines is valid YAML, and the two hosts disagree
+about it: Codex folds the break into a space and serves the skill, Claude Code
+drops it from its enumeration while still running it by name. Nothing fails, so
+short of reading a live session's skill list there is no witness. This is that
+witness, run on request.
+
+It names the path and the line and exits non-zero. It repairs nothing.
+"""
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# Compared against a right-stripped line: a fence carrying trailing whitespace
+# is still a fence to both hosts, so treating it as one keeps a whitespace typo
+# from dropping a file out of this check without a word.
+FENCE = "---"
+# A frontmatter key at column zero. A continuation line of a folded scalar is
+# indistinguishable from a key by shape alone ("Triggers on: ..." matches too),
+# so this is only ever consulted after quoting has been ruled out.
+KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*[ \t]*:([ \t]|$)")
+# Enough of a file to decide whether it opens with a fence, and to reject the
+# binaries the walk crosses without reading them whole.
+SNIFF_BYTES = 4096
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def walk(root: Path) -> list[Path]:
+    """Every file under root, dot-directories pruned.
+
+    The set is read off the tree rather than listed, so a skill or an agent
+    added later is covered without this script being touched.
+    """
+    found = []
+    stack = [root]
+    # Symlinked directories are followed, because a host loading this tree
+    # follows them too; the set guarantees a link back up the tree terminates.
+    seen = {root.resolve()}
+    while stack:
+        for entry in sorted(stack.pop().iterdir()):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                target = entry.resolve()
+                if target in seen:
+                    continue
+                seen.add(target)
+                stack.append(entry)
+            elif entry.is_file():
+                found.append(entry)
+    return found
+
+
+def drop_ignored(root: Path, paths: list[Path]) -> list[Path]:
+    """Filter out what git ignores, so local working state is not checked.
+
+    `plans/` and `bin/` hold drafts and build output that no host ever loads.
+    A copy of the tree taken outside a git repository is checked whole instead,
+    which costs a few extra files and no false failures.
+    """
+    payload = "\0".join(str(p) for p in paths) + "\0"
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "-z", "--stdin"],
+            input=payload,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return paths
+    if result.returncode not in (0, 1):
+        return paths
+    ignored = {Path(p) for p in result.stdout.split("\0") if p}
+    return [p for p in paths if p not in ignored]
+
+
+def read_lines(path: Path) -> list[str] | None:
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(SNIFF_BYTES)
+        if b"\0" in head:
+            return None
+        first = head.decode("utf-8", "ignore").splitlines()[:1]
+        if not first or first[0].rstrip() != FENCE:
+            return None
+        return path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def frontmatter_end(lines: list[str]) -> int | None:
+    for i in range(1, len(lines)):
+        if lines[i].rstrip() == FENCE:
+            return i
+    return None
+
+
+def closes_on_line(text: str, quote: str, start: int) -> bool:
+    i = start
+    while i < len(text):
+        c = text[i]
+        if c == "\\" and quote == '"':
+            i += 2
+            continue
+        if c == quote:
+            # Inside a single-quoted scalar '' is an escaped quote, not the end.
+            if quote == "'" and text[i + 1:i + 2] == "'":
+                i += 2
+                continue
+            return True
+        i += 1
+    return False
+
+
+def next_key_or_end(lines: list[str], start: int, end: int) -> int:
+    for i in range(start + 1, end):
+        if KEY.match(lines[i]):
+            return i
+    return end
+
+
+def description_span(lines: list[str], end: int) -> tuple[int, int] | None:
+    """Return the half-open line span of the description value, or None.
+
+    Indices are 0-based. A span longer than one line is the defect.
+    """
+    for i in range(1, end):
+        if not lines[i].startswith("description:"):
+            continue
+        value = lines[i][len("description:"):].strip()
+        if value[:1] in ('"', "'"):
+            quote = value[0]
+            if closes_on_line(value, quote, 1):
+                return i, i + 1
+            for j in range(i + 1, end):
+                if closes_on_line(lines[j], quote, 0):
+                    return i, j + 1
+            return i, end
+        # An unquoted value runs to the next key, so a block scalar (>, |) and a
+        # plain scalar continued onto the line below are both refused. An empty
+        # `description:` with a key or the closing fence beneath it spans one
+        # line, and passes.
+        return i, next_key_or_end(lines, i, end)
+    return None
+
+
+def main() -> int:
+    root = repo_root()
+    failures = []
+    checked = 0
+    for path in drop_ignored(root, walk(root)):
+        lines = read_lines(path)
+        if lines is None:
+            continue
+        end = frontmatter_end(lines)
+        if end is None:
+            continue
+        checked += 1
+        span = description_span(lines, end)
+        if span is None:
+            continue
+        first, stop = span
+        if stop - first > 1:
+            failures.append((path.relative_to(root), first + 1, stop))
+
+    for relative, line, last in failures:
+        print(
+            f"{relative}:{line}: frontmatter description spans lines {line}-{last}; "
+            "it must occupy exactly one physical line.",
+            file=sys.stderr,
+        )
+    if failures:
+        print(
+            f"error: {len(failures)} of {checked} frontmatter files carry a "
+            "description broken across lines. Join each onto one line; a raw "
+            "break drops the skill from Claude Code's listing without failing.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"{checked} frontmatter files checked, every description on one line.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

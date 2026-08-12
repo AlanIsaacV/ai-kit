@@ -133,4 +133,27 @@ Deleting those symlinks undoes the install, the per-skill ones included; there i
 no `make uninstall`, because those paths are the whole footprint and a target for
 removing them would only be a second place to keep them written down.
 
-Requires Go 1.26+. No other dependencies.
+Installing requires Go 1.26+ and nothing else.
+
+## The check
+
+```bash
+make check
+```
+
+`scripts/check-frontmatter` walks the tree, finds every file that opens with YAML
+frontmatter — the eight `skills/*/SKILL.md` and the six `agents/*.md` today, and
+whatever is added later, since the set is read off the tree rather than listed
+here — and refuses any whose `description` spans more than one physical line. It
+names the path and the line and exits non-zero. It repairs nothing, and nothing
+runs it for you: no hook, no CI.
+
+That one shape is worth a target because it breaks silently. A description
+carrying a raw line break is still valid YAML, and the two hosts disagree about
+it: Codex folds the break into a space and lists the skill, Claude Code drops the
+skill from its enumeration while leaving it invocable by name. Nothing errors, so
+short of reading a live session's skill list there is no witness — which is how
+one wrapped line survived four commits, two installs and a verification pass.
+
+It needs Python 3 and nothing else — no Go build, so it runs on a clone that was
+never installed.
