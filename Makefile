@@ -17,36 +17,48 @@ install: build
 	@mkdir -p "$(BIN_DIR)" "$(SKILLS_DIR)" "$(CODEX_SKILLS_DIR)"
 # -n keeps ln from following an existing link to the clone and creating the new
 # one inside it; -f replaces it instead. Together they make a second run a no-op.
-	@ln -sfn "$(BIN)" "$(BIN_LINK)"
-	@ln -sfn "$(REPO)" "$(SKILL_LINK)"
-# -n only helps when the path is already a symlink. Against a real directory ln
-# puts the new link *inside* it and still exits 0, which would report an install
-# the hosts cannot see, so both placements are read back instead of assumed.
-	@[ "$$(readlink "$(BIN_LINK)")" = "$(BIN)" ] || { \
-	  echo "error: $(BIN_LINK) exists and is not a symlink to this clone; ln left its link inside it. Remove that path, then re-run." >&2; \
-	  exit 1; \
-	}
-	@[ "$$(readlink "$(SKILL_LINK)")" = "$(REPO)" ] || { \
-	  echo "error: $(SKILL_LINK) exists and is not a symlink to this clone; ln left its link inside it. Remove that path, then re-run." >&2; \
-	  exit 1; \
-	}
-	@echo "$(BIN_LINK) -> $(BIN)"
-	@echo "$(SKILL_LINK) -> $(REPO)"
-# Claude Code loads the clone as one plugin; Codex registers one skill at a time,
-# so it gets a link per directory under skills/. The set is read off the tree
-# rather than listed here, so a skill added later installs itself. Each link is
-# read back for the same reason the two above are.
-	@for skill in "$(REPO)"/skills/*/; do \
+# Neither helps when the path is a real directory — not a symlink to one, which
+# -n already covers: there ln would put the new link *inside* it and still exit
+# 0, reporting an install the hosts cannot see. So that case is refused before
+# ln runs, leaving nothing inside the offending path, and every placement that
+# does run is read back rather than assumed.
+#
+# A refusal does not stop the run. Everything that can be linked is, and the
+# failures are reported together at the end, so one run names every path that
+# has to be removed instead of only the first, and re-running after removing
+# them places exactly what was skipped.
+#
+# Claude Code loads the clone as one plugin; Codex registers one skill at a
+# time, so it gets a link per directory under skills/. The set is read off the
+# tree rather than listed here, so a skill added later installs itself — the
+# link, at least: it also needs its own agents/openai.yaml committed, or Codex
+# lists it with no display name and no blurb.
+	@failed=; \
+	link() { \
+	  if [ -d "$$1" ] && [ ! -L "$$1" ]; then \
+	    echo "error: $$1 is a directory, not a symlink to this clone; nothing was linked there." >&2; \
+	    failed=1; \
+	    return; \
+	  fi; \
+	  ln -sfn "$$2" "$$1"; \
+	  if [ "$$(readlink "$$1")" = "$$2" ]; then \
+	    echo "$$1 -> $$2"; \
+	  else \
+	    echo "error: $$1 could not be replaced with a symlink to this clone." >&2; \
+	    failed=1; \
+	  fi; \
+	}; \
+	link "$(BIN_LINK)" "$(BIN)"; \
+	link "$(SKILL_LINK)" "$(REPO)"; \
+	for skill in "$(REPO)"/skills/*/; do \
 	  [ -d "$$skill" ] || continue; \
 	  name=$$(basename "$$skill"); \
-	  link="$(CODEX_SKILLS_DIR)/ai-kit-$$name"; \
-	  ln -sfn "$(REPO)/skills/$$name" "$$link"; \
-	  [ "$$(readlink "$$link")" = "$(REPO)/skills/$$name" ] || { \
-	    echo "error: $$link exists and is not a symlink to this clone; ln left its link inside it. Remove that path, then re-run." >&2; \
-	    exit 1; \
-	  }; \
-	  echo "$$link -> $(REPO)/skills/$$name"; \
-	done
+	  link "$(CODEX_SKILLS_DIR)/ai-kit-$$name" "$(REPO)/skills/$$name"; \
+	done; \
+	[ -z "$$failed" ] || { \
+	  echo "error: the install is incomplete. Remove the paths named above and run it again; everything else is already in place." >&2; \
+	  exit 1; \
+	}
 	@case ":$$PATH:" in \
 	  *":$(BIN_DIR):"*) ;; \
 	  *) echo "warning: $(BIN_DIR) is not on PATH, so memory will not resolve by name until it is." ;; \

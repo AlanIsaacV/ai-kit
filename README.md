@@ -116,12 +116,14 @@ The first is what lets the skills call `memory` by name instead of carrying a
 path to the binary around. The second is what makes Claude Code load this
 repository as a skills plugin. The third is one link per directory under
 `skills/`, which is how Codex finds them — one at a time rather than as a plugin,
-so a skill added to `skills/` gets its own link the next time this runs. Codex
-reads that directory when a session starts, so the skills appear in the next
-session you open and not in one already running. Nothing else on the machine is
-touched — no shell profile, no configuration file — which is also why
-`~/.local/bin` has to already be on your `PATH` for the name to resolve;
-`make install` says so when it is not, and leaves fixing it to you.
+so a skill added to `skills/` gets its own link the next time this runs, while a
+skill renamed or removed leaves its old link behind, which no re-run clears and
+you delete by hand. Codex reads that directory when a session starts, so the
+skills appear in the next session you open and not in one already running.
+Nothing else on the machine is touched — no shell profile, no configuration
+file — which is also why `~/.local/bin` has to already be on your `PATH` for the
+name to resolve; `make install` says so when it is not, and leaves fixing it to
+you.
 
 Running it again rebuilds the binary and replaces every link with the same link,
 so repeating it costs nothing and it is what to run after changing
