@@ -103,27 +103,32 @@ requests.
 make install
 ```
 
-That builds the log CLI to `bin/memory` and then makes two symlinks, both
+That builds the log CLI to `bin/memory` and then makes symlinks, all of them
 pointing back at the clone it was run from:
 
 ```
-~/.local/bin/memory       ->  <clone>/bin/memory
-~/.claude/skills/ai-kit   ->  <clone>
+~/.local/bin/memory              ->  <clone>/bin/memory
+~/.claude/skills/ai-kit          ->  <clone>
+~/.agents/skills/ai-kit-<name>   ->  <clone>/skills/<name>
 ```
 
 The first is what lets the skills call `memory` by name instead of carrying a
 path to the binary around. The second is what makes Claude Code load this
-repository as a skills plugin. Nothing else on the machine is touched — no shell
-profile, no configuration file — which is also why `~/.local/bin` has to already
-be on your `PATH` for the name to resolve; `make install` says so when it is not,
-and leaves fixing it to you.
+repository as a skills plugin. The third is one link per directory under
+`skills/`, which is how Codex finds them — one at a time rather than as a plugin,
+so a skill added to `skills/` gets its own link the next time this runs. Codex
+reads that directory when a session starts, so the skills appear in the next
+session you open and not in one already running. Nothing else on the machine is
+touched — no shell profile, no configuration file — which is also why
+`~/.local/bin` has to already be on your `PATH` for the name to resolve;
+`make install` says so when it is not, and leaves fixing it to you.
 
-Running it again rebuilds the binary and replaces both links with the same two
-links, so repeating it costs nothing and it is what to run after changing
+Running it again rebuilds the binary and replaces every link with the same link,
+so repeating it costs nothing and it is what to run after changing
 `tools/memory/`.
 
-Deleting the two symlinks undoes the install; there is no `make uninstall`,
-because those two paths are the whole footprint and a target for removing them
-would only be a second place to keep them written down.
+Deleting those symlinks undoes the install, the per-skill ones included; there is
+no `make uninstall`, because those paths are the whole footprint and a target for
+removing them would only be a second place to keep them written down.
 
 Requires Go 1.26+. No other dependencies.

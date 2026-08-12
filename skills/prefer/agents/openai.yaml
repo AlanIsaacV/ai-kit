@@ -1,0 +1,4 @@
+interface:
+  display_name: "Record Preferences"
+  short_description: "Record stack and convention preferences"
+  default_prompt: "Use $ai-kit:prefer to record which libraries and conventions this repo uses."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run an Objective"
+  short_description: "Execute one recorded objective end to end"
+  default_prompt: "Use $ai-kit:work to move the current objective forward."

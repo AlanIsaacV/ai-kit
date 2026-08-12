@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ask the Repository"
+  short_description: "Answer how a repo works, with a citation per claim"
+  default_prompt: "Use $ai-kit:ask to explain how authentication works in this repository."

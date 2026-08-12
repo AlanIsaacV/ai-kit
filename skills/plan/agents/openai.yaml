@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan an Objective"
+  short_description: "Author an objective with acceptance criteria"
+  default_prompt: "Use $ai-kit:plan to turn this idea into an objective I can review."

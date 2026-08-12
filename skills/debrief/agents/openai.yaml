@@ -1,0 +1,4 @@
+interface:
+  display_name: "Debrief Written Code"
+  short_description: "Read code you wrote and say what it missed"
+  default_prompt: "Use $ai-kit:debrief to read what I just wrote and tell me what I missed."

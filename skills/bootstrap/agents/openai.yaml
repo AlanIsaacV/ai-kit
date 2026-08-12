@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bootstrap a Repository"
+  short_description: "Write a repository's README.md and CLAUDE.md"
+  default_prompt: "Use $ai-kit:bootstrap to write this repository's README.md and CLAUDE.md."

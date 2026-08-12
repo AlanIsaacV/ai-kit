@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brief the Implementer"
+  short_description: "Map out work the user implements themselves"
+  default_prompt: "Use $ai-kit:brief to think this through before I write the code myself."
