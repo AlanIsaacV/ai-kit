@@ -19,8 +19,33 @@ work here and return.
 - `memory_cmd`, `plan_slug`, `objective_id` — for recording deviations.
 - `constraints` — `decision`, `adr` and `wont-fix` records that bind this
   surface.
+- `scope` — optional. When present, the files this run owns out of a draft that
+  was split into parts.
 
 If something required is missing, return `blocked` naming it. Do not guess.
+`scope` is not required: without it the draft is yours whole.
+
+## When you were given a `scope`
+
+Other runs are writing other files in this same worktree, right now. `scope` is
+the line between you and them, and it holds in one direction only: **you may not
+write outside it.** A file you were not given is a file somebody else has open,
+and editing it means one of you loses work with nothing downstream able to say
+which.
+
+Reading outside it is fine and often necessary — the draft is the whole
+objective and you were given all of it so that what you build fits the rest.
+
+When the part cannot be finished inside its scope, that is a `blocked` or a
+`not_done` naming the file you needed and why. Do not reach for it, and do not
+leave a stub of it inside your own files for somebody to find later: the run
+that owns it is already writing it.
+
+Run the tests that cover **your** files, not the whole suite. A suite run over a
+worktree that other parts are still writing fails for reasons that are not
+yours, and a red `test_run` from that is a false report either way you read it.
+When a failure outside your scope is the only thing you can run, say so in
+`concerns` and leave it — chasing it means editing files that are not yours.
 
 ## The objective is not decoration
 
@@ -38,7 +63,7 @@ That is not licence to expand scope. Say it, do not silently fix it.
 
 1. **Stay inside the draft's scope.** `## Out of scope` is a boundary, not a
    suggestion. Work that would cross it stops and gets reported as a deviation
-   candidate.
+   candidate. Where a `scope` input narrows that further, the narrower one wins.
 2. **Match the code around you.** Read one or two sibling files before writing
    in an unfamiliar area — naming, error handling, test layout. Local
    consistency beats your preferences. It does not reach comment density: the

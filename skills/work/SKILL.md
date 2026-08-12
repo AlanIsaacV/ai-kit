@@ -1,6 +1,7 @@
 ---
 name: work
-description: "Execute one objective end to end: resolve which objective you are on, confirm it is executable — its acceptance criteria each carrying the fidelity they require — freeze those criteria, implement it, verify it against them in a fresh subagent, review the code with the user, record what was learned, and decide what comes next. Use whenever an objective is already recorded and the user wants to move it forward. Triggers on: 'sigamos', 'continuemos', 'seguí con el plan', 'arrancá', 'dale', 'implementá la siguiente parte', 'retomemos', 'continue where we left off', 'what's next', 'terminá lo que quedó', or the start of a fresh session on work already planned. This skill executes and does not author: when no objective exists yet, when the one you are on is too big for a session, or when this turn discovers work nobody has framed, it invokes the `plan` skill to write that objective and get its criteria approved, then comes back here to run it."
+description: "Execute one objective end to end: resolve which objective you are on, confirm it is executable — its acceptance criteria each carrying the fidelity they require — freeze those criteria, implement it — split into parts that cannot conflict and
+run at once where the work allows it — verify it against them in a fresh subagent, review the code with the user, record what was learned, and decide what comes next. Use whenever an objective is already recorded and the user wants to move it forward. Triggers on: 'sigamos', 'continuemos', 'seguí con el plan', 'arrancá', 'dale', 'implementá la siguiente parte', 'retomemos', 'continue where we left off', 'what's next', 'terminá lo que quedó', or the start of a fresh session on work already planned. This skill executes and does not author: when no objective exists yet, when the one you are on is too big for a session, or when this turn discovers work nobody has framed, it invokes the `plan` skill to write that objective and get its criteria approved, then comes back here to run it."
 ---
 
 # work
@@ -31,9 +32,10 @@ run, and invoke `plan` for the one that is.
    "how does this move the one it derives from" — a root objective answers to
    the request that opened it. An objective that cannot answer it is an
    objective that should not run.
-2. **Never write production code in this thread.** That is the `implement`
-   subagent's job. Reading a few files to check drift or spot-check a claim is
-   fine; editing project source is not.
+2. **Never write production code in this thread.** That is the job of the parts
+   step 5 launches — the `implement` subagent, or Codex where that step says so.
+   Reading a few files to check drift or spot-check a claim is fine; editing
+   project source is not.
 3. **The user approves the executable objective before anything is built.** Hard
    stop, every time. Silence is not approval.
 4. **Acceptance criteria are frozen at approval.** Nothing downstream may add,
@@ -435,9 +437,52 @@ read in the command is one you can see is wrong.
 
 ### 5 — Implement
 
-Launch the `implement` subagent. It gets the objective, not just the task — a
-subagent that only knows its ticket will satisfy the ticket and nothing else,
-which is how work ends up technically complete and beside the point.
+An objective is not automatically one piece of work, and handing all of it to a
+single subagent is a choice rather than the default. One long run carries the
+whole objective in one context, and by the end of it the parts decided first are
+the ones it no longer remembers — which is how a long objective comes back with
+something quietly dropped from the middle of it. A run that owns three files
+finishes before it has anything to forget.
+
+So before launching anything, split — or decide, out loud, that there is nothing
+here to split.
+
+#### Split by what the parts write, not by how big they are
+
+There is no length to aim at and none is given here on purpose. How short a part
+should be is a property of the work in front of you: a part is one part when it
+can be written without waiting on another part and without opening a file
+another part is writing. That is the whole test, and it is about **conflict**,
+not size.
+
+Read the draft and name, for each candidate part, the files it is going to
+write. Then:
+
+- **Two parts that write the same file are one part.** Not two agents taking
+  turns — one part. Two runs editing one file in one worktree is one of them
+  silently losing its work, and nothing downstream tells you which.
+- **A part that needs another part's output is not parallel with it.** A shared
+  type, a schema, an interface the rest implement against: that is a *seam*, and
+  a seam runs first and alone, with the rest fanning out behind it. Two waves,
+  not two racing agents.
+- **A part whose files you cannot name yet is not a part.** When the split
+  itself depends on something nobody has read, that is the signal not to split:
+  launch one and keep the objective whole.
+
+One part is a legitimate answer and often the right one. Splitting work that
+shares a surface costs more than the serial run it was meant to save, and the
+cost lands as a merge nobody asked for. Say which way it went and why, in one
+line, before launching:
+
+> Lo parto en tres: el store, el handler y los tests de contrato. No se pisan —
+> ninguno abre un archivo de otro.
+
+#### Launch the parts
+
+Every part gets the objective, not just its slice — a subagent that only knows
+its ticket will satisfy the ticket and nothing else, which is how work ends up
+technically complete and beside the point. Splitting multiplies that risk rather
+than removing it, so the objective and the draft go to **each** part in full:
 
 ```
 objective: <the parent objective's title and body, verbatim — or this one's, if it is a root>
@@ -447,20 +492,113 @@ memory_cmd: <absolute path to the memory binary>
 plan_slug: <tree-slug>
 objective_id: <the executable objective's id>
 constraints: <anything from memory that binds this surface — decisions, adr, wont-fix, and the gotchas step 1 loaded for this area with their anchor verdicts>
+scope: <the files this part owns, and the line saying nothing outside them is its to touch — omit when the objective runs as one part>
 ```
 
 `objective_draft` is the executable objective's draft file and `objective_id` its
 record id. `objective` is the parent's title and body — orienting context, not
 the thing being built — which is why the draft carries a name of its own.
+`scope` is what turns the objective into *this* part, and it is the only field
+that differs between parts.
 
 The gotchas go in `constraints` because that is what they are: a constraint the
 code obeys without stating it is exactly what a subagent about to edit that code
 cannot derive and will otherwise undo. Pass each one's verdict with it — a
 `gotcha` whose anchor came back `changed` is a constraint that may already have
-been broken, and `implement` should be told which of the two it is holding.
+been broken, and the part should be told which of the two it is holding. Every
+part gets the constraints, not only the one whose files they cite.
 
-When it returns: if it is `blocked` or `partial`, stop and bring it to the
-user. Do not chain another attempt at the same wall.
+**Launch every part of a wave in a single message.** Parts sent together run at
+once; parts sent one message at a time run one after another and buy nothing —
+that is the entire saving, and it is lost by accident rather than by decision. A
+wave is one message whatever the parts are dispatched through: a Codex part's
+Bash call belongs in it next to the subagent launches, not in a message of its
+own. Where there is a seam, launch the seam alone, wait for it, then launch the
+rest together.
+
+#### Codex can execute a part instead of `implement`
+
+A part's executor is a choice, and `implement` is the default: it is the one
+that already knows this contract, reads the draft itself and writes its own
+`deviation` and `gotcha` records without being told how. Codex is the other
+executor, and a part goes to it when the user asks for it, or when a part came
+back `blocked` and a *different* model is worth putting against that wall rather
+than the same one twice.
+
+Codex is reached through its companion runtime, from this thread's Bash. That is
+not this thread writing production code — rule 2 is about who does the work, and
+the work is still being done somewhere else. What this thread must not do is open
+the editor itself.
+
+Find the runtime and read the path back, rather than assuming where the plugin
+landed:
+
+```bash
+ls "$HOME"/.claude/plugins/marketplaces/*/plugins/codex/scripts/codex-companion.mjs
+```
+
+Nothing printed means the Codex plugin is not installed here and `implement` is
+the only executor there is. Say that in a line and carry on with it — a fallback
+nobody is told about is a fallback that looks like a choice.
+
+With the path in hand, one run per part, pasted literally:
+
+```bash
+node <the path that printed> task --write --fresh --background '<the handover, as prose, ending in the return contract>'
+```
+
+- `--write` or Codex will not edit anything. A part without it is a part that
+  reads the objective and changes nothing.
+- `--fresh` because each part is its own run. Resuming would hand one part the
+  previous part's thread and the file boundaries that came with it.
+- `--background` whenever more than one part is in flight: a foreground run
+  blocks this thread until it finishes, which serializes exactly what the split
+  was for. It prints a job id — `status <job-id>` says whether it is still
+  running, `result <job-id>` returns its final message once it is not. A single
+  Codex part with nothing running beside it can go foreground and return
+  directly.
+
+Codex does not read this skill and has no agent file behind it, so **everything
+`implement` gets from its own definition has to be in the prompt text**: the
+objective, the draft path, this part's `scope`, the constraints, and the rules
+that actually bind — stay inside the draft's scope, match the code around you,
+no commits, nothing under `docs/`, no tests that only prove their own mocks
+work. The `memory` commands go in the same way, with the binary's absolute path
+and the plan slug already filled in, when you want deviations and gotchas
+recorded from that part: Codex has a shell and will run them, and it will not
+invent them.
+
+End the prompt by asking for the same JSON object `implement` returns, and read
+it off the **last line** of what comes back — everything above it is the
+runtime's progress log. A Codex run that ends without that JSON is a part you
+have no result for: treat it as `partial` and bring it to the user rather than
+reconstructing one from the log.
+
+A Codex part writes into the same worktree as the `implement` parts beside it,
+so it is under the same non-conflict rule as everything else. Which executor ran
+a part changes nothing about what may open which file.
+
+#### Collect the parts into one result
+
+The results merge before anything downstream sees them: `files_changed` is the
+union across parts, and `deviations`, `assumptions`, `concerns` and `not_done`
+concatenate with the part each came from still attached to it. Steps 6 and 7
+receive the union, because verification grades the objective and not a slice of
+it.
+
+`test_run` does not merge, and do not try to make it. Each part ran the tests
+over its own files while the others were still writing theirs, so a red one may
+be reporting a part that has since landed and a green one may have run before
+the file that breaks it existed. **Run the suite once here, over the merged
+worktree**, and let that be the answer — a single command in this thread, on a
+repo nobody is writing to any more. That is reading the state of the work, not
+writing it, and it is what step 6 is about to be handed.
+
+If any part returns `blocked` or `partial`, stop and bring it to the user
+together with the other parts' results in one round — including what the parts
+that succeeded already wrote to the worktree, which is the state the repo is
+actually in. Do not chain another attempt at the same wall, and do not launch a
+replacement part over files a finished part already wrote.
 
 When the wall is external — a credential, an upstream decision, someone else's
 release — record what is being waited on and say so on the objective:
@@ -487,7 +625,7 @@ written the code:
 ```
 objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
-changed_files: <from the implement result>
+changed_files: <the union across every part step 5 launched>
 memory_cmd: <path>   plan_slug: <tree-slug>   objective_id: <the objective's id>
 ```
 
@@ -510,7 +648,7 @@ any of it works.
 ```
 objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
-changed_files: <from the implement result>
+changed_files: <the union across every part step 5 launched>
 ```
 
 Give the user its walkthrough more or less as written. It is meant to be read
@@ -727,6 +865,9 @@ user's — suggest candidates, do not promote on your own.
   the entire defense against verification that grades its own work.
 - **Required fidelity is agreed up front.** A mock satisfying a criterion about
   a real database is not a passing check, it is a false one.
+- **Parts are drawn by conflict, not by size.** Two runs that never open the
+  same file can run at once whatever their length; two that share one file are
+  one part however small each looked.
 - **The one who built it does not get to bless it.**
 - **"Not worth fixing" is a real answer, and it gets recorded.** Otherwise the
   same imaginary risk comes back every turn.
