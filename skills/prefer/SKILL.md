@@ -1,6 +1,6 @@
 ---
 name: prefer
-description: "Get a repository's stack and convention preferences out of somebody's head and onto the record: which library, which tool, which pattern, and why that one rather than the alternative it displaced. It reads the preferences already recorded first — per area, bounded to `--kind preference`, and out of the user's log as well as this repository's, since a preference carried up from somewhere else applies here too — and only then looks at what the repository actually does, delegating that look to the `explore` subagent so the manifest inventory never enters this thread and is discarded rather than written down. What it puts in front of the user is the divergence between what a preference says and what the repository does; a preference the repository already obeys never becomes a round. With preferences already on the record it makes two passes, one validating them and one fast sweep for the choices nobody has an opinion on yet; with none on the record it makes a single detailed pass and presents proposals, because there is nothing to diverge from. Nothing a manifest can be asked is ever written: `go.mod` already answers which version of GORM this is, and why GORM and not sqlc is what has nowhere else to live. Preferences are written with no `--plan`, because they belong to the repository rather than to any objective inside it, and one that replaces another arrives with the `supersedes` edge that leaves a single live answer per area. At close it offers to carry them up to user scope, where they outlive this repository. Triggers on: 'guardá mis preferencias', 'anotá que acá usamos X', 'estas son las herramientas que uso', 'qué stack usamos en este repo', 'por qué elegimos X y no Y', 'quiero que esto valga para todos mis repos', 'esta convención ya no vale', 'cambiamos de librería', 'fijá las convenciones de este proyecto', 'revisá si el repo sigue mis preferencias', 'record my stack preferences', 'write down our conventions', 'these are the tools I use', 'why did we pick this library', 'this preference is no longer true', 'we switched libraries', 'check whether this repo follows my preferences', 'carry these preferences to my other repos'. A human invokes it and it stops there: no step of `plan`, `work` or `debug` calls it, it authors no objective and invokes no other skill, and the only thing it writes anywhere is records through the `memory` CLI."
+description: "Get a repository's stack and convention preferences out of somebody's head and onto the record: which library, which tool, which pattern, and why that one rather than the alternative it displaced. It reads the preferences already recorded first — per area, bounded to `--kind preference`, and out of the user's log as well as this repository's, since a preference carried up from somewhere else applies here too — and only then looks at what the repository actually does, delegating that look to the `explore` subagent so the manifest inventory never enters this thread and is discarded rather than written down. What it puts in front of the user is the divergence between what a preference says and what the repository does; a preference the repository already obeys costs one line of confirmation rather than a round, and is then written into this repository's own log as an adoption — so a preference carried up from somewhere else gets registered here too instead of being waved through as something already known. Every preference it writes carries the kind of service the repository is as a secondary tag, and gains its origin repository when it is promoted, which is what lets the user log answer how many repositories chose a thing and in what kinds of service — a count computed out of the log on each read, never a summary written into it. With preferences already on the record it makes two passes, one validating them and one fast sweep for the choices nobody has an opinion on yet; with none on the record it makes a single detailed pass and presents proposals, because there is nothing to diverge from. Nothing a manifest can be asked is ever written: `go.mod` already answers which version of GORM this is, and why GORM and not sqlc is what has nowhere else to live. Preferences are written with no `--plan`, because they belong to the repository rather than to any objective inside it, and one that replaces another arrives with the `supersedes` edge that leaves a single live answer per area. At close it offers to carry them up to user scope, where they outlive this repository. Triggers on: 'guardá mis preferencias', 'anotá que acá usamos X', 'estas son las herramientas que uso', 'qué stack usamos en este repo', 'por qué elegimos X y no Y', 'quiero que esto valga para todos mis repos', 'esta convención ya no vale', 'cambiamos de librería', 'fijá las convenciones de este proyecto', 'revisá si el repo sigue mis preferencias', 'record my stack preferences', 'write down our conventions', 'these are the tools I use', 'why did we pick this library', 'this preference is no longer true', 'we switched libraries', 'check whether this repo follows my preferences', 'carry these preferences to my other repos', 'cuántos repos míos usan X', 'en qué tipo de servicios uso X', 'dónde más uso esta librería', 'how many of my repos use X', 'which of my services use this'. A human invokes it and it stops there: no step of `plan`, `work` or `debug` calls it, it authors no objective and invokes no other skill, and the only thing it writes anywhere is records through the `memory` CLI."
 ---
 
 # prefer
@@ -20,6 +20,38 @@ So this skill writes the second half and throws the first half away. The
 substitution test decides every sentence, the same one `bootstrap` applies to a
 README: before writing anything, ask which surface could have been asked for it,
 and if one could, do not write it.
+
+## An obeyed preference is a fact about this repository
+
+A preference already at user scope, and a repository that obeys it, used to
+produce nothing at all: the run said *you already told me this* and moved on. What
+that threw away is the only fact in the exchange that nothing else holds. That
+this repository, of this kind, chose the thing is not a restatement of the user's
+preference — the preference says what somebody would pick, and the adoption says
+where they actually picked it. **The user log knows the opinion; nothing knew the
+spread.** So an obeyed preference is written into this repository's log as an
+**adoption**, and the run that would have skipped it registers it instead.
+
+Three things then come out of the log for free, and one has to be put in:
+
+```
+how many repositories        the adoptions promoted to user scope, counted
+which repositories           origin.repo, which `promote` stamps on each copy
+which kinds of service       the `service/<kind>/` tag every adoption carries
+```
+
+Only the third is written down, because it is the only one no surface can be
+asked. **The count itself is never written.** A record whose body says "four
+repositories use this" is a number that was true on the day it landed, that
+nothing will recompute, and that the next adoption silently falsifies — the exact
+failure mode the two-halves rule above exists to prevent, wearing an aggregate's
+clothes. The tally is read out of the log at the moment of asking, by step 1, and
+by anybody who runs the same two commands.
+
+**One adoption per repository per area, and never one per run.** That is what
+makes the count mean repositories rather than how often somebody ran this skill,
+and it is the difference between an aggregate and noise. A second run in a
+repository that already recorded its adoption confirms and appends nothing.
 
 ## The order is the whole design
 
@@ -44,7 +76,10 @@ repository believe?" is not answerable at all.
 **Preferences already on the record — two passes.** One validates the live ones
 against what the repository actually does. One sweeps quickly for the choices
 nobody has an opinion on yet. Both go to the same subagent with different prompts,
-and only the disagreements reach the user.
+and only the disagreements reach the user. What the validating pass confirms is
+not thrown away, though: the ones that came from user scope are written here as
+adoptions, which costs the user one line and is the shape the run leaves behind
+most of the time.
 
 **Nothing on the record — one pass, in detail, and no divergence.** There is
 nothing to diverge *from*, so nothing is presented as a divergence. What the user
@@ -80,33 +115,72 @@ skill; a human invokes it, and it records what they settle and stops.
 4. **Preferences are read with `--kind preference`, per area, never in bulk.**
    `query` withholds its records once a match count runs past a limit it reports
    in `memory kinds`, returning `count: N`, `returned: 0`, `truncated: true` at
-   exit 0 — an answer-shaped non-answer. Reading one area at a time keeps every
-   read far below that limit, and this skill never widens the setting.
-5. **What goes in front of the user is divergence, not an enumeration.** A
-   preference the repository already obeys is not a round, not a bullet and not a
-   line of reassurance. It costs the user attention and returns nothing.
-6. **A preference that replaces another is written with the `supersedes` edge in
+   exit 0 — an answer-shaped non-answer. Reading one area at a time keeps a
+   *repository*-scope read far below that limit, and this skill never widens the
+   setting. **It no longer keeps a user-scope read below it**: adoptions pile one
+   record per repository into a single area, so that is the one read that grows
+   without bound, and rule 13 is what carries it past the threshold intact.
+5. **What costs the user attention is divergence, not an enumeration.** A
+   preference the repository already obeys is recorded, by rule 6, and is still
+   never a round: the obeyed ones go up as one batched line asking whether any of
+   them has a local reason worth writing, not as one question each. The record and
+   the attention are separate budgets, and this rule spends only the second one.
+6. **A preference this repository obeys is written into this repository's log,
+   even when the user log already says the same thing.** That is the adoption, and
+   skipping it because the answer is already known is the behaviour this rule
+   replaces. **Exactly one per repository per area**: before writing, check that
+   this repository's own log has no live preference for that area already — a
+   second run confirms and appends nothing, or the count stops meaning
+   repositories.
+7. **A preference that replaces another is written with the `supersedes` edge in
    the same breath.** Without the edge both records answer `--current` and there
    is no single live answer for that area; the newest-wins convention is computed
    mechanically in exactly one place, the `live` field of `memory areas`, and
-   nowhere else.
-7. **A preference's first `--about` tag comes from an area that already exists in
+   nowhere else. **The single-live-answer invariant is about this repository's
+   log**, where two live preferences in one area really are two answers to one
+   question. At user scope the same area holds one live record per repository that
+   adopted, all of them agreeing or not, and that multiplicity is the aggregate
+   rather than a missing edge — so `areas` reporting a user-scope `live` there
+   names the most recent adoption and **is not the answer for that area**. Rule 13
+   is how the answer is actually read. **No edge this skill writes ever lands in
+   the user log**: `link --scope user` is accepted at exit 0, and what a
+   `supersedes` does there is retire one *other* repository's adoption — a write
+   about a repository nobody in this session is standing in, taken on evidence
+   nobody in this session has seen.
+8. **A preference's first `--about` tag comes from an area that already exists in
    the log.** Inventing a new one is allowed only when the user says so, in words.
    Nothing in the CLI enforces either the position or the vocabulary; the existing
    areas *are* the vocabulary, and two writers keying the same question as
    `persistence` and `database` is how a log stops answering.
-8. **Promotion to user scope is offered and never performed unasked.** The offer
+9. **Every preference this skill writes carries the repository's service kind as
+   a secondary tag, `service/<kind>/`.** It is a facet and never the first tag —
+   the area is what the preference is *about*, the facet is what the repository
+   *is* — and the same vocabulary discipline as rule 8 applies to it: reuse a
+   `service/*` facet the log already carries before coining one, and coin only on
+   the user's word. The kind is proposed from evidence and confirmed by the user;
+   a repository nobody can classify gets an `open-question` and no facet, because
+   a guessed facet corrupts every count taken through it afterwards.
+10. **Promotion to user scope is offered and never performed unasked.** The offer
    is the skill's; the act is the user's.
-9. **Discovery is delegated to the `explore` subagent, and what it read is
+11. **Discovery is delegated to the `explore` subagent, and what it read is
    discarded.** The manifest inventory never enters this thread and never enters
    the log. This skill launches no other subagent and defines none.
-10. **Read-only over the repository, with the log as the single exception.** No
+12. **Read-only over the repository, with the log as the single exception.** No
     file is edited, no `docs/` is created, no scratch file is left behind. Never
     edit the `.jsonl` by hand.
-11. **It records and stops.** No objective, no acceptance criteria, no fix, no
+13. **Every user-scope preference read carries an explicit `--limit`, and the
+    aggregate is computed from the records rather than from `count`.** Past the
+    threshold `memory kinds` reports, `query` returns `count: N, returned: 0,
+    truncated: true` — the count survives and every `origin.repo` and every facet
+    tag is withheld, which is precisely the half the aggregate is made of. An area
+    reaches that threshold only because adoptions accumulate there, so this is a
+    trap rule 6 builds and this rule disarms. Count **distinct `origin.repo`**
+    over the returned records, never records: a repository that changed its mind
+    contributes two records and one repository.
+14. **It records and stops.** No objective, no acceptance criteria, no fix, no
     invocation of `plan`, `work`, `debug`, `ask` or `bootstrap`. When the run turns
     up work worth doing, name it in one line and leave the next move to the user.
-12. **Conversation in the user's language; everything written to disk in
+15. **Conversation in the user's language; everything written to disk in
     English.**
 
 ## The memory log
@@ -221,6 +295,38 @@ anchor — `memory kinds` reports `anchored_kinds` as `gotcha` alone — and tha
 deliberate rather than a gap: a preference is about a choice, not about code that
 exists at a line.
 
+**An adoption is that same kind, and deliberately not a new one.** `memory kinds`
+fixes the vocabulary — there is no `adoption` to reach for — and inventing a
+parallel kind would be wrong even if there were: what distinguishes "I would pick
+Goose" from "this repository picked Goose" is which log the record is in, and the
+CLI already carries that in `scope` and, after promotion, in `origin.repo`. A
+second kind would say the same thing again in a place nothing checks. The one
+thing an adoption has that a bare preference does not is the facet:
+
+```
+--about <area>,service/<kind>/[,<path-prefix>/]
+         ^ the question         ^ what this repository is
+```
+
+Both tags are ordinary `--about` entries and the CLI treats them identically; the
+positions are this skill's convention, per rules 7 and 7b. What the facet buys is
+the second axis of the aggregate — a tag ending in `/` matches by prefix, so
+`--about service/` reaches every kind at once and `--about service/worker/` reaches
+one. Two things about that read are worth knowing before relying on it. Measured,
+on a user log holding 30 records tagged `migrations,service/api/` and 2 tagged
+`logging,service/worker/`:
+
+```
+--about service/                    →   count: 32     (prefix, both kinds)
+--about service/api/                →   count: 30     (one kind)
+--about migrations,service/worker/  →   count: 35     (union, not intersection)
+```
+
+The third line is the one to plan around: **comma-separated tags are OR**, so
+"which of my API services use Goose" is not a query. Read the area, then group the
+returned records by their own facet tags — which is what step 1 does, and why
+rule 13 insists the records come back rather than just their count.
+
 `--kind open-question` carries a probe that came back unanswered, following
 `bootstrap`'s precedent. It is not a weaker `preference` and it is not a placeholder
 for one: it is the record that says nobody in the room knew, so the next run does
@@ -281,11 +387,20 @@ Read five things out of it, per scope:
 - **`key`** — `true` when that tag was the record's *first* `--about` entry. It is
   reported and never enforced, and step 5 is where it gets honoured.
 
-Then read the live preference for each area it named, one area at a time:
+**A `service/*` row is a facet and not an area.** By rule 9 every preference this
+skill writes carries one, so those rows appear here alongside the real areas and
+they are the tags nobody has a preference *about* — nothing is queried for them as
+though they were a question, and they are not counted in the number of areas
+reported to the user. What their `records` number is good for is the one-line
+shape of the user's whole log: `service/api/ records: 30` says thirty adoptions
+came out of repositories of that kind, across every area at once. Read them, do
+not round on them.
+
+Then read the live preference for each real area it named, one area at a time:
 
 ```bash
 env -u AI_KIT_PLAN memory query --kind preference --about <area> --current
-env -u AI_KIT_PLAN memory query --scope user --kind preference --about <area> --current
+env -u AI_KIT_PLAN memory query --scope user --kind preference --about <area> --current --limit 200
 ```
 
 `--current` drops what something explicitly supersedes or answers, which for
@@ -296,6 +411,22 @@ this repository as diverging from it — the silence then reads exactly like
 agreement. `records` comes back `null` rather than `[]` when nothing matched, so
 read `count`.
 
+**`--limit` on the user-scope line is rule 13, and it is the load-bearing flag in
+this step.** Adoptions accumulate in one user-scope area, one per repository, so
+that area is the one place in either log that grows past the threshold `memory
+kinds` reports — and past it `query` answers with the count and withholds every
+record. Measured, on a user-scope area holding 33 live records:
+
+```
+--about migrations --current               →   count: 33, returned: 0,  truncated: true
+--about migrations --current --limit 100   →   count: 33, returned: 33, truncated: false
+```
+
+Both lines exit 0 and both look like answers. The first one has silently dropped
+every `origin.repo` and every facet tag — which is to say the whole aggregate,
+leaving only its size. The repository-scope line above needs no `--limit` because
+rule 6 caps that area at one live record.
+
 A tag ending in `/` matches by path prefix, so an area recorded as `tools/db/` is
 also reached by `--about tools/`. Measured, on a log whose only live preference was
 tagged `persistence,tools/db/`:
@@ -304,11 +435,44 @@ tagged `persistence,tools/db/`:
 memory query --kind preference --about tools/ --current   →   count: 1
 ```
 
+#### Compute the aggregate, per area
+
+The records the user-scope line returned are the adoptions. Group them, in this
+thread, out of three fields each record already carries — `title` for what was
+chosen, `origin.repo` for where, and the `service/*` entry in `about` for what kind
+of thing that repository is:
+
+- **How many repositories** — distinct `origin.repo`, **not** the record count.
+  A repository that changed its mind and superseded its own adoption contributes
+  one record after `--current` and one repository either way, but a repository that
+  recorded preferences in two areas appears in both areas' reads and is one
+  repository in each.
+- **Which choice, when they disagree.** Adoptions in one area do not have to
+  agree, and when they do not, that is the finding rather than a fault: four
+  repositories on Goose and one on Atlas is a live answer plus an outlier, and
+  `areas` naming whichever landed last as `live` says nothing about which is which.
+  Group by what was chosen and report the split.
+- **Which kinds of service** — the `service/*` tag on each record. This is why the
+  cross-tab is computed here instead of queried: comma-separated `--about` is a
+  union, so "Goose in API services" has no query that expresses it.
+- **A record with no `origin.repo` came from no repository** — it was written
+  straight at user scope rather than promoted, and `promote` is the only thing that
+  stamps provenance. Count it as an opinion on the record and not as an adoption,
+  and say so rather than filing it under an invented repository.
+
 Close the step by saying in one line what came back, including nothing — a filter
 that ran and found nothing is a different thing from a step that was skipped:
 
-> En este repo hay `<n>` preferencias vivas en `<m>` áreas, y `<k>` más a nivel
-> usuario. Voy a mirar el repo contra ellas.
+> En este repo hay `<n>` preferencias vivas en `<m>` áreas. A nivel usuario, `<k>`
+> repos tuyos ya adoptaron algo en esas áreas:
+
+and then the aggregate, one line per area, because this is the whole reason it was
+computed and a number nobody sees is a number nobody could have corrected:
+
+> - `migrations` — Goose en 4 repos (3 `api`, 1 `worker`), Atlas en 1 (`cli`)
+> - `logging` — zerolog en 5 repos
+>
+> Voy a mirar este repo contra eso.
 
 or, on the empty branch:
 
@@ -316,12 +480,14 @@ or, on the empty branch:
 > Entonces esta corrida es de propuestas: miro qué eligió el repo y te pregunto
 > cuáles de esas elecciones son tuyas.
 
-`<m>` is the one number `count` gives you. **`<n>` is not** — take it from the
-per-area queries you just ran, counting the *distinct record ids* they returned,
-because a preference carrying two tags comes back in two of those queries and is
-still one preference. `<k>` comes the same way off the user-scope line. Reading
-`<n>` off `count` would print the number of areas twice in one sentence, where it
-reads as two independent figures agreeing.
+`<m>` is `count` minus the `service/*` rows, which are facets by the paragraph
+above and would otherwise inflate it every time a new kind of repository shows up.
+**`<n>` is not `count` either** — take it from the per-area queries you just ran,
+counting the *distinct record ids* they returned, because a preference carrying two
+tags comes back in two of those queries and is still one preference. `<k>` is the
+distinct repositories across the user-scope reads, by the aggregate above, and it
+is deliberately not a number of records: records is how many times something was
+written, and repositories is what the user asked to know.
 
 ### 2 — Send the repository to `explore`, in the shape step 1 decided
 
@@ -335,6 +501,22 @@ arrive.
 Use only the input block `agents/explore.md` declares — `topic` and `repo_root` are
 required, `paths_hint`, `scope`, `budget_hint` and `prior_findings` are optional,
 and there is no other field to invent.
+
+**Whatever the shape, the first pass also asks what kind of thing this repository
+is**, because rule 9 needs a `service/<kind>/` facet and a facet nobody can back
+with evidence is worse than none. Append it to that pass's `topic` rather than
+launching a pass of its own — it is one finding off the entrypoints and the
+manifest, and it does not deserve a subagent:
+
+```
+Also: what kind of thing is this repository — an HTTP API, a background worker, a CLI, a frontend, a library, something else? Answer from its entrypoints and how it is started, and say so as a gap if the tree does not settle it.
+```
+
+The facets already in the log are the vocabulary here, exactly as areas are for
+rule 8, and step 1 read them for free from the `service/*` rows. Put them in the
+`topic` when there are any — *the kinds already in use are `api`, `worker`, `cli`*
+— so the pass reaches for an existing one before describing a new one. A gap here
+is an honest outcome and step 4 is where it gets settled or recorded as unknown.
 
 **With preferences on the record — two passes.**
 
@@ -402,9 +584,19 @@ hardest to see afterwards.
 
 Sort every live preference into exactly one of three:
 
-- **Obeyed.** The repository does what the preference says. **This produces
-  nothing**: no round, no bullet, no line of confirmation. It is the ordinary case
-  and it is why the run is cheap.
+- **Obeyed.** The repository does what the preference says. **This produces a
+  record and almost no attention.** Which record depends on where the preference
+  already lives, and the distinction is the whole of rule 6:
+  - The live preference came from **this repository's own log** — nothing is
+    written. The repository already recorded its own answer for that area and a
+    second one would be the same fact with a second id.
+  - The live preference came from **user scope only** — this is an **adoption**,
+    and it is written in step 5. The user log holds an opinion; that this
+    repository, of this kind, acts on it is a fact the user log did not have and
+    this repository's log did not either.
+
+  Either way it is not a round. The adoptions go up as one batched line in step 4,
+  and a run where everything is obeyed is still a cheap run.
 - **Diverged.** The repository does something else, with a `path:line` saying
   where. This is the material, and the divergence is stated as the two things it
   is made of — what the preference says, and what the repository does — never as a
@@ -412,6 +604,18 @@ Sort every live preference into exactly one of three:
 - **Could not tell.** The pass did not establish it. This goes to the user as a
   gap, plainly labelled, and **never as a divergence** — "I did not find it" and
   "it is not there" are different claims and only the first one is yours.
+
+**Then the pile the aggregate makes possible: the odd one out.** Step 1 computed,
+per area, what the user's other repositories chose. A repository that diverges from
+one preference record diverges from a sentence; a repository that diverges from
+four repositories' worth of adoptions and agrees with one is a different and more
+interesting fact, and until adoptions existed there was nothing to notice it with.
+It is stated as the distribution and asked as a question, never as a correction —
+the outlier is sometimes the constraint of this particular service and sometimes
+the drift, and the user is the one who knows which:
+
+> Acá usás Atlas. En tus otros 4 repos, Goose — incluidos los 2 `api`, que es lo
+> que este también es. ¿Es una decisión de este servicio, o quedó así?
 
 Then sort what the sweep found — or, on the empty branch, everything the detailed
 pass found. This is the harder judgment and worth being honest about: **not every gap is a preference worth writing.** The test this skill
@@ -427,9 +631,12 @@ Two things are dropped here regardless of which pile they landed in:
   v1.25" is not a candidate preference; it is a row of an inventory that is already
   in the tree and always current. What survives is "this repository uses an ORM
   where generated queries were an option", which is a choice somebody made.
-- **Anything already true and already recorded.** A repository obeying its
-  preference has nothing to record, and appending a record saying so would leave
-  two ids for one fact.
+- **Anything already recorded in this repository's own log.** Two ids for one fact
+  in one log is the thing being avoided, and the qualifier is where this rule
+  changed: **a preference recorded only at user scope is not recorded here**, and
+  dropping it on the grounds that somebody already said it is exactly the silence
+  rule 6 replaces. The test is which log holds it, not whether the answer is
+  already known.
 
 ### 4 — Put the divergence in front of the user
 
@@ -439,6 +646,27 @@ shown it:
 > Miré 7 preferencias contra el repo. 5 las cumple. Te traigo las 2 que no, y 1
 > que no pude verificar.
 
+Then, in one line and before the divergences, the adoptions and the facet — the
+two things this round writes that nobody has to think about, put where they can be
+corrected in passing rather than approved one at a time:
+
+> De las 5 que cumple, 4 están sólo en tu log de usuario, así que las anoto acá
+> como adopciones de este repo. Lo leí como `service/api/` — `cmd/server/main.go:12`.
+> ¿Va así, o alguna de las 4 tiene acá una razón distinta a la que ya tenías?
+
+Three things about that line are deliberate. **The four are named, not just
+counted**, or the user is approving a number. **The facet rides along with its
+evidence**, because a facet is one word and defending it costs one clause, and it
+is the tag every future count is taken through. And **it asks for the exception**,
+not for permission: the answer is usually nothing, and a question whose expected
+answer is silence has to be shaped so that silence means yes.
+
+If the pass returned the service kind as a gap, ask it straight instead — and if
+the user does not know either, it is an `open-question` in step 5 and this
+repository's preferences are written with no facet at all. A facet guessed to
+avoid an awkward line is a wrong row in every aggregate taken afterwards, and
+nothing downstream can tell it from a confirmed one.
+
 Then the divergences, one each, as the two halves and the evidence:
 
 > **`persistence`** — la preferencia dice *acceso a datos con consultas generadas,
@@ -447,15 +675,24 @@ Then the divergences, one each, as the two halves and the evidence:
 
 That question is the only one worth asking, and it is worth asking in exactly that
 form, because a divergence has two honest endings and they produce opposite
-records. **The preference changed** — a new `preference` supersedes the old one.
-**The repository is behind** — the preference stands, nothing is written, and what
-that leaves is work, which is `plan`'s to open and never this skill's.
+records. **The preference changed** — a new `preference` supersedes the old one,
+and which log the old one lives in decides whether an edge can be drawn at all,
+which step 5 settles. **The repository is behind** — the preference stands,
+nothing is written, and what that leaves is work, which is `plan`'s to open and
+never this skill's.
 
 The gaps go in the same round, labelled as gaps and not folded in with the
 divergences.
 
-**On the empty branch, nothing above applies, and this is where that matters
-most.** There is nothing to diverge from, so **no divergence is presented** — and
+**On the empty branch, nothing above applies except the facet**, which is asked
+the same way and for the same reason: whatever the user confirms here becomes a
+preference, every preference carries the facet by rule 9, and a first repository
+is where a `service/*` vocabulary gets its first word. There are no adoptions on
+this branch — an adoption needs a preference to adopt — so the batched line has
+nothing to batch and is not said.
+
+The rest of it is where the branch matters most. There is nothing to diverge from,
+so **no divergence is presented** — and
 saying "the repository diverges from nothing" would be the same claim in a
 politer voice. What is presented is a **proposal**, and it is named as one:
 
@@ -481,12 +718,22 @@ carry an area nobody looked at:
 **What the user does not say, nothing writes.** A divergence they did not answer
 is not a preference and not a question they can be assumed to have settled.
 
+**The adoptions are the one exception, and it is narrow enough to state exactly.**
+Silence on the batched line writes them, because an adoption asserts nothing the
+user has not already said — the preference is theirs, the pass found the
+repository obeying it with evidence, and the record says only that those two are
+true together. That is what makes it safe to write on silence and a divergence
+never is: a divergence asks them to choose between two things that disagree, and
+nobody's silence answers that. **The facet is not covered by this exception**, by
+rule 9 — it is a claim about the repository that the user has not made anywhere,
+so an unanswered facet is a gap and an `open-question`, never a default.
+
 ### 5 — Write what the user settled
 
 One record per preference, never one record per conversation. Everything on the
 record is in English, whatever language the round was held in.
 
-Before the first write, settle the tags. Hard rule 7 proposes them from the log
+Before the first write, settle the tags. Hard rule 8 proposes them from the log
 itself, because nothing in the CLI validates a tag's content and the areas that
 exist *are* the known list. Look in two places, in this order, and stop at the
 first that fits:
@@ -532,10 +779,10 @@ env -u AI_KIT_PLAN memory add --kind preference \
 alternative that was considered and rejected, the cost accepted, the constraint
 that decided it. No version, no package name as a fact — the manifests hold those
 and hold them correctly.>" \
-  --about <area>,<path-prefix>/
+  --about <area>,service/<kind>/,<path-prefix>/
 ```
 
-Five things about that write carry the weight:
+Six things about that write carry the weight:
 
 **No `--plan`, by hard rule 3 — and the absent flag is only half of it.** When the
 flag carries nothing the CLI reads `AI_KIT_PLAN` from the environment, which
@@ -562,7 +809,16 @@ the plan-less one, and supersede the stamped record with it.
 
 **The first `--about` is the area.** `areas` reports `key: true` for whichever tag
 came first and enforces nothing, so the position is a convention this skill keeps
-and the CLI does not. Put the area first and the path prefixes after it.
+and the CLI does not. Put the area first, the service facet second and the path
+prefixes after them.
+
+**The facet goes on every preference this skill writes**, by rule 9 — adoptions
+and first-time preferences alike, on the empty branch as much as any other. It is
+one word and it is the axis the whole aggregate is grouped by, so a preference
+written without it is invisible to every count taken by kind of service, silently
+and forever. The one case where it is legitimately absent is the one step 4 names:
+nobody could say what this repository is, and an `open-question` was written
+instead.
 
 **The title is the index.** Kind plus title in chronological order is how these get
 read months later, so state the choice, not the topic: "Generated queries over an
@@ -571,6 +827,49 @@ ORM for data access", not "Notes on persistence".
 **The body is the half that has nowhere else to live.** A body that restates the
 title has recorded nothing. What was rejected and why is usually the sentence a
 later reader actually needed.
+
+#### When it is an adoption
+
+Same command, same kind, same flags. What is different is the guard in front of it
+and what the body is for.
+
+**The guard, from step 1 and with no new call.** The repository-scope read already
+said what this repository's log holds for that area. Write the adoption only when
+that area's live record is absent — `count: 0` from the repo-scope query, or no row
+for that area at all. If it is there, this repository already recorded its answer
+and rule 6 is what stops a second one: a re-run appends nothing and the count goes
+on meaning repositories. Say that out loud in a clause rather than skipping
+silently, or the second run looks like a run that did nothing.
+
+**The body is where an adoption is easiest to waste.** Restating why the user likes
+the tool records nothing — that sentence is already in the user log, and copying it
+down produces the duplicate this design otherwise avoids. What belongs here is what
+is true *here*: the constraint of this service that made it fit, what it replaced in
+this repository, what it costs in this one. And when there is genuinely nothing
+local to say — the ordinary case, the honest one — say that, in those words:
+
+```bash
+env -u AI_KIT_PLAN memory add --kind preference \
+  --title "Goose for schema migrations" \
+  --body "Adopted here from the user-scope preference with no local reason to
+decide differently; the constraints that chose it there hold in this service too.
+Recorded so this repository's own log answers for the area rather than deferring
+to a log the next reader may not have." \
+  --about migrations,service/api/
+```
+
+A body like that is not filler. It is the difference between a record whose absence
+of reasoning means *nobody asked* and one whose absence of reasoning means *asked,
+and there was none* — and only the second one stops the next run from re-opening it.
+
+**No edge to the user-scope preference.** The temptation is real and the reason is
+mechanical: edges live in one log, and nothing stops you from writing one anyway.
+Measured — an edge from a repository record to an id that exists only in the user
+log is accepted at exit 0, printed back in full, and `memory validate` on that
+repository answers `ok: true` with `problems: []`. So it neither refuses nor
+reports; it just sits there, joining nothing, indistinguishable from structure. The
+join between an adoption and the opinion it adopts is the area tag, which both
+carry and which every read in this file is already bounded by.
 
 #### When it replaces one that is already there
 
@@ -602,7 +901,7 @@ In most places that would be a formatting nit. Here it is not: these two command
 land in an append-only log, and the failure is not symmetric — the `add` half
 writes a durable `preference` and the `link` half never runs, leaving the area
 with two live answers and no way to take either back. That is precisely the state
-hard rule 6 exists to prevent, produced by the mechanism meant to prevent it.
+hard rule 7 exists to prevent, produced by the mechanism meant to prevent it.
 Nothing is lost by dropping the capture — a variable would not survive to the next command
 either — and `add` prints the whole record, so the id is on your screen at
 `.record.id`. Paste it. An id you can read in the command is an id you can see is
@@ -633,6 +932,43 @@ belongs to a record something already retired. Brief because it is rare: the sta
 needs an `answers` or `supersedes` edge onto the last preference in an area, and
 nothing in this repository writes one. It was produced to measure it, and it comes
 back `records: 1, live: null` with a per-area `query --current` of `count: 0`.
+
+#### When what it diverges from lives only at user scope
+
+The pair of commands above works because both ids are in this repository's log.
+When the preference the repository disagrees with came from user scope, they are
+not — and the shape that suggests itself is the one to refuse.
+
+**The `supersedes` is written here and points here, or it is not written.** The new
+preference is an ordinary repository-scope `add`, promoted in step 6 like any
+other, and the old user-scope record is left exactly as it is. What that produces
+is the split — Goose in four repositories, Atlas in this one — which is the true
+state of the user's log and the thing step 1 is built to report.
+
+Two shapes to refuse, both of which the CLI accepts at exit 0:
+
+```
+link --from <new repo id> --to <user-scope id>       edge written into this log,
+                                                     joining an id this log does
+                                                     not contain. `validate`
+                                                     answers ok: true, problems: []
+link --scope user --from … --to <user-scope id>      edge written into the user log,
+                                                     retiring whichever repository's
+                                                     adoption that id belongs to
+```
+
+The second is the worse one and the easier one to reach for, because it looks like
+keeping the user log tidy. Measured: superseding a promoted adoption from the user
+log drops that area from one repository to none, and the record left answering
+`--current` was one written straight at user scope with no `origin.repo` at all.
+A session standing in this repository has just retired what a different repository
+recorded, on evidence from neither.
+
+If what the user means is that their *own* preference changed everywhere and not
+just here, say what this run can do — record it here and promote it, so their next
+run in each of the other repositories sees this repository disagreeing with them —
+and leave the rest to a run standing in those repositories. That is the same
+boundary the whole skill keeps: it records the repository it is in.
 
 #### When a preference stops being true and nothing replaces it
 
@@ -668,6 +1004,27 @@ choice was made." \
 An invented rationale is the worst possible content for this log: it is
 indistinguishable from a recorded one and nothing will ever check it.
 
+#### When nobody could say what kind of thing this repository is
+
+Same shape, and it is written *before* the preferences of that run, because it is
+what explains why they have no facet:
+
+```bash
+env -u AI_KIT_PLAN memory add --kind open-question \
+  --title "What kind of service this repository is was not settled" \
+  --body "The explore pass could not read it off the entrypoints and nobody in the
+conversation named one, so the preferences recorded in this run carry no
+service/<kind>/ facet and do not appear in any count taken by kind of service.
+Naming it later is a facet on the next preference written here, not an edit to
+these." \
+  --about <the area most of the run touched>
+```
+
+The last sentence is the part that matters to whoever reads it: the log is
+append-only, so a facet that was missing is missing on those records permanently.
+What a later run can do is carry the facet forward, and what it must not do is
+assume the silence meant nothing was asked.
+
 #### Confirm what landed
 
 ```bash
@@ -677,21 +1034,54 @@ env -u AI_KIT_PLAN memory query --kind preference --about <each area you wrote t
 
 **These two carry the same filter as each other and as step 1's**, and that
 identity is the point: a confirmation narrower than the read that set the baseline
-reports on records nobody looked at. What has to be true is one live answer per
-area you touched — `count: 1` from the query, and the id you just wrote sitting in
-that area's `live`. `count: 2` is the edge you did not write. The *old* id in `live`
-is the edge drawn backwards, from the record being replaced to its replacement.
-Nothing already written is ever edited, so the fix in both cases is another record
-or another edge, and it is said out loud rather than quietly appended.
+reports on records nobody looked at. They are both **repository-scope**, and that
+is not an omission: rule 6 caps this log at one live preference per area, so
+`count: 1` is a real invariant here and the same assertion at user scope would be
+false by design. What the user log holds is checked in step 6, after promotion,
+where the number to check is a distribution rather than a one.
 
-Then say what landed, in words: how many preferences, in which areas, and that the
-log is append-only so this is not a write anybody takes back.
+What has to be true is one live answer per area you touched — `count: 1` from the
+query, and the id you just wrote sitting in that area's `live`. `count: 2` is the
+edge you did not write. The *old* id in `live` is the edge drawn backwards, from
+the record being replaced to its replacement. Nothing already written is ever
+edited, so the fix in both cases is another record or another edge, and it is said
+out loud rather than quietly appended.
+
+**Then check the facet, on the records themselves and not on `areas`.** `areas`
+will show a `service/<kind>/` row and that row proves only that *something* carries
+it. What has to be true is that every preference this run wrote carries it, in
+second position, spelled the way the log already spells it — `service/api/` and
+`service/apis/` are two facets and split every count taken afterwards. The
+`about` array on each record the query returned is where that is read, and it is the
+last moment it can be read: the log is append-only and a facet misspelled here is a
+row that never joins.
+
+Then say what landed, in words: how many preferences, how many of them adoptions,
+in which areas, under which facet, and that the log is append-only so this is not a
+write anybody takes back.
 
 ### 6 — Offer to carry them up, and stop
 
 A preference that only exists in this repository's log dies with this repository.
 The user log is where one outlives it — and moving it there is the user's act, by
-hard rule 8.
+hard rule 10.
+
+**Promotion is also the only thing that makes an adoption countable**, and that is
+new weight on a step that used to be about longevity alone. `promote` stamps the
+origin repository onto each copy it writes; nothing else does. Measured, promoting
+one preference out of each of two repositories into one user log:
+
+```
+origin: {"repo": "repoA", "repo_id": "/…/repoA"}
+origin: {"repo": "repoB", "repo_id": "/…/repoB"}
+```
+
+against a record written straight at user scope with `add --scope user`, which
+comes back `origin: {}` — an opinion with no repository behind it, which step 1
+counts as an opinion and not as an adoption. So this skill never writes at user
+scope directly, and an adoption the user declines to promote is a real record in
+this repository's log that no aggregate will ever see. Say that when you ask, in a
+clause, so the choice is the one they think they are making.
 
 Show what it would do before asking, rather than describing it:
 
@@ -717,8 +1107,9 @@ destination directory — and reports the same shape it would otherwise, plus
 Then ask, once, and run it without `--dry-run` only on a yes:
 
 > Estas `<n>` preferencias pueden subir a tu log de usuario, donde sobreviven a
-> este repo y las ve cualquier otro. ¿Las subo? Si preferís sólo algunas, decime
-> cuáles y las mando por id.
+> este repo y — esto es lo que cambia el conteo — quedan contadas: recién ahí este
+> repo aparece en «Goose en 4 repos». Lo que no sube no lo ve ningún resumen.
+> ¿Las subo? Si preferís sólo algunas, decime cuáles y las mando por id.
 
 `--ids` and `--kind` are a union, so a subset goes up by id — and one hop still
 applies, which is worth knowing rather than discovering: naming only the live
@@ -730,8 +1121,37 @@ Two refusals, so neither surprises you mid-turn. `--kind` takes one of `adr`,
 `kind_not_promotable` at exit 1. `--to repo` is refused outright with
 `target_removed` — only `--to user` crosses logs.
 
-A second run is safe: ids already at the destination come back under
-`already_present` rather than being written twice.
+That the edge travels is what keeps the aggregate honest for a repository that
+changed its mind. Measured, on a repository that recorded Atlas, then recorded
+Goose superseding it, then promoted with `--kind preference`:
+
+```
+promoted: 2 ids, edges_copied: 1
+query --scope user --kind preference --about migrations --current --limit 100
+                                    →   count: 1  —  "Goose", origin.repo: repoC
+```
+
+Both records travel, the `supersedes` travels with them, and `--current` at the
+destination resolves to the one live answer per repository that step 1's aggregate
+counts. Promoting the live record alone would have produced the same thing, by the
+one-hop rule above.
+
+**Then read the aggregate back, once, and show it.** It is the same read step 1
+ran, and running it here is what turns a promotion into something the user can see
+the effect of:
+
+```bash
+env -u AI_KIT_PLAN memory query --scope user --kind preference --about <each area you promoted into> --current --limit 200
+```
+
+> `migrations` — Goose ahora en 5 repos (4 `api`, 1 `worker`). Este entró como el
+> quinto.
+
+Distinct `origin.repo`, grouped by facet, per rule 13 — and `--limit` carried
+here for the same reason it is carried in step 1, since this is the read most
+likely to be the one that crosses the threshold. A second promotion run is safe:
+ids already at the destination come back under `already_present` rather than being
+written twice, so the count does not move when nothing new adopted.
 
 Then stop. If the run turned up work — a divergence the user confirmed is debt, an
 area nobody could settle — name it in one line and leave the next move to them.
@@ -744,17 +1164,30 @@ Turning it into an objective is `plan`'s job, invoked by them.
   nobody downstream can tell the difference.
 - **The manifests keep the inventory; the log keeps the reasons.** A version in a
   record is a fact with an expiry date and no way to notice it passed.
-- **Divergence is the product.** A preference the repository already obeys is
-  worth exactly nothing to say out loud, and saying it anyway is what trains
-  somebody to stop reading these rounds.
+- **Divergence is what costs attention; adoption is what gets recorded.** A
+  preference the repository already obeys is worth nothing to say out loud and is
+  worth writing down, and those two are not in tension — one is a round and the
+  other is a record. Saying it anyway is what trains somebody to stop reading these
+  rounds; skipping the record is how a log ends up knowing what somebody prefers
+  and not where they actually do it.
+- **The count is read, never written.** How many repositories chose a thing is
+  derivable from the log the moment somebody asks, and a body that says "four
+  repositories" is a fact with an expiry date that the fifth adoption passes in
+  silence. The one thing written down is the facet, because no surface can be asked
+  what kind of thing a repository is.
+- **One adoption per repository per area.** Otherwise the number counts how often
+  somebody ran this skill, which is a number about the tool and not about the work.
 - **A proposal is named as a proposal.** On a repository with nothing recorded
   there is nothing to diverge from, and presenting a finding as though there were
   is how the repository's habits get laundered into somebody's preferences.
 - **No plan, no sentinel.** These records belong to the repository, every
   plan-bounded read returns them anyway, and a slug invented to look like
   ownership would be a lie the log would carry forever.
-- **One live answer per area, and the edge is what makes it one.** The convention
-  is computed in exactly one place; everywhere else somebody has to draw it.
+- **One live answer per area in this repository's log, and the edge is what makes
+  it one.** The convention is computed in exactly one place; everywhere else
+  somebody has to draw it. At user scope the multiplicity is the aggregate rather
+  than a contradiction, and reading `live` there as the answer is reading the most
+  recent repository as though it spoke for all of them.
 - **What nobody knew is recorded as unknown.** An invented reason is
   indistinguishable from a real one, forever, and nothing will ever check it.
 - **It records and stops.** Promotion is offered, work is named in a line, and
