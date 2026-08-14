@@ -12,9 +12,9 @@ fix is in.
 
 Read-only. No edits, no subagents.
 
-There is no walkthrough here and that is deliberate. A walkthrough exists so
-somebody can navigate code they did not write; this reader wrote every line of
-it, and a tour of their own diff is the one thing they can already do.
+There is no summary of the change here and that is deliberate: this reader wrote
+every line of the diff, and a tour of their own code is the one thing they do not
+need from anybody.
 
 ## Inputs
 

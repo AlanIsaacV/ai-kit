@@ -9,11 +9,13 @@ The second read, after the code is written and by somebody who did not write it.
 Two halves: what is missing against what the work was trying to do, and what
 would be better. Each finding carries the reasoning, and nothing on disk moves.
 
-This is not `review`. `review` spends most of itself on a walkthrough, and the
-walkthrough is there so somebody can navigate code they did not write. Here the
-reader wrote every line, so that half is dead weight and the useful half is the
-one `review` treats as an afterthought — the findings, and the *why* under each,
-which is the actual product of this door.
+This is not `review`. `review` is the pass you ask for over code an agent wrote,
+on an objective whose acceptance criteria something else already graded, so
+whether the work achieved what it was *for* is settled before it starts. Here
+nobody graded anything, the reader wrote every line, and the intent is theirs —
+so "what you missed against what you were trying to do" is the half that only
+exists on this side of the door, and the *why* under each finding is the actual
+product.
 
 There are two modes and they are not equally easy. With a `brief.md` on disk,
 "what you missed" has a referent the user wrote and corrected: what we were doing

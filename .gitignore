@@ -6,3 +6,6 @@ plans/
 
 # Build output
 /bin/
+
+# Bytecode left behind by the Python scripts `make check` runs
+__pycache__/

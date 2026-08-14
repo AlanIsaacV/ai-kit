@@ -1,6 +1,6 @@
 ---
 name: work
-description: "Execute one objective end to end: resolve which objective you are on, confirm it is executable — its acceptance criteria each carrying the fidelity they require — freeze those criteria, implement it — split into parts that cannot conflict and run at once where the work allows it — verify it against them in a fresh subagent, review the code with the user, record what was learned, and decide what comes next. Use whenever an objective is already recorded and the user wants to move it forward. Triggers on: 'sigamos', 'continuemos', 'seguí con el plan', 'arrancá', 'dale', 'implementá la siguiente parte', 'retomemos', 'continue where we left off', 'what's next', 'terminá lo que quedó', or the start of a fresh session on work already planned. This skill executes and does not author: when no objective exists yet, when the one you are on is too big for a session, or when this turn discovers work nobody has framed, it invokes the `plan` skill to write that objective and get its criteria approved, then comes back here to run it."
+description: "Execute one objective end to end: resolve which objective you are on, confirm it is executable — its acceptance criteria each carrying the fidelity they require — freeze those criteria, implement it — split into parts that cannot conflict and run at once where the work allows it — verify it against them in fresh subagents that did not write the code, review the code when a review is asked for, record what was learned, and decide what comes next. Use whenever an objective is already recorded and the user wants to move it forward. Triggers on: 'sigamos', 'continuemos', 'seguí con el plan', 'arrancá', 'dale', 'implementá la siguiente parte', 'retomemos', 'continue where we left off', 'what's next', 'terminá lo que quedó', or the start of a fresh session on work already planned. This skill executes and does not author: when no objective exists yet, when the one you are on is too big for a session, or when this turn discovers work nobody has framed, it invokes the `plan` skill to write that objective and get its criteria approved, then comes back here to run it."
 ---
 
 # work
@@ -581,10 +581,18 @@ it.
 `test_run` does not merge, and do not try to make it. Each part ran the tests
 over its own files while the others were still writing theirs, so a red one may
 be reporting a part that has since landed and a green one may have run before
-the file that breaks it existed. **Run the suite once here, over the merged
-worktree**, and let that be the answer — a single command in this thread, on a
-repo nobody is writing to any more. That is reading the state of the work, not
-writing it, and it is what step 6 is about to be handed.
+the file that breaks it existed. So none of them is the answer — and **this
+thread does not run the suite to produce one.** The whole-suite run belongs to
+the verification pass, where step 6 hands it to exactly one part, on a worktree
+nobody is writing to any more.
+
+The reason it goes there rather than here is context. A suite run in this thread
+puts its output in *this* thread, the one holding the objective, and it stays
+there for the rest of the session — hundreds of lines of test log still being
+carried at step 9, in the context that can least afford them. Run in a
+verification part, the same command produces the same answer and the log dies
+with the part. What step 6 is handed from here is the merged `files_changed`;
+what the tests say comes back with the verification result.
 
 If any part returns `blocked` or `partial`, stop and bring it to the user
 together with the other parts' results in one round — including what the parts
@@ -611,17 +619,82 @@ read off the tree.
 
 ### 6 — Verify
 
-Launch the `verify` subagent — a different one, with no memory of having
-written the code:
+Verification runs in `verify` subagents — different ones, with no memory of
+having written the code — and it splits the way step 5's work does, on a
+different axis. Nothing is being written here, so conflict cannot draw the line.
+What draws it is what settles a criterion.
+
+#### Split by criteria that settle without waiting on each other
+
+**A group of criteria is one part when it can be settled without waiting on
+another part's evidence and without waiting on another part's verdict.**
+Criteria that depend on each other stay in the same part, and so do criteria
+that are settled by reading the same thing: splitting those pays the same
+orientation twice, and it can come back with two verdicts that do not agree,
+which costs more than the serial run it was meant to save.
+
+This is **not one agent per criterion.** Nine criteria are not nine parts; they
+are however many groups that sentence draws out of them. One part is a
+legitimate answer and often the right one, the same way it is at step 5.
+
+Launch the parts the way step 5's **Launch the parts** paragraph says — one
+message for the wave, so they run at once. Nothing about the mechanics changes
+here.
+
+Exactly one part carries `whole_change_checks`, and it is the part whose criteria
+depend on the suite. When nothing distinguishes them it goes to the first part:
+the tie-break is arbitrary on purpose, and what matters is that exactly one part
+owns those checks and that the merge says which one it was. When verification
+runs as a single part, that part carries it.
 
 ```
 objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 changed_files: <the union across every part step 5 launched>
+criteria: <the criteria this part owns, quoted from the draft's `## Acceptance criteria` — omit when verification runs as one part>
+whole_change_checks: <true, on exactly one part — omitted on the others>
 plan_slug: <tree-slug>   objective_id: <the objective's id>
 ```
 
-Read its result against three things:
+`changed_files` stays the union on every part rather than a slice of it. A
+verifier grading one criterion still needs to know what moved, because the file
+that settles a criterion is frequently one the criterion never names.
+
+#### Collect the verification parts into one result
+
+The per-criterion results concatenate, and they are disjoint by construction —
+no criterion was given to two parts. **The overall verdict is recomputed here,
+across all of them, and never taken from whichever part answered first**:
+`ready-to-close` still means zero `not-met` anywhere, so one part's
+`ready-to-close` beside another's `needs-rework` merges to `needs-rework`.
+`risks`, `assumptions` and `open_questions` concatenate with the part each came
+from still attached to it.
+
+**A part that comes back `blocked` makes the merged verdict `blocked`**, whatever
+the others returned. That part graded nothing — it was handed an empty `criteria`,
+or names matching nothing under the heading — so the absence of `not-met` in it is
+the absence of any verdict at all, and a merge that counts only `not-met` would
+hand step 8 a `ready-to-close` for an objective where a whole group of criteria
+was never looked at. Report that part's criteria as unverified, named and counted
+with the rest, rather than letting them fall out of the tally by having no verdict
+to concatenate. A merged `blocked` goes to the user and the turn stops there — not
+on to review, to triage or to the close, because nothing has been graded yet to
+triage or close about — the same way step 5 stops the turn on a `blocked` part.
+
+There is exactly one `test_run` and one `scope.outside_scope_and_unreported`,
+both from the part that carried `whole_change_checks`, and **the merge says which
+part that was.** The others returned them empty because they were told to, and a
+result that does not name the runner reads as though the suite ran everywhere or
+nowhere.
+
+If no part names itself the owner, that is an error and it is raised here, not
+left for whoever reads the merged result to infer from an absent name: the suite
+ran zero times and the out-of-scope sweep never happened. Every criterion that
+needed one of those runs as its evidence is then unverified rather than met —
+nothing executed it — and it is reported that way however confident the parts
+sound about it.
+
+Read the merged result against three things:
 
 - Any criterion reported met at a **lower fidelity than the objective required**
   is not met. Treat it as unverified regardless of how confident the report
@@ -633,27 +706,101 @@ Read its result against three things:
 
 ### 7 — Review
 
-Launch the `review` subagent while the diff is still small. This is the step
-that stops you from arriving at the end of the objective without knowing how
-any of it works.
+**This step launches nothing by default.** Most changes are followable from the
+diff, the walkthrough that used to justify running a review every turn is gone,
+and when somebody wants a change explained there is already a door for asking —
+the `ask` skill, or a plain question in this same session. A step that runs every
+turn whatever the change looks like is a step that gets skimmed every turn, and
+what is left of `review` deserves better: it reads the code and criticises it,
+which pays exactly when nobody would otherwise look.
+
+#### Offer it in one line, only with a reason, and only after verification
+
+The offer is one line **inside the round that already carries verification's
+result**, never a round of its own, and it is made only when you can say why
+*this* turn is one where a review would pay:
+
+- the change was split **and** either it is large or its regions are unlike
+  enough that a finding crossing between them is plausible;
+- a part came back `partial` or `blocked`;
+- the surface is bound by a `gotcha` step 1 loaded;
+- the diff is large enough that nobody is realistically going to read it.
+
+Having been split is not a reason on its own: step 5 draws parts by files that do
+not collide, so nearly every objective splits, and a reason true every turn is a
+line that stops being read on the third one. With no reason, say nothing at all —
+an offer whose reason you cannot name is the ceremony that turned this step into
+noise, with a sentence in front of it. Do not wait on the answer as though the
+offer were a gate; it sits in a round the user was already going to reply to.
+
+> Esto salió en cuatro partes y en registros bastante distintos, así que algo
+> puede cruzar entre ellas: ¿le paso una review?
+
+Review runs once verification's result is in **and any fix that came out of it
+has landed** — a review of code that has since changed is a review of code that
+no longer exists, and every finding then has to be re-checked against the file as
+it is now, which costs more than the review bought. If the user asks for it
+earlier, say that in one line and run it after. Fixes are decided in step 8's
+triage, which is also where findings go, so say where late ones land or the two
+instructions wait on each other: **when verification produced fixes, review runs
+after they land and its findings come back to a second triage round** — the same
+step 8 over the new material, not a new step. When there was nothing to fix,
+review runs as soon as the offer is answered and its findings join the first
+round. A second round is the ordinary shape of a turn that had both a fix and a
+review, not a sign something went wrong; the alternatives are the two failures
+this rule prevents — reviewing code that is about to change, or finding something
+real with no round left to put it in.
+
+#### When it does run
+
+When the change is one no single context saw whole, split the review along the
+parts step 5 drew: those file sets are disjoint by construction — that is what
+made them parts — so there is nothing here to recompute. Launch them the way step
+5's **Launch the parts** paragraph says.
 
 ```
 objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
-changed_files: <the union across every part step 5 launched>
+changed_files: <the union across every part step 5 launched, plus whatever the fixes after verification touched>
+scope: <the files this part reports findings on — omit when the review runs over the whole change>
 ```
 
-Give the user its walkthrough more or less as written. It is meant to be read
-in a few minutes and to leave them able to navigate the code themselves.
+`scope` bounds what a part reports on and never what it may read, which is why
+every part gets the full changed-file list beside it: deciding whether something
+in its own region duplicates what the change added somewhere else means opening
+files it will not report on. Say out loud what the split costs — duplication
+between two parts of the same change is the finding nobody holding one region can
+see, and it is the most expensive kind a review produces. That cost is accepted
+rather than covered, since there is no extra whole-diff pass behind these parts to
+catch it, so when the review was split, name it to the user instead of handing
+over a result that reads as complete.
+
+The parts' findings concatenate with the part each came from still attached, and
+that concatenation is the one `review_result` step 9 receives — not the first
+part's answer passed through, and not a list with the provenance flattened out of
+it. Where two parts raised the same thing from different sides of the change, that
+is **one** finding carrying both: triage it once and say it was seen twice,
+because reaching two regions says something about how far it goes and that is
+signal rather than noise. A part that came back with nothing is reporting nothing
+— that region's result, not a gap for another part's findings to be spread over.
+What comes back is findings and nothing else; they join step 8's triage on the
+same terms as verification's risks, and **an empty findings list is a real
+result** — the review saying it found nothing, not the review failing to run.
 
 ### 8 — Triage, together
 
 Put the findings, the risks, the assumptions and the unverified criteria in
-front of the user in one pass, ranked by how plausible they are. For each, the
-options are: fix now, record for later, or **not worth it** — and when what they
-want kept for later is a path tried and abandoned or a place reality differed
-from the objective, say it will be a `dead-end` or a `deviation` and carry it to
-step 9 as `on_demand_kinds`, because the close writes neither unless asked.
+front of the user in one pass, ranked by how plausible they are — and run this
+step again when step 7's ordering rule sends review's findings back to it after a
+fix landed. The findings may be absent, because step 7 is on demand:
+verification's risks, assumptions and unverified criteria are enough for this
+step to read correctly on their own, and a turn where no review ran is the
+ordinary case rather than a gap to apologise for. For each, the options are: fix
+now, record for later, or **not worth it** —
+and when what they want kept for later is a path tried and abandoned or a place
+reality differed from the objective, say it will be a `dead-end` or a
+`deviation` and carry it to step 9 as `on_demand_kinds`, because the close
+writes neither unless asked.
 
 Take "not worth it" seriously. A verification pass that keeps raising scenarios
 the user knows cannot happen burns time and trains everyone to skim the
@@ -677,9 +824,9 @@ exists to prevent.
 Hand the close to the `record` subagent. It writes every record and every edge
 this close needs — including the closing `review-finding` and the state edge —
 and **this thread writes none of them.** You have been holding the objective, the
-diff, verification's report and review's walkthrough since the session started,
-and the tail of that turn is the worst place left to be composing titles and
-choosing `--about` tags. That is the whole reason this step delegates.
+diff and verification's report since the session started, and the tail of that
+turn is the worst place left to be composing titles and choosing `--about` tags.
+That is the whole reason this step delegates.
 
 ```
 objective_draft: <absolute path to draft-objective.md>
@@ -687,7 +834,7 @@ repo_root: <absolute path>
 objective_id: <the executable objective's id>
 plan_slug: <tree-slug>
 verify_result: <the verify subagent's returned JSON>
-review_result: <the review subagent's returned JSON>
+review_result: <the review subagent's returned JSON — empty when step 7 did not run>
 triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing>
 closing_state: <met | cancelled | separated>
 confirmed_hypothesis:
@@ -700,6 +847,13 @@ Pass pointers, not prose. `objective_draft` and `repo_root` are paths because th
 subagent opens them itself, and there is deliberately **no field for a summary of
 what happened this turn** — that synthesis is the expensive thing being moved, and
 writing it here to hand over would mean paying for it anyway.
+
+`review_result` comes over empty on every turn step 7 did not run, which is most
+of them, and **empty is a value there rather than a gap.** The subagent builds
+the closing record out of what it was given; nothing is synthesised to stand in
+for a review nobody asked for. Pass it empty and say nothing about it — a note
+explaining that no review ran is a sentence where a result goes, which reads to
+the subagent as a result.
 
 `confirmed_hypothesis` is filled **only** when this objective came out of a
 `debug` investigation, and then with the hypothesis record's id and its claim —
@@ -753,7 +907,9 @@ Which state it is remains yours to decide with the user and the subagent's to
 write, which is what `closing_state` carries: `met` is the state that counts
 toward the parent; an objective that is not going to happen closes `cancelled`,
 and one whose work continues outside this parent `separated`. Those two point at
-a `decision` instead, and neither counts toward the parent's completion.
+a `decision` instead, and neither counts toward the parent's completion — and none
+of the three is reached on a turn whose verification came back `blocked`, which
+step 6 stops before this step.
 
 #### Confirm the close landed, do not trust the report
 
@@ -856,9 +1012,12 @@ user's — suggest candidates, do not promote on your own.
   the entire defense against verification that grades its own work.
 - **Required fidelity is agreed up front.** A mock satisfying a criterion about
   a real database is not a passing check, it is a false one.
-- **Parts are drawn by conflict, not by size.** Two runs that never open the
-  same file can run at once whatever their length; two that share one file are
-  one part however small each looked.
+- **Parts are drawn by what would collide, not by size.** Implementation splits
+  by the files parts write, verification by criteria that settle without waiting
+  on another part's evidence or verdict, review along the parts implementation
+  already drew — three axes, one rule. Two runs that cannot get in each other's
+  way go at once whatever their length; two that can are one part however small
+  each looked.
 - **The one who built it does not get to bless it.**
 - **"Not worth fixing" is a real answer, and it gets recorded.** Otherwise the
   same imaginary risk comes back every turn.

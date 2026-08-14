@@ -713,7 +713,7 @@ recorded and point at the next step:
 
 > Objetivo registrado (`<id>`), con N suposiciones y M preguntas abiertas. Los
 > criterios ya los aprobaste, así que `work` arranca directo: implementa,
-> verifica contra esos criterios y te trae la review.
+> verifica contra esos criterios y te trae el resultado.
 
 If they want to start now, continue into `work` in this same session. The
 criteria they just read are the ones it runs against, and it does not make them

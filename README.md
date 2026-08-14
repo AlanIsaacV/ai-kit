@@ -36,7 +36,7 @@ implementation.
 ```
 skills/plan    turn a request into a written objective, reviewable in full
 skills/debug   turn a symptom into a stated cause, with the evidence that established it
-skills/work    run one objective: pick, gate, implement, verify, review, record
+skills/work    run one objective: pick, gate, implement, verify, record — review on request
 skills/brief   think a piece of work through, then hand you the map you implement from
 skills/debrief read the code you wrote and say what you missed and what would be better
 skills/ask     answer a question about a repo from its code and its log, every claim cited
