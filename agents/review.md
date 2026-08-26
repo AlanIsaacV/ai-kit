@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Read a change and criticise the code: a short list of concrete findings — duplication against what the repo already has, divergence from local convention, absent error handling, left-behind debris, comments that restate the code, anything unsafe — judged against this repository's own conventions rather than against anyone's preferences. Use when a change is worth a second pair of eyes, over all of it or over a named subset of its files. Read-only, and nothing it reports blocks."
+description: "Read a change and criticise the code: a short list of concrete findings — duplication against what the repo already has, divergence from local convention, absent error handling, left-behind debris, a prose comment the change added, anything unsafe — judged against this repository's own conventions rather than against anyone's preferences. Use when a change is worth a second pair of eyes, over all of it or over a named subset of its files. Read-only, and nothing it reports blocks."
 tools: Read, Grep, Glob, Bash
 model: opus
 ---
@@ -38,9 +38,10 @@ Ordinary code review over the changed code:
 - Diverging from local convention without a reason.
 - Error and edge handling that is absent rather than deliberate.
 - Left-behind debris: TODOs, debug prints, commented-out blocks.
-- A comment that restates the code under it — severity `low`. The condition it
-  fails is `agents/implement.md`'s comment rule; cite it and name where the
-  comment is, rather than restating the rule here.
+- A prose comment the change added — severity `high`. What it breaks is
+  `agents/implement.md`'s comment rule; cite that rule and name where the
+  comment is, rather than restating the rule here. A comment the change did not
+  touch is not this finding.
 - Anything unsafe: secrets, injection, unbounded growth.
 
 Two things to hold to. **Judge against this repository's conventions, not your

@@ -494,7 +494,7 @@ obvious to the user. Not a restatement of their sentence.>
 
 ## Acceptance criteria
 1. <Observable statement that can fail.>
-   - **Verified by**: <the specific check> — **fidelity required**: real-dependency | integration | mocked | code-read
+   - **Verified by**: <the specific check> — **fidelity required**: real-dependency | integration | mocked | code-read | you-run
 2. ...
 
 ## Files and areas expected
@@ -516,12 +516,43 @@ the child's `explore`, which is why the anchors go in the file instead of being
 paraphrased into `## What I understood`.
 
 **The fidelity line on each criterion is the load-bearing part.** It is decided
-here, with the user, before anyone has an interest in the answer. A criterion
-about behavior against a database, a queue or a network says
-`real-dependency`, and that is what makes it impossible for verification to
-later report it satisfied on the strength of a mock. Choosing `mocked` is
-allowed — it just has to be a choice made in the open, now, rather than a
-convenience discovered later.
+here, with the user, before anyone has an interest in the answer. Naming one
+above `mocked` is what makes it impossible for verification to later report the
+criterion satisfied on the strength of a mock. Choosing `mocked` is allowed — it
+just has to be a choice made in the open, now, rather than a convenience
+discovered later.
+
+`you-run` is the fifth value and the only one that names whose turn it is, and
+which criteria get it is a mechanical test rather than a judgment about how
+risky the check feels. Read the check against `agents/verify.md`'s closed list
+of what no agent ever runs: a criterion whose check lands on that list — a real
+database, a queue, a call over the network — is written `you-run` here, because
+no agent is going to execute it and any other fidelity written on it comes back
+`unverified` by construction. `implement` then leaves a runnable script and
+written instructions in `.ai-kit/plans/<slug>/manual-checks.md` and runs
+neither, `verify` reports it handed over instead of ever reporting it `met`, and
+`work` asks the user what happened before the objective closes. Written as
+`real-dependency` instead it buys an `unverified` that reads as *the agent could
+not manage it*, which is a different sentence from *this one is yours*.
+
+So `real-dependency` is what is left for a check that reaches something real the
+agent may still touch — the working tree's own filesystem, a process it starts
+itself — where the bar is above a double and still reachable by whoever
+verifies.
+
+**A unit test is authorized here or nowhere.** `agents/implement.md` prohibits
+writing one nobody asked for, and this is the only door left open: what
+authorizes a unit test is an acceptance criterion that names the business rule
+it covers. The naming is the whole of the condition — "the module is tested"
+authorizes nothing, "a transfer that would overdraw the source account is
+rejected" authorizes exactly one test and says what it asserts.
+
+**That is not a call to make on your own while writing the draft.** Ask, in the
+round this step already has with the user: name the rules you believe are worth
+a test of their own, say what each would cost to get wrong, and let them keep
+the ones that earn it. What they keep becomes a criterion; what they do not gets
+no test, and that is the intended outcome rather than a gap for somebody to fill
+in later. A draft that names none is an ordinary draft, not an oversight.
 
 Two sections carry most of the value. **Assumptions** is what makes "don't
 assume anything" auditable instead of aspirational. **Out of scope** is what

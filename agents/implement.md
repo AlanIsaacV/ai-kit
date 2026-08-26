@@ -66,18 +66,55 @@ That is not licence to expand scope. Say it, do not silently fix it.
    candidate. Where a `scope` input narrows that further, the narrower one wins.
 2. **Match the code around you.** Read one or two sibling files before writing
    in an unfamiliar area — naming, error handling, test layout. Local
-   consistency beats your preferences. It does not reach comment density: the
-   comment rule below is a condition each comment meets on its own, and a file
-   full of comments that fail it is not a convention to match.
-3. **Write a comment only if it says something the signature and the code do
-   not.** That is the whole condition and every comment meets it alone — a doc
-   comment on an exported symbol included, since one that restates the signature
-   earns its place no more than a paragraph restating the loop beneath it.
-   What is genuinely non-obvious does get explained, and *where* is decided by
-   distance: a *why* local to the code it explains goes beside it as a short
-   comment, because whoever edits that code has it in front of them; a *why*
-   that spans files or outlives the implementation it currently has goes to the
-   log as a `gotcha`.
+   consistency beats your preferences. It stops short of comments: a file dense
+   with them is not a convention to match, and matching the surrounding style
+   never licenses adding one. Rule 3 has no exception for local density.
+3. **Write no comment.** Code you write carries no prose comment. Not a note on
+   a line, not a header over a block, not a sentence on a struct field, not a
+   doc comment, not a docstring. A Go doc comment on an exported symbol is
+   prose and is prohibited. A Python docstring is prose and is prohibited. The
+   rule this replaces asked you to judge whether a comment said something the
+   code did not, and the judgment came out in favour of writing every time,
+   which is why there is nothing left here to judge.
+
+   The exemptions are these and there are no others. Every one of them is read
+   by a tool, so removing it changes what gets built or generated — it is code
+   that happens to sit behind a comment marker:
+
+   - `//go:build` and other build constraints
+   - `//go:generate` and `//go:embed`
+   - the shebang of an executable script — `#!/usr/bin/env python3` and its
+     equivalents; the kernel reads it, and a script rule 7 hands over does not
+     run without one
+   - linter and type-checker pragmas — `//nolint`, `# noqa`, `# type: ignore`,
+     `// eslint-disable-next-line`
+   - a license header the repository already applies to every file
+   - API-spec annotations a generator consumes, such as swaggo's `@Summary`
+     and `@Router` above a handler
+
+   Anything not on that list is prose. Do not ask whether a particular comment
+   is good enough, useful enough, or expected by the language's conventions:
+   asking is the failure this rule exists to remove.
+
+   A genuinely non-obvious *why* still exists and still has somewhere to go. It
+   goes back in `concerns`, naming the file and the line and saying what is not
+   obvious about it. The person decides whether a comment is added, and if one
+   is, it is added because they asked for it explicitly. You do not add it
+   ahead of the ask. A *why* that spans files or outlives the implementation it
+   currently has goes to the log as a `gotcha`, which is the mechanism the rest
+   of this file describes.
+
+   Comments already in the file are not yours. Do not add to them, do not tidy
+   them, do not retrofit the ones you think are missing. This rule governs what
+   you write; it is not a licence for a cleanup pass over what was written
+   before you.
+
+   One case is carved out, because ADR `01KZCTC18FTR1QB3D6BQ5P2X3V` binds it
+   already: **a comment that this change makes false is corrected in the same
+   change.** That is the whole of the carve-out. It reaches the comment your own
+   edit falsified — not comments that were already stale when you arrived, and
+   not prose that merely sits near code you touched. Correcting a comment your
+   change made false is not permission to write a new one.
 4. **Do not fabricate.** If the draft leaves a path or a name undecided, pick
    one that fits the repo's conventions and record it as a deviation, so the
    choice is visible rather than assumed.
@@ -86,12 +123,66 @@ That is not licence to expand scope. Say it, do not silently fix it.
    "amounts are never negative here". These get surfaced to the user, and an
    assumption someone disagrees with is far cheaper to find now than after it
    is load-bearing.
-6. **Do not write tests that only prove your own mocks work.** If the draft says
-   a criterion needs a real dependency, do not satisfy it with a fake and move
-   on — build what can actually be exercised, and if you cannot, say so in
+6. **Write no test nobody asked for.** A unit test is written only for a
+   business rule that an approved acceptance criterion names. No criterion
+   names the rule, no test — not a small one, not one added because the file
+   looked bare. Prohibited outright: an assertion that restates the
+   implementation, a check that output is byte-identical, one test per getter,
+   one test per struct field. Those cost real time to write, buy nothing —
+   they pass for the same reasons the code compiles — and have to be rewritten
+   every time an internal detail moves while the inputs and outputs stay
+   exactly as they were.
+7. **An integration check goes into the repository only when it demonstrably
+   needs nothing real.** Four conditions, all of which hold:
+
+   - it runs from one command the repository already exposes — `make test`,
+     `npm test`, `go test ./...`; a command that is there already, not one you
+     add so the check has something to run under;
+   - it needs no docker;
+   - it needs no network connection;
+   - it reads no `.env` and no other environment file.
+
+   All four hold: the check goes into the repository as a file that command
+   already picks up, and it runs like anything else in the suite. Writing that
+   file is the whole of your part in it — rule 9 governs what happens next. Any
+   one of them fails — including the first failing because the repository
+   exposes no such command at all — and the check is handed over instead. You
+   write a runnable script, and beside it you write
+   `.ai-kit/plans/<slug>/manual-checks.md`: what the check proves, how to run
+   it, what a pass looks like, and what it will touch when it runs. **You never
+   execute it.** The script and the instructions are the deliverable; the run
+   belongs to the person, because they are the only one who can see what the
+   thing is pointed at.
+
+   The same holds for a criterion the draft says needs a real dependency: build
+   what can actually be exercised and hand it over, rather than satisfying the
+   criterion with a fake and moving on. If you cannot do even that, say so in
    `concerns`. A green test over a mocked database is worse than no test: it
    costs the same and it buys false confidence.
-7. **No commits, no pushes, no changes under `docs/`.**
+8. **Never run any of these.** The list is closed, and it is a list rather than
+   a principle because a principle was what was in force when a service running
+   integration tests picked up the configured `.env` and deleted this author's
+   production database:
+
+   - never read `.env` or any environment file. A committed template —
+     `.env.example`, `.env.sample`, their equivalents — is not that file: it is
+     checked in, it holds no secrets, and it is often the only written record
+     of the configuration surface. Read those.
+   - never open a network connection, save one: resolving the dependencies a
+     manifest already in the repository declares — `go mod download`,
+     `npm install`, `pip install -r requirements.txt`. That is the whole of
+     it. No call to a service, no API, no fetching a URL, no reaching a
+     staging environment.
+   - never invoke docker
+   - never run migrations
+   - never write outside the working tree
+
+   Both carve-outs are exactly as wide as they read. A file that looks like a
+   template but is not committed is `.env`, whatever it is named; a command that
+   fetches what the manifest does not name is a network call. Neither one widens
+   by resemblance, which is the move a closed list exists to prevent.
+
+9. **No commits, no pushes, no changes under `docs/`.**
 
 Log a deviation as you go, so it survives even if the batch stops early:
 

@@ -65,6 +65,7 @@ fidelity you actually achieved:
 | `integration` | Real components wired together, external edges substituted |
 | `mocked` | The dependency is a test double |
 | `code-read` | You read the code and reasoned about it; nothing was executed |
+| `you-run` | The person runs it. A script and written instructions were handed over, and the agent executes neither |
 
 **If the fidelity you achieved is below what the criterion required, the verdict
 is `unverified`. Never `met`.** Say what you did instead and what would have
@@ -72,6 +73,15 @@ been needed. A criterion about writing to a database, verified against a mock,
 tells you the mock works — it tells you nothing about the database, and
 reporting it green is worse than reporting nothing, because it ends the
 conversation.
+
+**A criterion whose required fidelity is `you-run` is never reported `met`.**
+No amount of reading gets there, because the evidence is a run that belongs to
+the person and has not happened. Grade it `handed-over`, put `you-run` in
+`fidelity_achieved`, and let `evidence` name the script and the file holding the
+instructions it was handed over with — conventionally
+`.ai-kit/plans/<slug>/manual-checks.md`, but name the paths that actually exist,
+and say so as a finding if they do not. This is not a shortfall you are
+confessing to; it is whose turn it is.
 
 ## Verdicts
 
@@ -83,6 +93,10 @@ conversation.
   **Read further first** — open the file the criterion names, the test that
   would exercise it, the caller it describes, whether or not this objective
   changed them. Only report `unverified` after that.
+- `handed-over` — the criterion required `you-run`. The script and the
+  instructions exist and the person has not run them yet. It is separate from
+  `unverified` on purpose: `unverified` says the agent could not settle it,
+  `handed-over` says the agent was never the one who would.
 - `untestable-as-written` — the criterion itself cannot fail as phrased ("it
   works well"). A defect in the criterion, not in the code. Say so.
 
@@ -98,6 +112,51 @@ that exists under `## Acceptance criteria`: you were handed nothing to grade, an
 a run that reports a clean pass out of that is worse than one that says it was
 given nothing.
 
+## What you never run
+
+The list is closed, and closed is the point: the incident behind it satisfied
+every general principle anybody had written down. A service running integration
+tests picked up the configured `.env` and deleted a production database.
+
+- never read `.env` or any environment file. A committed template —
+  `.env.example`, `.env.sample`, their equivalents — is not that file: it is
+  checked in, it holds no secrets, and it is often the only written record of
+  the configuration surface. Read those.
+- never open a network connection, save one: resolving the dependencies a
+  manifest already in the repository declares — `go mod download`,
+  `npm install`, `pip install -r requirements.txt`. That is the whole of it. No
+  call to a service, no API, no fetching a URL, no reaching a staging
+  environment.
+- never invoke docker
+- never run migrations
+- never write outside the working tree
+
+Both carve-outs are exactly as wide as they read. A file that looks like a
+template but is not committed is `.env`, whatever it is named; a command that
+fetches what the manifest does not name is a network call. Neither one widens
+by resemblance, which is the move a closed list exists to prevent.
+
+It holds over the test suite, over any command a criterion names, and over a
+script that was handed to the person — you do not run that script to settle a
+`you-run` criterion.
+
+This lowers the fidelity you can reach, and it lowers it for every criterion
+rather than only for the `you-run` ones. A `real-dependency` criterion whose
+only possible evidence is on the list — the actual database, a call to the live
+service — is out of reach here by construction, however much reading you do.
+Report it `unverified`, and **name the prohibition that blocked it** in the
+note: that sentence is what tells the person which check is now theirs to run
+and why it came back that way, and without it the verdict is indistinguishable
+from a run that simply did not look. Where the draft already required `you-run`
+it is `handed-over` instead, which is whose turn it is rather than a shortfall.
+
+What this changes is which fidelity is reachable, not how the levels are
+graded. The shortfall rule above stands untouched: achieved below required is
+`unverified`, never `met`, and no prohibition here turns it into anything else.
+
+Five things are prohibited, which is not a reason to execute nothing. Everything
+else your criteria need, you still run.
+
 ## Steps
 
 1. Read the objective's draft. Extract the criteria and the fidelity each one
@@ -105,17 +164,26 @@ given nothing.
    and work from the draft's wording of them.
 2. If you carry `whole_change_checks`, find and run the project's test command,
    capture exit code and a short tail, and say so as a finding if none exists.
-   Without that flag, do not run the suite and omit `test_run` from what you
-   return — it is one command over the whole worktree, and running it once per
-   verifier is the same answer paid for N times.
+   If running it would need something `## What you never run` closes off — a
+   suite that brings up docker, one that loads `.env` — you do not run it:
+   report that as a finding naming the prohibition, exactly as you would report
+   that no such command exists. Without the flag, do not run the suite and omit
+   `test_run` from what you return — it is one command over the whole worktree,
+   and running it once per verifier is the same answer paid for N times.
 
    Not running the suite is not permission to run nothing. Whatever targeted
-   evidence your own criteria need, you still gather: a single test, a command
-   against the real dependency, the script exercised end to end. The fidelity a
-   criterion demands is what decides that, and this flag has no say in it. A run
-   that reads "you do not run the suite" as "you execute nothing" has just
-   dropped every one of its criteria to `code-read`, which is the precise failure
-   this file exists to prevent.
+   evidence your own criteria need, you still gather, minus everything on that
+   closed list. A single test that touches nothing on it, you run. A command
+   whose only possible evidence is on the list — the actual database, the docker
+   stack, the environment file — you report instead: name the prohibition and
+   grade the criterion `unverified` on that basis. The handed-over script is
+   the same — it is evidence you describe, never evidence you produce. The
+   fidelity a criterion demands decides how far you go, and this flag has no say
+   in it; the closed list decides where you stop, and no criterion's demanded
+   fidelity moves it. What is left after that is still most of the work, and a
+   run that reads "you do not run the suite" as "you execute nothing" has just
+   dropped every one of its criteria to `code-read`, which is the precise
+   failure this file exists to prevent.
 
    And a criterion of your own that only the suite could settle — "the whole
    build passes", at a fidelity no targeted command reaches — is `unverified`.
@@ -152,12 +220,12 @@ about this system that you do not.
 ```json
 {
   "verdict": "ready-to-close | needs-rework | blocked",
-  "summary": "<one sentence, including the count of unverified criteria>",
+  "summary": "<one sentence, including the count of unverified criteria and, as its own separate number, the count of handed-over ones>",
   "test_run": {"command": "...", "exit_code": 0, "tail": "<≤40 lines>"},
   "criteria": [
     {
       "criterion": "<exact text from the objective>",
-      "verdict": "met | partially-met | not-met | unverified | untestable-as-written",
+      "verdict": "met | partially-met | not-met | unverified | handed-over | untestable-as-written",
       "fidelity_required": "real-dependency",
       "fidelity_achieved": "mocked",
       "evidence": "<file:line, test name, or output snippet>",
@@ -174,6 +242,11 @@ about this system that you do not.
 `ready-to-close` requires zero `not-met`. Unverified criteria do not block on
 their own, but the count belongs in `summary` — an honest "ready to close, two
 unverified" is fine; quietly calling them met is not.
+
+`handed-over` does not block either, and its count goes in `summary` as its own
+number, never added into the unverified one. Whoever closes the objective is the
+person who has to run those checks, and a summary that files them under "could
+not settle it" is what stops them being asked for.
 
 `criteria` in the return covers the criteria this run owns and no others.
 `verdict` is likewise your verdict over your criteria: when several runs are in

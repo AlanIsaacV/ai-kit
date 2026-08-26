@@ -30,7 +30,10 @@ source, no `docs/`, no commits, no subagents.
   never a reason to return `blocked`.
 - `triage_outcome` — what the user decided for each finding, risk, assumption and
   unverified criterion: fix now, record for later, or not worth it — including
-  **their own words** on anything they called not worth fixing.
+  **their own words** on anything they called not worth fixing and on how a
+  `handed-over` criterion went when they ran it. A criterion the orchestrator
+  asked about and heard nothing back on arrives as exactly that, unanswered, and
+  that is a state to write down rather than a gap in the field.
 - `closing_state` — `met`, `cancelled` or `separated`: which state edge to write.
   The orchestrator decided this with the user; you write it, you do not choose it.
 - `confirmed_hypothesis` — the id and the claim of the `hypothesis` record whose
@@ -186,7 +189,11 @@ Three kinds, and every one of them has a reader:
   Read by `work` step 1, which puts carried-in assumptions in front of the user
   before the next objective is chosen.
 - **`open-question`** — something left genuinely open, including conditions
-  verification raised that nobody decided. Same reader.
+  verification raised that nobody decided, and a `handed-over` criterion the user
+  never reported a result for. That last one is the only part of an unanswered
+  handoff a later turn can act on: the closing record is history, while `work`
+  step 1 reads open questions back out and puts them in front of the user, which
+  is how a check nobody ran gets asked for again instead of closed over.
 
 That is the default set: three kinds and no others. Two kinds join it
 conditionally, and each condition is a test that can fail:
@@ -234,16 +241,28 @@ on disk.
 
 - **The closing `review-finding` and the state edge.** You write both, and they are
   one line. The closing record says what this turn's checking actually
-  established — criteria met, criteria unverified with their count, what the user
-  accepted in triage — built from what is there rather than from optimism:
+  established — criteria met, criteria unverified with their count, criteria
+  `handed-over` with a count of their own, what the user accepted in triage —
+  built from what is there rather than from optimism:
   `verify_result` and `triage_outcome` always, `review_result` when a review ran.
   A close with no review is not a thinner close and does not get hedged; it
   simply has nothing from a review to say. The state edge points *at* it, so it
   is spelled `"from"`:
 
 ```jsonl
-{"kind":"review-finding","title":"<what this turn's checking actually established>","body":"<criteria met, criteria unverified, what the user accepted>","about":["<area>"],"edges":[{"type":"met","from":"<objective_id>"}]}
+{"kind":"review-finding","title":"<what this turn's checking actually established>","body":"<criteria met, criteria unverified, criteria handed over and what came back on each, what the user accepted>","about":["<area>"],"edges":[{"type":"met","from":"<objective_id>"}]}
 ```
+
+  **`handed-over` is counted on its own and folded into neither of the other
+  two.** It is `verify`'s verdict for a criterion whose required fidelity was
+  `you-run`: the agent was never the one who would run it, so it is not a
+  shortfall and reading it as one is what makes the run stop being asked for.
+  Name each such criterion in the body with the script and the instructions
+  `verify`'s evidence points at, and say what the user reported about it in
+  `triage_outcome`. When `triage_outcome` says nothing about a criterion
+  `verify` graded `handed-over`, **that silence is what you write**: it was
+  handed over, the user was asked, and no result came back. Left out instead, an
+  append-only close carries no trace that anybody was ever meant to run it.
 
   **The record and the edge on one line is the whole point of writing this as a
   batch.** As two commands they were two runs, and the failure was not symmetric:

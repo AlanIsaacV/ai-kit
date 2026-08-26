@@ -694,11 +694,16 @@ needed one of those runs as its evidence is then unverified rather than met —
 nothing executed it — and it is reported that way however confident the parts
 sound about it.
 
-Read the merged result against three things:
+Read the merged result against four things:
 
 - Any criterion reported met at a **lower fidelity than the objective required**
   is not met. Treat it as unverified regardless of how confident the report
   reads.
+- A criterion whose required fidelity is `you-run` never comes back `met`. It
+  comes back `handed-over`, naming the script and the instructions, because
+  `verify` cannot run what belongs to the person — so it is unresolved rather
+  than fallen short, it is counted apart from the unverified ones for that
+  reason, and step 8 is where it gets asked about.
 - Any `unverified` criterion is named to the user explicitly, with its count.
   "Ready to close, two criteria unverified" is an honest sentence; silence
   about them is not.
@@ -802,6 +807,52 @@ reality differed from the objective, say it will be a `dead-end` or a
 `deviation` and carry it to step 9 as `on_demand_kinds`, because the close
 writes neither unless asked.
 
+**A comment the change added does not get ranked away.** `review` reports it
+high against the rule in `agents/implement.md`, and nothing it reports blocks —
+`agents/review.md` says as much itself. So the user reading it here is the whole
+of the enforcement: put it in front of them with the file and the line the
+finding names, never folded into a count of things that were also raised. What
+they decide about it is theirs, including leaving it where it is; what is not
+available is the objective closing before they have seen it.
+
+Step 7 is on demand, so on most turns there is no finding to carry, and this
+step is then the only route the rule has to the user. It does not run off a diff
+this thread is holding: what the collect step merged back was `files_changed`
+and prose, and keeping the change itself out of this context was the point of
+merging it that way. So the diff is fetched here, narrowed to the question being
+asked:
+
+```bash
+git diff --unified=0 -- <the changed files>
+```
+
+`--unified=0` drops the context lines and the path list drops every file the
+change did not touch, which is what keeps this from reinstating the whole-diff
+read the collect step declined. Read the added lines against rule 3 of
+`agents/implement.md` — the rule and the exemptions it closes over live there,
+and they are read there rather than restated here, because a second copy drifts
+from the first and the lines a drifted copy raises are the ones `implement` was
+required to write. An added line behind a comment marker that rule 3 does not
+exempt goes in front of the user with its file; an exempted one is not a finding
+and is not mentioned. Carry nothing else forward — what else printed is not
+summarized here and does not travel to step 9.
+
+A file the command prints nothing for is one the change created and git has not
+been told about yet. Its added lines are the whole file, so read it and apply
+the same reading: a new file is where this rule is easiest to break and the one
+place a diff-shaped look reliably misses it.
+
+**A `you-run` criterion is asked about, never assumed.** Step 6 hands it over
+unresolved by construction, so it gets named here: the criterion, the script and
+the instructions `implement` left in `.ai-kit/plans/<slug>/manual-checks.md`,
+and the question of what happened when they ran it. Their answer travels to step
+9 in `triage_outcome` in their own words, which is what puts it in the closing
+record — this thread writes nothing about it itself. No answer is not a pass:
+the criterion is still `handed-over` and nobody has run it, which is a different
+sentence from the agent falling short of a fidelity, and whether the objective
+closes anyway is something the user says in this round rather than something
+this thread settles by moving on.
+
 Take "not worth it" seriously. A verification pass that keeps raising scenarios
 the user knows cannot happen burns time and trains everyone to skim the
 findings. When they say a risk is not real — the gateway serializes it, the
@@ -835,7 +886,7 @@ objective_id: <the executable objective's id>
 plan_slug: <tree-slug>
 verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON — empty when step 7 did not run>
-triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing>
+triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer>
 closing_state: <met | cancelled | separated>
 confirmed_hypothesis:
 on_demand_kinds:
@@ -1011,7 +1062,9 @@ user's — suggest candidates, do not promote on your own.
 - **Criteria are frozen before there is any incentive to move them.** That is
   the entire defense against verification that grades its own work.
 - **Required fidelity is agreed up front.** A mock satisfying a criterion about
-  a real database is not a passing check, it is a false one.
+  a real database is not a passing check, it is a false one. `you-run` is agreed
+  the same way and says something else: the check belongs to the person, so it
+  comes back handed over rather than met, and the close asks them how it went.
 - **Parts are drawn by what would collide, not by size.** Implementation splits
   by the files parts write, verification by criteria that settle without waiting
   on another part's evidence or verdict, review along the parts implementation

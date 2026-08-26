@@ -28,7 +28,11 @@ that then checked them, satisfied by tests against mocked dependencies, passing
 green while the real thing broke on deploy. Here criteria are approved by the
 user before implementation and frozen; each one declares the evidence fidelity
 it demands; and a criterion needing a real database cannot be reported as met
-on the strength of a mock. Verification runs in a different subagent than
+on the strength of a mock. One of those fidelities, `you-run`, is yours: a check
+that must not run unattended — the integration test that reaches a real database
+is also the one that can delete it — is handed over as a script plus written
+instructions the agent never executes, and comes back as a handoff rather than
+as something the agent failed at. Verification runs in a different subagent than
 implementation.
 
 ## Parts
