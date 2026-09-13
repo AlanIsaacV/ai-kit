@@ -1011,6 +1011,9 @@ memory add   --plan jwt-migration --batch close.jsonl   # every line in one writ
 cat close.jsonl | memory add --plan jwt-migration --batch -
 
 memory query --plan jwt-migration --about auth --kind decision --current
+memory query --id <id>,<id>      # exactly those records, and what it could not find
+memory query --since 2026-08-01T00:00:00Z --until 2026-08-31T23:59:59Z   # both bounds inclusive
+memory query --count --kind gotcha    # how many, and no records
 memory search --plan jwt-migration "key rotation"
 memory areas --kind preference   # what can be asked about, in both logs
 memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
@@ -1057,6 +1060,39 @@ sweep is not silently narrowed by a plan slug somebody passed out of habit.
 `--about` matches by exact tag or by path prefix: a tag ending in `/` catches
 everything under it, so `--about pkg/auth/` finds a record tagged
 `pkg/auth/middleware.go`.
+
+### Asking by id, by time, and for a count
+
+`query` takes three bounds beyond the ones that narrow by content, and each of
+them composes with every other bound the command has.
+
+`--id` takes a comma-separated list and returns exactly those records, sorted the
+way every read here sorts: most recent first. Every id no record in the log
+carries comes back under `not_found`, and the command still exits 0 — an id that
+matches nothing is an answer, not a refusal. An id excluded by another bound is
+reported the same way, so `--id <a>,<b> --current` names the settled one rather
+than returning quietly short — `not_found` is measured against what the
+invocation matched, not against the whole log.
+
+`--id` carrying no id at all is the one refusal on this bound: `--id ""`, and
+`--id "$ID"` against a variable nobody set, parse to nothing, and reading the
+whole log there would answer a question nobody asked. The command exits 1 with
+`empty_id` instead. Passing no `--id` is unchanged — no id bound, no `not_found`
+key, exit 0.
+
+`--since` and `--until` bound a query by the record's `at` stamp, and **both
+bounds are inclusive**: a record stamped exactly at either one is returned. The
+comparison is against the string as written, which is what makes it free — `at`
+is RFC3339 and RFC3339 sorts lexically, exactly as a ULID does. What that costs
+is that a bound is matched as a prefix rather than parsed as a date:
+`--since 2026-08-01` behaves as the start of that day, while
+`--until 2026-08-01` excludes everything stamped later on it. Pass a full
+timestamp for a day boundary.
+
+`--count` reports how many records match and returns none of them. It is the same
+number the same query without `--count` reports, so the count-before-dump
+threshold is neither in its way nor holed by it: `--count` answers with a number
+whatever the guard would have done, and never with records.
 
 ### Writing many records at once
 
@@ -1354,6 +1390,20 @@ under different tags is invisible to whoever finds the mistake.
   `search 'key rotation'` is not. `search -about` is refused too, at exit 2 by the
   flag package as an undefined flag — a text beginning with `-` was never usable, and
   the two refusals stay distinguishable.
+- `query --id <a>,<b>` returns exactly those two records and nothing else, most
+  recent first. An id nothing carries is absent from the records, named under
+  `not_found`, and neither turns the run into a refusal nor invents a record; a
+  query that named no id reports no `not_found` at all.
+- A record stamped exactly at `--since` and a record stamped exactly at `--until`
+  are both returned, and a record one second outside either bound is not — all six
+  positions asserted against one pair of bounds.
+- `--count` reports the number of records the same filter hands back, across nine
+  filter combinations including `--id`, `--since`/`--until` and every bound that
+  existed before them.
+- The count-before-dump guard still withholds records from a query bounded by
+  `--id` or by time, and `--count` is not the way past it: it answers with a
+  number and no records under the threshold, over it, with `--limit`, and with the
+  guard disabled.
 
 ```bash
 go test ./...

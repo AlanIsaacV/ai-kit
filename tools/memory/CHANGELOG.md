@@ -2,6 +2,68 @@
 
 ## Unreleased
 
+### `query` answers by id, inside a time range, and with a count instead of records
+
+Measured over 2,000 transcripts, an agent went around this tool once per 7.0 uses:
+1,308 direct reads of `.ai-kit/memory.jsonl` against 9,122 shell calls carrying a
+`memory` subcommand. 80% of those bypasses happened in sessions that had already
+used the CLI and only 10% followed an error — the tool answered, and the answer
+was the wrong shape. Three of the seven shapes a caller had to assemble for
+itself were a field on `Filter` and a check in the loop that was already there.
+
+```bash
+memory query --id 01KZ2WFZ2ASGEZFYG12NQ6QHW6,01KZJKE2HPVT5W56VS76JYSXTW
+memory query --since 2026-08-01T00:00:00Z --until 2026-08-31T23:59:59Z
+memory query --count --kind gotcha --about tools/memory/
+```
+
+- **`--id` is a bound on `query`, not a `get` of its own.** Ids are the currency of
+  this log — edges point by id, skills pass them between steps, records cite them in
+  their bodies — and until now the only way to ask for one was `graph --from <id>
+  --depth 0`, which is a consequence of the walk loop rather than a feature. REJECTED:
+  a `get` subcommand, which would make one concept two tools the day this surface
+  becomes MCP, and would need its own answer for what `--current` and `--plan` mean
+  next to it. As a bound it composes with all of them for free. `graph --from <id>
+  --depth 0` is left exactly as it was.
+- **An id nothing carries is named under `not_found`, at exit 0.** A caller asking by
+  id already believes it knows what is coming back, which is exactly the case where a
+  silently short answer is expensive. REJECTED: refusing the run, which would make one
+  stale id in a list of five hide the four that are there — and the exit code in this
+  CLI says whether the command ran, not whether the answer was the one you hoped for.
+  The key is present whenever `--id` was passed and absent otherwise, so an empty list
+  means "every id you named is in there" rather than "nobody asked". An `--id` that
+  parses to no id at all — an unset variable, most often — is refused (`empty_id`)
+  rather than read as no bound, which is the one case where reading the whole log
+  would answer a question nobody asked.
+- **Both time bounds are inclusive, and both are compared as strings.** A record
+  stamped exactly at `--since` or exactly at `--until` is returned. `at` is RFC3339
+  and RFC3339 sorts lexically, exactly as a ULID does, so the whole filter is two
+  string comparisons and there is no date parsing anywhere in the read path.
+  REJECTED: an exclusive `--until`, which is the other defensible choice and reads
+  the way nobody says a date range out loud. What the string comparison costs is
+  that a bound is matched as a prefix: `--until 2026-08-01` excludes everything
+  stamped later that day, and the `--help` text and the README say so.
+- **`--count` reports the number and returns no records.** It is the same number the
+  same query without it reports, which is what makes it an answer to "how many"
+  rather than a second filtering path to keep in step. REJECTED: a `count`
+  subcommand, for the reason `--id` is not a `get`. The count-before-dump guard is
+  neither in its way nor holed by it: `--count` answers with a number whatever the
+  guard would have done — under the threshold, over it, with `--limit`, and with the
+  guard disabled — and never with records.
+- **On `query` only.** `search` shares `Filter` and the same result-building helper
+  and keeps exactly the flag set it had. The measurement does not show these bounds
+  missing from it — 196 invocations against `query`'s 3,607 — and every flag costs
+  weight in the MCP contract this surface is heading for. Eleven existing
+  invocations across `query`, `search`, `areas`, `anchors`, `graph` and `state`
+  print byte-identical output before and after the change, with one exception: the
+  count-before-dump hint, which each command now renders from the flags it actually
+  has. `query`'s names `--id`, `--since`/`--until` and `--count` among the ways
+  out, since a caller holding zero records is the caller these bounds were built
+  for; `search`'s names `--current` and `--limit` and nothing else, which is what
+  `search` accepts — it never accepted `--about` or `--kind` either, and advising a
+  flag a command does not have is advice that fails silently, since `search` reads
+  its text from the first non-flag argument and everything after it.
+
 ### `add --batch`, a guard on unsplit arguments, and how a record is retired
 
 Two steps of the workflow write records by the dozen, each one a separate `add`

@@ -300,6 +300,190 @@ func TestQueryText(t *testing.T) {
 	}
 }
 
+func TestQueryByIDReturnsThoseRecordsAndNamesTheIDsItCouldNotFind(t *testing.T) {
+	a := entry(t, KindDecision, "RS256 over HS256", "auth")
+	b := entry(t, KindDecision, "Cancel is async", "orders")
+	c := entry(t, KindWontFix, "Concurrent cancel is impossible", "orders")
+	absent := "01JXKQ7M4T8YZPABCDEFGHJKMN"
+	all := []*Entry{a, b, c}
+
+	res := Query(logOf(all, nil), Filter{ID: []string{a.ID, absent, c.ID}})
+	if res.Count != 2 || res.Returned != 2 {
+		t.Fatalf("two of the three ids are in the log: count=%d returned=%d", res.Count, res.Returned)
+	}
+	if res.Records[0].ID != c.ID || res.Records[1].ID != a.ID {
+		t.Fatalf("--id returns exactly the ids asked for, most recent first, got %+v", res.Records)
+	}
+	if len(res.NotFound) != 1 || res.NotFound[0] != absent {
+		t.Fatalf("the id nothing carries has to come back as not found, got %v", res.NotFound)
+	}
+	if res.Truncated || res.Hint != "" {
+		t.Fatalf("an id that matches nothing is an answer, not a truncation: truncated=%v hint=%q", res.Truncated, res.Hint)
+	}
+
+	res = Query(logOf(all, nil), Filter{ID: []string{absent}})
+	if res.Count != 0 || len(res.Records) != 0 {
+		t.Fatalf("an id nothing carries must not invent a record, got %+v", res.Records)
+	}
+	if len(res.NotFound) != 1 || res.NotFound[0] != absent {
+		t.Fatalf("and it is still reported, got %v", res.NotFound)
+	}
+
+	if got := Query(logOf(all, nil), Filter{}).Count; got != 3 {
+		t.Fatalf("without --id nothing is bounded by it, got %d", got)
+	}
+	if res := Query(logOf(all, nil), Filter{}); res.NotFound != nil {
+		t.Fatalf("a query that named no id has nothing to report as missing, got %v", res.NotFound)
+	}
+}
+
+func TestQueryTimeBoundsIncludeTheRecordsSittingOnThem(t *testing.T) {
+	since, until := "2026-03-01T12:00:00Z", "2026-03-01T12:01:00Z"
+	stamps := []string{
+		"2026-03-01T11:59:59Z",
+		since,
+		"2026-03-01T12:00:01Z",
+		"2026-03-01T12:00:59Z",
+		until,
+		"2026-03-01T12:01:01Z",
+	}
+	want := []bool{false, true, true, true, true, false}
+
+	var all []*Entry
+	for _, at := range stamps {
+		e := entry(t, KindDecision, "decision", "auth")
+		e.At = at
+		all = append(all, e)
+	}
+
+	res := Query(logOf(all, nil), Filter{Since: since, Until: until})
+	inside := map[string]bool{}
+	for _, r := range res.Records {
+		inside[r.At] = true
+	}
+	for i, at := range stamps {
+		if inside[at] != want[i] {
+			t.Errorf("at %s: inside=%v, want %v, for bounds %s..%s where both bounds are inclusive", at, inside[at], want[i], since, until)
+		}
+	}
+	if res.Count != 4 {
+		t.Fatalf("four of the six records are on or inside the bounds, got %d", res.Count)
+	}
+}
+
+func TestCountReportsWhatTheSameFilterWouldHaveReturned(t *testing.T) {
+	old := entry(t, KindDecision, "Use HS256", "auth")
+	old.At = "2026-03-01T09:00:00Z"
+	fresh := entry(t, KindDecision, "RS256 over HS256", "auth")
+	fresh.Body = "Per-service key rotation requires asymmetric signing."
+	fresh.At = "2026-03-02T09:00:00Z"
+	fresh.Origin = &Origin{Plan: "jwt-migration"}
+	orders := entry(t, KindDecision, "Cancel is async", "orders")
+	orders.At = "2026-03-03T09:00:00Z"
+	wont := entry(t, KindWontFix, "Concurrent cancel is impossible", "orders")
+	wont.At = "2026-03-04T09:00:00Z"
+	pref := entry(t, KindPreference, "Migrations go through Atlas", "persistence")
+	pref.At = "2026-03-05T09:00:00Z"
+
+	lines := logOf([]*Entry{old, fresh, orders, wont, pref}, []*Edge{supersedes(t, fresh, old)})
+
+	cases := []struct {
+		name string
+		f    Filter
+	}{
+		{"about", Filter{About: []string{"auth"}}},
+		{"kind", Filter{Kinds: []Kind{KindDecision}}},
+		{"current", Filter{CurrentOnly: true}},
+		{"slug", Filter{Slug: orders.Slug}},
+		{"text", Filter{Text: "KEY ROTATION"}},
+		{"plan", Filter{Plan: "jwt-migration"}},
+		{"id", Filter{ID: []string{fresh.ID, wont.ID, "01JXKQ7M4T8YZPABCDEFGHJKMN"}}},
+		{"since and until", Filter{Since: "2026-03-02T09:00:00Z", Until: "2026-03-04T09:00:00Z"}},
+		{"every bound at once", Filter{
+			ID:          []string{old.ID, fresh.ID, orders.ID},
+			About:       []string{"auth"},
+			Kinds:       []Kind{KindDecision},
+			Text:        "rs256",
+			Since:       "2026-03-01T09:00:00Z",
+			Until:       "2026-03-05T09:00:00Z",
+			CurrentOnly: true,
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			records := Query(lines, tc.f)
+			counted := tc.f
+			counted.CountOnly = true
+			got := Query(lines, counted)
+
+			if len(records.Records) == 0 {
+				t.Fatalf("the filter has to match something for its count to say anything: %+v", tc.f)
+			}
+			if got.Count != len(records.Records) {
+				t.Fatalf("--count must report the records the same filter hands over: count=%d records=%d", got.Count, len(records.Records))
+			}
+			if got.Returned != 0 || len(got.Records) != 0 {
+				t.Fatalf("--count returns no records, got returned=%d records=%d", got.Returned, len(got.Records))
+			}
+			if len(got.NotFound) != len(records.NotFound) {
+				t.Fatalf("--count reports the ids it could not find exactly as the query does: %v against %v", got.NotFound, records.NotFound)
+			}
+		})
+	}
+}
+
+func TestTheNewFiltersDoNotHoleTheCountBeforeDumpGuard(t *testing.T) {
+	total := DefaultThreshold + 5
+	var all []*Entry
+	var ids []string
+	for i := 0; i < total; i++ {
+		e := entry(t, KindDecision, "decision", "auth")
+		e.At = "2026-03-01T12:00:00Z"
+		all = append(all, e)
+		ids = append(ids, e.ID)
+	}
+	lines := logOf(all, nil)
+
+	cases := []struct {
+		name string
+		f    Filter
+	}{
+		{"by id", Filter{ID: ids}},
+		{"inside the bounds", Filter{Since: "2026-03-01T12:00:00Z", Until: "2026-03-01T12:00:00Z"}},
+	}
+
+	for _, tc := range cases {
+		res := Query(lines, tc.f)
+		if res.Count != total {
+			t.Fatalf("%s: the count is still the true total, got %d", tc.name, res.Count)
+		}
+		if res.Returned != 0 || len(res.Records) != 0 || !res.Truncated || res.Hint == "" {
+			t.Fatalf("%s: over the threshold the records are still withheld: returned=%d truncated=%v hint=%q",
+				tc.name, res.Returned, res.Truncated, res.Hint)
+		}
+
+		counted := tc.f
+		counted.CountOnly = true
+		res = Query(lines, counted)
+		if res.Count != total || res.Returned != 0 || len(res.Records) != 0 {
+			t.Fatalf("%s with --count: a number and never records, got count=%d returned=%d", tc.name, res.Count, res.Returned)
+		}
+	}
+
+	for _, f := range []Filter{{CountOnly: true}, {CountOnly: true, Limit: 5}, {CountOnly: true, Threshold: -1}} {
+		res := Query(lines, f)
+		if res.Count != total || res.Returned != 0 || len(res.Records) != 0 {
+			t.Fatalf("--count with %+v is a number and never records, got count=%d returned=%d", f, res.Count, res.Returned)
+		}
+	}
+
+	under := Query(logOf(all[:3], nil), Filter{CountOnly: true})
+	if under.Count != 3 || under.Returned != 0 || len(under.Records) != 0 {
+		t.Fatalf("under the threshold --count is still only a number, got count=%d returned=%d", under.Count, under.Returned)
+	}
+}
+
 // Both directions matter: from an ADR you want its sources, and from a
 // decision you want the ADR that consumed it.
 func TestGraphWalksBothDirections(t *testing.T) {

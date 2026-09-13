@@ -17,19 +17,25 @@ const DefaultThreshold = 25
 
 // Filter narrows a query. Zero values mean "no constraint".
 type Filter struct {
-	Plan        string   // exact origin.plan
+	Plan        string // exact origin.plan
+	ID          []string
 	About       []string // match if the entry carries any of these tags (prefix match on path-like tags)
 	Kinds       []Kind   // match if the entry is any of these kinds
 	Slug        string   // exact slug
 	Text        string   // case-insensitive substring over title and body
-	CurrentOnly bool     // drop entries the graph says are settled: superseded, or answered
-	Limit       int      // hard cap on returned records; 0 means "use the threshold"
-	Threshold   int      // override DefaultThreshold; negative disables the guard
+	Since       string
+	Until       string
+	CurrentOnly bool // drop entries the graph says are settled: superseded, or answered
+	CountOnly   bool
+	HintAdvice  []string
+	Limit       int // hard cap on returned records; 0 means "use the threshold"
+	Threshold   int // override DefaultThreshold; negative disables the guard
 }
 
 // Result is what every read command returns. Count is always the true number
 // of matches; Records may be empty even when Count is large, and Truncated
-// says which of those two situations you are in.
+// says which of those two situations you are in — unless the filter asked for
+// the count alone, which returns no records and withholds nothing.
 type Result struct {
 	Count     int  `json:"count"`
 	Returned  int  `json:"returned"`
@@ -42,6 +48,7 @@ type Result struct {
 	// in Hint, because the two are unrelated answers and one is not a caveat on
 	// the other.
 	CurrentObjective *CurrentObjective `json:"current_objective,omitempty"`
+	NotFound         []string          `json:"not_found,omitempty"`
 	Records          []*Entry          `json:"records"`
 }
 
@@ -102,6 +109,10 @@ func Query(lines []Line, f Filter) Result {
 	for _, k := range f.Kinds {
 		kinds[k] = true
 	}
+	ids := map[string]bool{}
+	for _, id := range f.ID {
+		ids[id] = true
+	}
 	text := strings.ToLower(strings.TrimSpace(f.Text))
 
 	// The tree, the states and the resolved current objective are derived from
@@ -121,6 +132,9 @@ func Query(lines []Line, f Filter) Result {
 
 	var matched []*Entry
 	for _, e := range entries {
+		if len(ids) > 0 && !ids[e.ID] {
+			continue
+		}
 		if f.CurrentOnly && settled[e.ID] {
 			continue
 		}
@@ -159,6 +173,12 @@ func Query(lines []Line, f Filter) Result {
 		if text != "" && !containsFold(e.Title, text) && !containsFold(e.Body, text) {
 			continue
 		}
+		if f.Since != "" && e.At < f.Since {
+			continue
+		}
+		if f.Until != "" && e.At > f.Until {
+			continue
+		}
 		matched = append(matched, e)
 	}
 
@@ -166,27 +186,34 @@ func Query(lines []Line, f Filter) Result {
 	sort.SliceStable(matched, func(i, j int) bool { return matched[i].ID > matched[j].ID })
 
 	res := Result{Count: len(matched), Records: []*Entry{}}
+	for _, id := range f.ID {
+		if !containsID(matched, id) {
+			res.NotFound = append(res.NotFound, id)
+		}
+	}
 
 	threshold := f.Threshold
 	if threshold == 0 {
 		threshold = DefaultThreshold
 	}
 
-	switch {
-	case f.Limit > 0:
-		n := min(f.Limit, len(matched))
-		res.Records = matched[:n]
-		res.Truncated = n < len(matched)
-		if res.Truncated {
-			res.Hint = "limit reached; " + itoa(len(matched)-n) + " older matches not returned"
+	if !f.CountOnly {
+		switch {
+		case f.Limit > 0:
+			n := min(f.Limit, len(matched))
+			res.Records = matched[:n]
+			res.Truncated = n < len(matched)
+			if res.Truncated {
+				res.Hint = "limit reached; " + itoa(len(matched)-n) + " older matches not returned"
+			}
+		case threshold > 0 && len(matched) > threshold:
+			// Deliberately return nothing. Handing back a partial slice would
+			// read as "here is the answer" when it is a fragment of one.
+			res.Truncated = true
+			res.Hint = withheldHint(f.HintAdvice)
+		default:
+			res.Records = matched
 		}
-	case threshold > 0 && len(matched) > threshold:
-		// Deliberately return nothing. Handing back a partial slice would
-		// read as "here is the answer" when it is a fragment of one.
-		res.Truncated = true
-		res.Hint = "too many matches to return safely: narrow with --about/--kind/--current, pass --limit N to take the most recent, or have a subagent read them"
-	default:
-		res.Records = matched
 	}
 	res.Returned = len(res.Records)
 
@@ -203,6 +230,15 @@ func Query(lines []Line, f Filter) Result {
 		res.CurrentObjective = &cur
 	}
 	return res
+}
+
+var defaultHintAdvice = []string{"narrow the filter", "set a limit to take the most recent"}
+
+func withheldHint(advice []string) string {
+	if len(advice) == 0 {
+		advice = defaultHintAdvice
+	}
+	return "too many matches to return safely: " + strings.Join(advice, ", ") + ", or have a subagent read them"
 }
 
 func containsID(entries []*Entry, id string) bool {

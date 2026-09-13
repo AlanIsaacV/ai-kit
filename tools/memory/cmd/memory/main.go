@@ -29,7 +29,7 @@ Usage:
   memory add       --kind KIND --title TEXT --about TAG[,TAG...] [--plan SLUG] [--body TEXT] [--slug SLUG] [--anchor PATH:LINE] [--repo-root PATH]
   memory add       --batch PATH|- [--plan SLUG] [--repo-root PATH]
   memory link      --type TYPE --from ID --to ID
-  memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--current] [--limit N]
+  memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--id IDS] [--since TS] [--until TS] [--current] [--count] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
   memory areas     [--kind KINDS] [--plan SLUG]
   memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--current] [--repo-root PATH]
@@ -72,6 +72,19 @@ An argument in flag position that begins with '-' and contains a space is refuse
 before any flag is parsed, whatever the subcommand. It is one argument where the
 command line meant two, and an unquoted variable that failed to split is what
 produces it. A flag's *value* is never inspected, so a body may say anything.
+
+'query --id ID[,ID...]' answers with those records and nothing else, and names
+under 'not_found' every id this query did not match — one no record in the log
+carries, and one another bound excluded — an id that matches nothing is an
+answer, not a refusal, so the exit code is still 0. An '--id' that names no id
+at all is the one refusal on this bound: a flag that parsed to nothing is an
+unset variable rather than a query for the whole log. '--since' and
+'--until' bound a query by the record's 'at' stamp and both bounds are inclusive:
+a record stamped exactly at either one is returned. The stamp is compared as
+written rather than parsed as a date, so a bare '--until 2026-08-01' stops just
+before that day; pass a full timestamp to bound one. '--count' reports how many
+records match and returns none of them, which is the same number the same query
+without it reports.
 
 'state' reads one log or every log, and its default follows the output mode:
 'state' reports this repository as JSON, 'state --text' prints what is waiting on
@@ -927,6 +940,12 @@ func cmdLink(args []string) error {
 	return nil
 }
 
+var queryHintAdvice = []string{
+	"narrow with --about/--kind/--current/--id/--since/--until",
+	"pass --limit N to take the most recent",
+	"ask for --count alone",
+}
+
 func cmdQuery(args []string) error {
 	fs := flag.NewFlagSet("query", flag.ExitOnError)
 	var c common
@@ -935,11 +954,21 @@ func cmdQuery(args []string) error {
 	kinds := fs.String("kind", "", "comma-separated kinds")
 	slug := fs.String("slug", "", "exact slug")
 	text := fs.String("text", "", "case-insensitive substring over title and body")
+	ids := fs.String("id", "", "comma-separated record ids; an id this query did not match is listed under not_found, whether no record carries it or another bound excluded it")
+	since := fs.String("since", "", "records stamped at this RFC3339 timestamp or later; the bound itself is included, and compared as written, so a bare date starts that day")
+	until := fs.String("until", "", "records stamped at this RFC3339 timestamp or earlier; the bound itself is included, and compared as written, so a bare date stops just before that day")
 	current := fs.Bool("current", false, "drop entries something else supersedes")
+	count := fs.Bool("count", false, "report how many match and return no records")
 	limit := fs.Int("limit", 0, "return at most N, most recent first")
 	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
 	if err := parseFlags(fs, args); err != nil {
 		return err
+	}
+	idList := splitList(*ids)
+	if len(idList) == 0 && len(namedFlags(fs, "id")) > 0 {
+		return fail("empty_id", "--id %q names no id: a flag that parsed to nothing is what an unset "+
+			"variable looks like, and reading the whole log there would answer a question nobody asked. "+
+			"Name at least one id, or drop --id.", *ids)
 	}
 	plan, err := c.planFilter()
 	if err != nil {
@@ -947,14 +976,24 @@ func cmdQuery(args []string) error {
 	}
 	return runQuery(&c, memory.Filter{
 		Plan:        plan,
+		ID:          idList,
 		About:       splitList(*about),
 		Kinds:       toKinds(splitList(*kinds)),
 		Slug:        *slug,
 		Text:        *text,
+		Since:       strings.TrimSpace(*since),
+		Until:       strings.TrimSpace(*until),
 		CurrentOnly: *current,
+		CountOnly:   *count,
+		HintAdvice:  queryHintAdvice,
 		Limit:       *limit,
 		Threshold:   *threshold,
 	})
+}
+
+var searchHintAdvice = []string{
+	"narrow with --current",
+	"pass --limit N to take the most recent",
 }
 
 func cmdSearch(args []string) error {
@@ -976,7 +1015,8 @@ func cmdSearch(args []string) error {
 		return err
 	}
 	return runQuery(&c, memory.Filter{
-		Plan: plan, Text: text, CurrentOnly: *current, Limit: *limit, Threshold: *threshold,
+		Plan: plan, Text: text, CurrentOnly: *current, HintAdvice: searchHintAdvice,
+		Limit: *limit, Threshold: *threshold,
 	})
 }
 
@@ -1128,6 +1168,9 @@ func runQuery(c *common, f memory.Filter) error {
 	}
 	if res.Hint != "" {
 		out["hint"] = res.Hint
+	}
+	if len(f.ID) > 0 {
+		out["not_found"] = nonNil(res.NotFound)
 	}
 	// Only when the query admits objectives. A key that appeared on every read
 	// would be answering a question `query --kind decision` did not ask.
