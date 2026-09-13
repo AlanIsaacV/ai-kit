@@ -1,0 +1,148 @@
+package main
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func addWithBody(t *testing.T, r repo, title, body string) string {
+	t.Helper()
+	res := runBare(t, r, "add", "--plan", "demo", "--kind", "decision",
+		"--title", title, "--about", "auth", "--body", body)
+	if res.code != 0 {
+		t.Fatalf("add %q: exit %d\n%s%s", title, res.code, res.stdout, res.stderr)
+	}
+	return recordID(t, res)
+}
+
+func queryRecords(t *testing.T, res result) []map[string]json.RawMessage {
+	t.Helper()
+	var out struct {
+		Records []map[string]json.RawMessage `json:"records"`
+	}
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatalf("query printed something that is not JSON: %v\n%s%s", err, res.stdout, res.stderr)
+	}
+	return out.Records
+}
+
+func bodiesByTitle(t *testing.T, res result) map[string]*string {
+	t.Helper()
+	out := map[string]*string{}
+	for _, rec := range queryRecords(t, res) {
+		var title string
+		if err := json.Unmarshal(rec["title"], &title); err != nil {
+			t.Fatalf("a record came back without a readable title: %v\n%s", err, res.stdout)
+		}
+		raw, ok := rec["body"]
+		if !ok {
+			out[title] = nil
+			continue
+		}
+		var body string
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("a record came back without a readable body: %v\n%s", err, res.stdout)
+		}
+		out[title] = &body
+	}
+	return out
+}
+
+func TestQueryRefusesAFieldNoRecordHas(t *testing.T) {
+	r := throwawayRepo(t)
+	add(t, r, "RS256 over HS256")
+
+	res := run(t, r, "query", "--fields", "title,shape")
+	if res.code == 0 {
+		t.Fatalf("--fields shape must be refused:\n%s", res.stdout)
+	}
+	code, msg := errorCode(t, res)
+	if code != "unknown_field" {
+		t.Errorf("expected an unknown_field refusal, got %q", code)
+	}
+	if !strings.Contains(msg, "shape") {
+		t.Errorf("the refusal must name the field it was handed, got %q", msg)
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := out["records"]; ok {
+		t.Errorf("a refused query hands back no records:\n%s", res.stdout)
+	}
+}
+
+func TestBodyLinesTakesTheHeadOfEachBody(t *testing.T) {
+	r := throwawayRepo(t)
+	const long = "one\ntwo\nthree\nfour\nfive"
+	const median = "one\ntwo"
+	addWithBody(t, r, "The long body", long)
+	addWithBody(t, r, "The median body", median)
+
+	whole := bodiesByTitle(t, run(t, r, "query"))
+	if len(whole) != 2 {
+		t.Fatalf("both records have to come back for their bodies to say anything: %v", whole)
+	}
+	if whole["The long body"] == nil || *whole["The long body"] != long {
+		t.Errorf("with no --body-lines the whole body comes back, got %v", whole["The long body"])
+	}
+
+	head := bodiesByTitle(t, run(t, r, "query", "--body-lines", "2"))
+	if head["The long body"] == nil || *head["The long body"] != "one\ntwo" {
+		t.Errorf("--body-lines 2 returns the first two lines, got %v", head["The long body"])
+	}
+	if head["The median body"] == nil || *head["The median body"] != median {
+		t.Errorf("a body of exactly two lines comes back whole, got %v", head["The median body"])
+	}
+
+	none := bodiesByTitle(t, run(t, r, "query", "--body-lines", "0"))
+	if len(none) != 2 {
+		t.Fatalf("--body-lines 0 drops the body, not the record: %v", none)
+	}
+	for title, body := range none {
+		if body != nil {
+			t.Errorf("--body-lines 0 leaves no body key at all on %q, got %q", title, *body)
+		}
+	}
+}
+
+func TestQueryAnswersAZeroMatchWithAnEmptyListAndNeverNull(t *testing.T) {
+	r := throwawayRepo(t)
+	add(t, r, "RS256 over HS256")
+	const missing = "01JXKQ7M4T8YZPABCDEFGHJKMN"
+
+	cases := []struct {
+		name     string
+		args     []string
+		notFound []string
+	}{
+		{"nothing matched", []string{"query", "--about", "nothing-carries-this"}, nil},
+		{"an id the log does not carry", []string{"query", "--id", missing}, []string{missing}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := run(t, r, tc.args...)
+			if res.code != 0 {
+				t.Fatalf("a zero match is an answer, not a refusal: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+			}
+			var out struct {
+				Count    int             `json:"count"`
+				Records  json.RawMessage `json:"records"`
+				NotFound []string        `json:"not_found"`
+			}
+			if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+				t.Fatalf("query printed something that is not JSON: %v\n%s", err, res.stdout)
+			}
+			if out.Count != 0 {
+				t.Fatalf("this query is meant to match nothing, got %d", out.Count)
+			}
+			if string(out.Records) != "[]" {
+				t.Errorf("records must be an empty list, got %s", out.Records)
+			}
+			if strings.Join(out.NotFound, ",") != strings.Join(tc.notFound, ",") {
+				t.Errorf("not_found must stay what it was, want %v got %v", tc.notFound, out.NotFound)
+			}
+		})
+	}
+}

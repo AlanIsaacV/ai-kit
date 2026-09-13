@@ -1,12 +1,14 @@
 package memory
 
 import (
+	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
 
-// DefaultThreshold is how many records a query will hand back before it stops
-// and reports a count instead.
+// DefaultThreshold is how many records, edges or graph nodes a read will hand
+// back before it stops and reports a count instead.
 //
 // This is the whole point of the retrieval contract. An agent that asks a broad
 // question and receives two hundred records has just spent its context on
@@ -291,6 +293,171 @@ func containsFold(haystack, needleLower string) bool {
 	return strings.Contains(strings.ToLower(haystack), needleLower)
 }
 
+const WholeBody = -1
+
+var projectableFields = []string{"version", "id", "kind", "slug", "scope", "at",
+	"about", "title", "body", "anchors", "origin"}
+
+func ProjectableFields() []string { return slices.Clone(projectableFields) }
+
+type Projection struct {
+	fields    []string
+	bodyLines int
+}
+
+func NewProjection(fields []string, bodyLines int) (Projection, error) {
+	for _, f := range fields {
+		if !slices.Contains(projectableFields, f) {
+			return Projection{}, fmt.Errorf("%q is not a record field: name any of %s",
+				f, strings.Join(projectableFields, ", "))
+		}
+	}
+	if bodyLines < WholeBody {
+		bodyLines = WholeBody
+	}
+	return Projection{fields: slices.Clone(fields), bodyLines: bodyLines}, nil
+}
+
+func (p Projection) Apply(records []*Entry) []any {
+	out := make([]any, 0, len(records))
+	for _, e := range records {
+		out = append(out, p.project(e))
+	}
+	return out
+}
+
+func (p Projection) project(e *Entry) any {
+	if len(p.fields) == 0 {
+		if p.bodyLines == WholeBody {
+			return e
+		}
+		shorter := *e
+		shorter.Body = p.head(e.Body)
+		return &shorter
+	}
+	out := make(map[string]any, len(p.fields))
+	for _, f := range p.fields {
+		switch f {
+		case "version":
+			out[f] = e.SchemaVersion()
+		case "id":
+			out[f] = e.ID
+		case "kind":
+			out[f] = e.Kind
+		case "slug":
+			out[f] = e.Slug
+		case "scope":
+			out[f] = e.Scope
+		case "at":
+			out[f] = e.At
+		case "about":
+			out[f] = e.About
+		case "title":
+			out[f] = e.Title
+		case "body":
+			if p.bodyLines != 0 {
+				out[f] = p.head(e.Body)
+			}
+		case "anchors":
+			out[f] = e.Anchors
+		case "origin":
+			out[f] = e.Origin
+		}
+	}
+	return out
+}
+
+func (p Projection) head(body string) string {
+	if p.bodyLines < 0 {
+		return body
+	}
+	if p.bodyLines == 0 {
+		return ""
+	}
+	lines := SplitLines([]byte(body))
+	if len(lines) <= p.bodyLines {
+		return body
+	}
+	return strings.Join(lines[:p.bodyLines], "\n")
+}
+
+type EdgeFilter struct {
+	Types      []EdgeType
+	From       string
+	To         string
+	Since      string
+	Until      string
+	CountOnly  bool
+	HintAdvice []string
+	Limit      int
+	Threshold  int
+}
+
+type EdgeResult struct {
+	Count     int     `json:"count"`
+	Returned  int     `json:"returned"`
+	Truncated bool    `json:"truncated"`
+	Hint      string  `json:"hint,omitempty"`
+	Edges     []*Edge `json:"edges"`
+}
+
+func QueryEdges(lines []Line, f EdgeFilter) EdgeResult {
+	types := map[EdgeType]bool{}
+	for _, t := range f.Types {
+		types[t] = true
+	}
+
+	var matched []*Edge
+	for _, e := range Edges(lines) {
+		if len(types) > 0 && !types[e.Type] {
+			continue
+		}
+		if f.From != "" && e.From != f.From {
+			continue
+		}
+		if f.To != "" && e.To != f.To {
+			continue
+		}
+		if f.Since != "" && e.At < f.Since {
+			continue
+		}
+		if f.Until != "" && e.At > f.Until {
+			continue
+		}
+		matched = append(matched, e)
+	}
+	sort.SliceStable(matched, func(i, j int) bool { return matched[i].At > matched[j].At })
+
+	res := EdgeResult{Count: len(matched)}
+
+	threshold := f.Threshold
+	if threshold == 0 {
+		threshold = DefaultThreshold
+	}
+
+	if !f.CountOnly {
+		switch {
+		case f.Limit > 0:
+			n := min(f.Limit, len(matched))
+			res.Edges = matched[:n]
+			res.Truncated = n < len(matched)
+			if res.Truncated {
+				res.Hint = "limit reached; " + itoa(len(matched)-n) + " older matches not returned"
+			}
+		case threshold > 0 && len(matched) > threshold:
+			res.Truncated = true
+			res.Hint = withheldHint(f.HintAdvice)
+		default:
+			res.Edges = matched
+		}
+	}
+	if res.Edges == nil {
+		res.Edges = []*Edge{}
+	}
+	res.Returned = len(res.Edges)
+	return res
+}
+
 // Node is one step of a graph walk.
 type Node struct {
 	Entry    *Entry `json:"entry"`
@@ -349,6 +516,26 @@ func Graph(entries []*Entry, edges []*Edge, from string, depth int) []Node {
 		frontier = next
 	}
 	return out
+}
+
+type GraphResult struct {
+	Count     int    `json:"count"`
+	Truncated bool   `json:"truncated"`
+	Hint      string `json:"hint,omitempty"`
+	Nodes     []Node `json:"nodes"`
+}
+
+func GuardGraph(nodes []Node, threshold int, advice []string) GraphResult {
+	res := GraphResult{Count: len(nodes), Nodes: nodes}
+	if threshold == 0 {
+		threshold = DefaultThreshold
+	}
+	if threshold > 0 && len(nodes) > threshold {
+		res.Nodes = []Node{}
+		res.Truncated = true
+		res.Hint = withheldHint(advice)
+	}
+	return res
 }
 
 func itoa(n int) string {

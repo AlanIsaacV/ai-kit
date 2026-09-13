@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,11 +30,12 @@ Usage:
   memory add       --kind KIND --title TEXT --about TAG[,TAG...] [--plan SLUG] [--body TEXT] [--slug SLUG] [--anchor PATH:LINE] [--repo-root PATH]
   memory add       --batch PATH|- [--plan SLUG] [--repo-root PATH]
   memory link      --type TYPE --from ID --to ID
-  memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--id IDS] [--since TS] [--until TS] [--current] [--count] [--limit N]
+  memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--id IDS] [--since TS] [--until TS] [--current] [--count] [--fields KEYS] [--body-lines N] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
   memory areas     [--kind KINDS] [--plan SLUG]
   memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--current] [--repo-root PATH]
-  memory graph     --from ID [--depth N]
+  memory edges     [--type TYPES] [--from ID] [--to ID] [--since TS] [--until TS] [--count] [--limit N]
+  memory graph     --from ID [--depth N] [--threshold N]
   memory state     [--id ID] [--text] [--here] [--all]
   memory render    --as KIND
   memory promote   [--ids ID[,ID...]] [--kind KIND[,KIND...]] --to user [--dry-run]
@@ -45,7 +47,8 @@ Common flags:
                            --scope: it answers for both logs, reported apart.
   --plan SLUG              which plan a record belongs to: stamped by 'add',
                            bounds 'query' and 'search'. Defaults to AI_KIT_PLAN.
-                           Other commands accept it and read the whole log.
+                           Other commands accept it and read the whole log, bar
+                           'edges', which refuses it: an edge carries no plan.
   --dir PATH               start directory for repo discovery (default: cwd)
 
 There is one log per repo, at <repo>/.ai-kit/memory.jsonl. The plan a record
@@ -85,6 +88,25 @@ written rather than parsed as a date, so a bare '--until 2026-08-01' stops just
 before that day; pass a full timestamp to bound one. '--count' reports how many
 records match and returns none of them, which is the same number the same query
 without it reports.
+
+'query --fields KEY[,KEY...]' returns those keys of each matched record and no
+others — any subset of version, id, kind, slug, scope, at, about, title, body,
+anchors, origin, with nothing forced in — and refuses a name outside them rather
+than dropping it. '--body-lines N' returns the first N lines of each body; 0
+returns no body at all and -1, the default, returns the whole of it. Both are on
+'query' alone, both change the shape of an answer rather than which records are
+in it, and neither is a way past the count-before-dump guard.
+
+'edges' lists the relations themselves, and it is the one read that needs no id
+to start from: every edge in the log, or the ones narrowed by '--type', by either
+endpoint, or by time. It filters on what an edge carries and on nothing else — an
+edge has no plan, so '--plan' is refused here rather than accepted and ignored,
+and the kind or the areas of the records at either end are not bounds it takes.
+'graph --from ID' is still the walk outward from one record, and '--depth 0' is
+that record alone. Both carry the same count-before-dump guard 'query' carries:
+above the threshold they return no edges and no nodes at all, say so with
+'truncated', and name in the hint the flags that get past it — for 'graph' that
+is a smaller '--depth', or '--threshold -1' for the whole walk however big.
 
 'state' reads one log or every log, and its default follows the output mode:
 'state' reports this repository as JSON, 'state --text' prints what is waiting on
@@ -128,6 +150,8 @@ func main() {
 		err = cmdAreas(os.Args[2:])
 	case "anchors":
 		err = cmdAnchors(os.Args[2:])
+	case "edges":
+		err = cmdEdges(os.Args[2:])
 	case "graph":
 		err = cmdGraph(os.Args[2:])
 	case "state":
@@ -193,8 +217,9 @@ type common struct {
 
 // --plan is bound on every command, not only the three that use it. It is a
 // filter on 'query' and 'search' and a stamp on 'add'; elsewhere it is accepted
-// and ignored, because a caller that has a plan slug in hand will pass it, and
-// refusing the flag would break every invocation that names one out of habit.
+// and ignored — bar 'edges', which refuses it, since an edge carries no plan at
+// all — because a caller that has a plan slug in hand will pass it, and refusing
+// the flag would break every invocation that names one out of habit.
 func (c *common) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.scope, "scope", "repo", "repo|user")
 	fs.StringVar(&c.plan, "plan", "", "plan slug: stamped by add, bounds query and search")
@@ -944,6 +969,7 @@ var queryHintAdvice = []string{
 	"narrow with --about/--kind/--current/--id/--since/--until",
 	"pass --limit N to take the most recent",
 	"ask for --count alone",
+	"take less of each record with --fields id,title or --body-lines 5",
 }
 
 func cmdQuery(args []string) error {
@@ -959,6 +985,9 @@ func cmdQuery(args []string) error {
 	until := fs.String("until", "", "records stamped at this RFC3339 timestamp or earlier; the bound itself is included, and compared as written, so a bare date stops just before that day")
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	count := fs.Bool("count", false, "report how many match and return no records")
+	fields := fs.String("fields", "", "comma-separated record fields to return — "+
+		strings.Join(memory.ProjectableFields(), ", ")+" — and no others; a name outside that set is refused")
+	bodyLines := fs.Int("body-lines", memory.WholeBody, "return the first N lines of each body; 0 returns no body at all, -1 (the default) returns the whole of it")
 	limit := fs.Int("limit", 0, "return at most N, most recent first")
 	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
 	if err := parseFlags(fs, args); err != nil {
@@ -969,6 +998,10 @@ func cmdQuery(args []string) error {
 		return fail("empty_id", "--id %q names no id: a flag that parsed to nothing is what an unset "+
 			"variable looks like, and reading the whole log there would answer a question nobody asked. "+
 			"Name at least one id, or drop --id.", *ids)
+	}
+	proj, err := memory.NewProjection(splitList(*fields), *bodyLines)
+	if err != nil {
+		return fail("unknown_field", "--fields: %s", err.Error())
 	}
 	plan, err := c.planFilter()
 	if err != nil {
@@ -988,7 +1021,7 @@ func cmdQuery(args []string) error {
 		HintAdvice:  queryHintAdvice,
 		Limit:       *limit,
 		Threshold:   *threshold,
-	})
+	}, proj)
 }
 
 var searchHintAdvice = []string{
@@ -1155,16 +1188,20 @@ func cmdAnchors(args []string) error {
 	return nil
 }
 
-func runQuery(c *common, f memory.Filter) error {
+func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
 	loc, lines, err := c.load()
 	if err != nil {
 		return err
 	}
 	res := memory.Query(lines, f)
+	records := any(res.Records)
+	if len(proj) > 0 {
+		records = proj[0].Apply(res.Records)
+	}
 	out := map[string]any{
 		"path": loc.Path, "scope": loc.Scope, "plan": f.Plan,
 		"count": res.Count, "returned": res.Returned, "truncated": res.Truncated,
-		"records": res.Records,
+		"records": records,
 	}
 	if res.Hint != "" {
 		out["hint"] = res.Hint
@@ -1332,12 +1369,77 @@ func filterByID(rep memory.StateReport, id string) (memory.StateReport, int) {
 	return rep, len(objectives) + len(excluded)
 }
 
+var edgesHintAdvice = []string{
+	"narrow with --type/--from/--to/--since/--until",
+	"pass --limit N to take the most recent",
+	"ask for --count alone",
+}
+
+func cmdEdges(args []string) error {
+	fs := flag.NewFlagSet("edges", flag.ExitOnError)
+	var c common
+	c.bind(fs)
+	types := fs.String("type", "", "comma-separated edge types (see `memory kinds`); a type outside the closed set is refused")
+	from := fs.String("from", "", "exact id the edge points from")
+	to := fs.String("to", "", "exact id the edge points to")
+	since := fs.String("since", "", "edges stamped at this RFC3339 timestamp or later; the bound itself is included, and compared as written, so a bare date starts that day")
+	until := fs.String("until", "", "edges stamped at this RFC3339 timestamp or earlier; the bound itself is included, and compared as written, so a bare date stops just before that day")
+	count := fs.Bool("count", false, "report how many match and return no edges")
+	limit := fs.Int("limit", 0, "return at most N, most recent first")
+	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	if len(namedFlags(fs, "plan")) > 0 {
+		return fail("plan_not_on_edges", "--plan %q bounds nothing here: an edge carries no plan, only the "+
+			"records at its two ends do, so bounding edges by one would mean joining against them — which this "+
+			"command does not do. Drop --plan, or name an endpoint with --from/--to.", c.plan)
+	}
+	wantTypes, err := toEdgeTypes(splitList(*types))
+	if err != nil {
+		return err
+	}
+	loc, lines, err := c.load()
+	if err != nil {
+		return err
+	}
+
+	res := memory.QueryEdges(lines, memory.EdgeFilter{
+		Types:      wantTypes,
+		From:       *from,
+		To:         *to,
+		Since:      strings.TrimSpace(*since),
+		Until:      strings.TrimSpace(*until),
+		CountOnly:  *count,
+		HintAdvice: edgesHintAdvice,
+		Limit:      *limit,
+		Threshold:  *threshold,
+	})
+
+	out := map[string]any{
+		"path": loc.Path, "scope": loc.Scope,
+		"count": res.Count, "returned": res.Returned, "truncated": res.Truncated,
+		"edges": res.Edges,
+	}
+	if res.Hint != "" {
+		out["hint"] = res.Hint
+	}
+	emit(out)
+	return nil
+}
+
+var graphHintAdvice = []string{
+	"walk fewer hops with --depth N",
+	"pass --threshold -1 to take the whole walk",
+}
+
 func cmdGraph(args []string) error {
 	fs := flag.NewFlagSet("graph", flag.ExitOnError)
 	var c common
 	c.bind(fs)
 	from := fs.String("from", "", "entry id to walk from")
-	depth := fs.Int("depth", 1, "how many hops")
+	depth := fs.Int("depth", 1, "how many hops; 0 answers with the record at --from and nothing else")
+	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -1352,7 +1454,13 @@ func cmdGraph(args []string) error {
 	if nodes == nil {
 		return fail("unknown_id", "no entry with id %s in %s", *from, loc.Path)
 	}
-	emit(map[string]any{"path": loc.Path, "from": *from, "depth": *depth, "count": len(nodes), "nodes": nodes})
+	res := memory.GuardGraph(nodes, *threshold, graphHintAdvice)
+	out := map[string]any{"path": loc.Path, "from": *from, "depth": *depth, "count": res.Count, "nodes": res.Nodes}
+	if res.Truncated {
+		out["truncated"] = res.Truncated
+		out["hint"] = res.Hint
+	}
+	emit(out)
 	return nil
 }
 
@@ -1488,6 +1596,14 @@ func joinKinds(ks []memory.Kind) string {
 	out := make([]string, 0, len(ks))
 	for _, k := range ks {
 		out = append(out, string(k))
+	}
+	return strings.Join(out, ", ")
+}
+
+func joinEdgeTypes(ts []memory.EdgeType) string {
+	out := make([]string, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, string(t))
 	}
 	return strings.Join(out, ", ")
 }
@@ -1705,6 +1821,20 @@ func buildAnchors(repoRoot string, specs anchorSpecs) ([]memory.Anchor, error) {
 			return nil, fail("bad_anchor", "%s", err.Error())
 		}
 		out = append(out, a)
+	}
+	return out, nil
+}
+
+func toEdgeTypes(ss []string) ([]memory.EdgeType, error) {
+	known := memory.EdgeTypes()
+	out := make([]memory.EdgeType, 0, len(ss))
+	for _, s := range ss {
+		t := memory.EdgeType(s)
+		if !slices.Contains(known, t) {
+			return nil, fail("unknown_edge_type", "%q is not an edge type: --type takes any of %s",
+				s, joinEdgeTypes(known))
+		}
+		out = append(out, t)
 	}
 	return out, nil
 }

@@ -557,9 +557,9 @@ And one honest limit: **returning to bare `planned` is not expressible.**
 In practice nothing wants to: a record leaves `approved_for_execution` for
 `blocked` or `cancelled`, not for `planned`.
 
-`memory state` is what computes it. `query` and `graph` still report edges —
-`graph` deliberately, since walking relations is a different question from
-resolving one record's state.
+`memory state` is what computes it. `edges` and `graph` still report the edges
+themselves — deliberately, since listing or walking relations is a different
+question from resolving one record's state.
 
 ## The objective tree
 
@@ -1014,10 +1014,15 @@ memory query --plan jwt-migration --about auth --kind decision --current
 memory query --id <id>,<id>      # exactly those records, and what it could not find
 memory query --since 2026-08-01T00:00:00Z --until 2026-08-31T23:59:59Z   # both bounds inclusive
 memory query --count --kind gotcha    # how many, and no records
+memory query --fields id,title        # those keys per record, and no others
+memory query --body-lines 5           # the first five lines of every body
 memory search --plan jwt-migration "key rotation"
 memory areas --kind preference   # what can be asked about, in both logs
 memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
+memory edges --type supersedes   # every edge of one relation, no starting id
+memory edges --from <id> --since 2026-09-01   # what that record linked this month
 memory graph --from <id> --depth 2
+memory graph --from <id> --threshold -1   # the whole walk, however big it is
 
 memory state                     # every objective: state, tree, blocking, tally
 memory state --id <objective-id> # just that one
@@ -1050,7 +1055,9 @@ it, because it answers for both. `--plan` is a
 *stamp* on `add`, optional there since a record without one belongs to the
 [repository](#records-the-repository-owns), and a *bound* on `query` and
 `search`; other commands accept it and read the whole log, since `link` and
-`graph` are the operations the collapse exists to let cross plans. `state` is in
+`graph` are the operations the collapse exists to let cross plans.
+[`edges`](#asking-about-edges-and-a-walk-that-cannot-dump) is the one command
+that refuses it outright, because an edge carries no plan at all. `state` is in
 that second group on purpose — an objective's parent, its children and which
 objective is current are properties of the log, so narrowing the derivation would
 change the answers rather than the view. With no `--plan`, `AI_KIT_PLAN` is used.
@@ -1093,6 +1100,104 @@ timestamp for a day boundary.
 number the same query without `--count` reports, so the count-before-dump
 threshold is neither in its way nor holed by it: `--count` answers with a number
 whatever the guard would have done, and never with records.
+
+### Asking for part of a record
+
+Two more flags on `query` change the shape of what comes back rather than which
+records do. A caller who wanted forty titles stops receiving forty bodies with
+them, and a caller who wants to see how a 13 KB `gotcha` opens stops receiving
+13 KB.
+
+```bash
+memory query --kind gotcha --fields id,title                 # the cheap listing
+memory query --id <id> --fields title,body --body-lines 10   # the top of one long body
+memory query --about auth --body-lines 0                     # every record, no bodies
+```
+
+`--fields` takes a comma-separated list of the record's own JSON keys — `version`,
+`id`, `kind`, `slug`, `scope`, `at`, `about`, `title`, `body`, `anchors`, `origin`
+— and returns exactly those and no others. Any subset is legal and nothing is
+forced in: `--fields title` returns titles alone, without an id. A name outside
+those eleven refuses the invocation with `unknown_field`, names the field it was
+handed, and returns no records at all — a key silently dropped would read as a
+record that does not carry it. A field you name comes back even where the record
+has nothing under it, as `null` or `""`, so every row of the answer has the same
+shape; a whole record still omits an empty `anchors` or `origin` exactly as it
+always did. What the smaller shape costs is order: a projected record prints its
+keys alphabetically rather than in the record's own order.
+
+`--body-lines N` returns the first N lines of every body. `0` returns no `body`
+key at all — including where `--fields` named it, which is the one place a named
+field does not come back — and the default, `-1`, returns the whole of it, so a
+query that does not name the flag answers exactly as it did before the flag
+existed. A body of N
+lines or fewer comes back whole. Named beside a `--fields` list that does not ask
+for `body`, it does nothing rather than refusing.
+
+Neither flag is on `search`, and neither is a way past the count-before-dump
+guard: a query whose matches exceed the threshold still withholds them, and asking
+for less of each record does not make it hand them over. `--limit` and
+`--threshold` are still what get past it, and both compose with both of these.
+
+A `query` that matches nothing answers with an empty `records` list and never with
+`null`, including a `--id` that names an id the log does not carry — which is
+still listed under `not_found` at exit 0.
+
+### Asking about edges, and a walk that cannot dump
+
+`graph --from <id>` answers what one record is connected to, and it used to be the
+only way to learn anything about an edge — every entry point demanded the starting
+id the caller was trying to find. `edges` is the read that needs none.
+
+```bash
+memory edges                                 # every edge in the log
+memory edges --type supersedes               # one relation, across the whole log
+memory edges --type met,cancelled            # or several
+memory edges --from <id>                     # what that record points at
+memory edges --to <id>                       # what points at it
+memory edges --since 2026-09-01 --until 2026-09-08    # what got linked that week
+memory edges --count                         # how many, and no edges
+```
+
+It filters on what an edge carries and on nothing else: its type, its two
+endpoints, its `at` stamp. That is the whole of an edge — no body, no `about` and
+**no plan** — so `--plan` is refused here (`plan_not_on_edges`) rather than
+accepted and ignored the way `graph` and `state` accept it. Bounding edges by a
+plan would mean joining against the records at their ends, and so would filtering
+by those records' kind or areas; none of that is in this command. Only `--plan` on
+the command line refuses: `AI_KIT_PLAN` in the environment is not this caller
+naming a flag, and it leaves `edges` answering.
+
+`--type` takes the [edge types](#edge-types), comma-separated, and refuses a value
+outside that closed set (`unknown_edge_type`) naming the eleven it does take.
+`--since` and `--until` are inclusive and compared as written, exactly as on
+`query`, so a bare `--until 2026-09-08` stops just before that day. A filter
+matching nothing answers `edges: []` and never `null`, at exit 0. Edges come back
+most recent first by their stamp, and edges sharing a stamp stay in the order the
+log holds them.
+
+**`edges` and `graph` both carry the count-before-dump guard now**, the same one
+`query` carries and for the same reason: every node of a walk embeds a whole
+record, body included, so an unbounded `graph` is an unbounded dump of bodies.
+Above the threshold both return nothing — `edges: []`, `nodes: []` — with
+`truncated: true` and a hint naming the flags *that* command accepts and no
+others. On `edges` the ways out are the filters, `--limit N` and `--count`; on
+`graph` they are a smaller `--depth` and `--threshold -1`.
+
+`graph` withholds rather than slicing, which is not the choice `--limit` makes on
+`query`. A graph is emitted in traversal order, so the first N nodes of one is a
+partial graph that misreports its own shape — it says a record has no children
+where the cut happened to land. "The N most recent records" is an answer; "the
+first N nodes" is not. `--depth 0`, which answers with the record at `--from`
+alone, is the other way to make a walk small.
+
+**One existing invocation answers differently because of this, deliberately.**
+A `graph --from <id>` reaching more nodes than
+the threshold returned all of them before and returns none of them now, saying so
+with `truncated` and a hint. `--threshold -1` gets the old answer back byte for
+byte. The guard ships on by default because shipping it dormant behind an explicit
+flag would have left the unbounded dump as the default, which is the thing it
+exists to stop.
 
 ### Writing many records at once
 
@@ -1219,6 +1324,16 @@ under different tags is invisible to whoever finds the mistake.
   counts only that plan's matches, and still withholds them above the threshold.
 - Two records written under different plans can be linked, and each is reachable
   from the other by a graph walk.
+- `edges --plan <slug>` is refused at a non-zero exit, the refusal says an edge
+  carries no plan, and it hands back no `edges` key at all.
+- `edges` answers a filter that matched nothing with an empty list and never with
+  `null` — over a log holding no edges, over a type nothing carries, and over an
+  endpoint no edge names — asserted by decoding the output rather than matching
+  its text.
+- A `graph` walk reaching more nodes than the threshold comes back with `count`
+  set to the true reach, `nodes: []`, `truncated: true` and a hint.
+- `graph --depth 0` returns exactly one node, the record at `--from`, at depth 0,
+  over a log where one hop out would have reached a second.
 - `add` writes a record when no plan is named, and it carries no `plan` key at
   all rather than an empty one; a plan slug that is not kebab-case is still
   refused, and so is a kind outside the closed set, a missing `about` and a blank
@@ -1404,6 +1519,17 @@ under different tags is invisible to whoever finds the mistake.
   `--id` or by time, and `--count` is not the way past it: it answers with a
   number and no records under the threshold, over it, with `--limit`, and with the
   guard disabled.
+- `query --fields <list>` returns exactly the named keys and no others, asserted
+  over the marshaled JSON for a single-field list that omits `id`, for a
+  multi-field list, and for all eleven fields at once.
+- `--fields` naming something that is not a record field is refused at a non-zero
+  exit, names the field it was handed, and prints no `records` key at all.
+- `--body-lines 2` returns the first two lines of a five-line body and the whole of
+  a two-line one — this log's median body is two lines — while `0` leaves no `body`
+  key on any record and naming no flag at all returns the whole body.
+- `query` answers a zero match with an empty `records` list rather than `null`,
+  both when the filter matched nothing and when `--id` named an id the log does not
+  carry, and `not_found` still names that id.
 
 ```bash
 go test ./...

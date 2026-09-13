@@ -1,7 +1,10 @@
 package memory
 
 import (
+	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -551,5 +554,64 @@ func TestRenderMarksSuperseded(t *testing.T) {
 	out := Render([]*Entry{old, fresh}, []*Edge{supersedes(t, fresh, old)}, KindADR, ScopeRepo)
 	if !strings.Contains(out, "status: superseded") {
 		t.Fatalf("a superseded record must say so:\n%s", out)
+	}
+}
+
+func TestProjectionReturnsExactlyTheFieldsItWasNamed(t *testing.T) {
+	store := Open(filepath.Join(t.TempDir(), ".ai-kit", "memory.jsonl"))
+	first := entry(t, KindDecision, "RS256 over HS256", "auth")
+	first.Body = "Per-service key rotation requires asymmetric signing."
+	first.Origin = &Origin{Plan: "jwt-migration"}
+	second := entry(t, KindWontFix, "Concurrent cancel is impossible", "orders")
+	if err := store.Append(first, second); err != nil {
+		t.Fatal(err)
+	}
+	lines, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := Query(lines, Filter{})
+	if len(res.Records) != 2 {
+		t.Fatalf("the log holds two records, the query returned %d", len(res.Records))
+	}
+
+	cases := []struct {
+		name   string
+		fields []string
+	}{
+		{"one field, and not id", []string{"title"}},
+		{"several fields", []string{"id", "kind", "title", "body"}},
+		{"every field there is", ProjectableFields()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := NewProjection(tc.fields, WholeBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(p.Apply(res.Records))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("a projected record must still be JSON: %v\n%s", err, raw)
+			}
+			if len(got) != len(res.Records) {
+				t.Fatalf("projecting %d records returned %d", len(res.Records), len(got))
+			}
+			want := slices.Clone(tc.fields)
+			slices.Sort(want)
+			for _, rec := range got {
+				keys := make([]string, 0, len(rec))
+				for k := range rec {
+					keys = append(keys, k)
+				}
+				slices.Sort(keys)
+				if !slices.Equal(keys, want) {
+					t.Fatalf("--fields %v returned the keys %v", tc.fields, keys)
+				}
+			}
+		})
 	}
 }

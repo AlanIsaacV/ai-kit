@@ -2,6 +2,138 @@
 
 ## Unreleased
 
+### `edges` answers without a starting id, and `graph` can no longer dump
+
+The same measurement that produced `--id`, `--since`/`--until`, `--count`,
+`--fields` and `--body-lines` counted a shape no subcommand had at all: a question
+about the edges themselves. Every way into the graph demanded `--from <id>` — the
+id the caller was trying to find — so "show me every `supersedes` edge" and "what
+got linked last Tuesday" were a `grep` over `.ai-kit/memory.jsonl`. And the walk
+that was the only way in had no brake on it: `query` refuses to hand back more
+than 25 records without being asked twice, while `graph` would serialize every
+node it could reach, each one carrying a complete record body.
+
+```bash
+memory edges --type supersedes                 # one relation, across the whole log
+memory edges --to <id> --since 2026-09-01      # what pointed at it this month
+memory edges --count                           # how many, and no edges
+memory graph --from <id> --threshold -1        # the whole walk, however big
+```
+
+- **`edges` is a subcommand of its own**, not a mode of `graph` and not a flag on
+  `query`. REJECTED: `graph` with an optional `--from`, which is one command
+  meaning two things whose result changes shape on an absent flag; and
+  `query --edges`, which would put a second `records` shape inside the command
+  carrying the most live gotchas in this tool. The price is one duplicated helper —
+  `runQuery` is hardwired to `Query`'s `Filter` and `Result` types, so `edges` has
+  a parallel one — and it was paid to leave `query`, `search` and `graph` untouched
+  while adding a fourth read.
+- **It filters on what an `Edge` carries and on nothing else**: `--type`, `--from`,
+  `--to`, `--since`, `--until`, with `--count`, `--limit` and `--threshold` for the
+  size of the answer. An edge has no plan, no `about` and no body, so `--plan` is
+  refused with `plan_not_on_edges` and says why, rather than being accepted and
+  ignored the way `graph` and `state` accept it. REJECTED: joining against the
+  entry map so that a plan, a kind or an area of the records at either end could
+  narrow the list. That join is a real question and it is the next piece of work.
+  The refusal fires on the flag alone: `AI_KIT_PLAN` in the environment feeds the
+  same field, and refusing on that would refuse every session that exported a plan
+  slug and never typed the flag.
+- **`--type` refuses a value outside the closed set** and names the eleven it
+  takes, where `query --kind` lets an unknown kind quietly match nothing. Here an
+  empty list would be indistinguishable from a relation nobody has drawn yet.
+- **`graph` now carries the same count-before-dump guard, on by default at 25.**
+  Each node embeds an entire record, body included, so bounding `len(nodes)` is
+  bounding exactly what the guard on `query` bounds. Above the threshold it returns
+  `nodes: []` with `truncated: true` and a hint naming only what `graph` accepts —
+  a smaller `--depth`, or `--threshold -1` for the whole walk. REJECTED: a
+  `--limit` on nodes. A graph is emitted in traversal order, so the first N nodes
+  of one is a partial graph that misreports its own shape, saying a record has no
+  children where the cut landed; "the N most recent records" is an answer and "the
+  first N nodes" is not.
+- **One existing invocation answers differently, and that is the whole of the
+  break.** A `graph --from <id>` whose walk reached more than 25 nodes returned all
+  of them yesterday and returns none of them today. This was chosen with its cost
+  known: shipping the guard dormant behind an explicit `--threshold` would have
+  left the unbounded dump as the default, which is the thing it exists to stop.
+  `--threshold -1` gets the old answer back — measured byte for byte against a
+  binary built before the change, over a 31-node walk, 20,093 bytes identical.
+- **Everything else is where it was.** Measured against a binary built from the
+  working tree before this change, over 39 invocations covering every subcommand
+  the binary dispatches — including `graph` at depths 0, 1 and 3, an unknown id and
+  a missing `--from` — every pair is byte-identical on stdout, on stderr and in its
+  exit code, with `edges` the only difference, since it did not exist. What did
+  move is the usage text: the synopsis gained an `edges` line, `graph`'s gained
+  `--threshold`, a paragraph was inserted, and `memory graph --help` prints
+  `--threshold` and a `--depth` line that now says what `--depth 0` does. `graph`
+  answering with the record at `--from` alone for `--depth 0` is not new behaviour;
+  it was already true, undocumented and untested, and is now all three.
+
+### `query` returns the fields you ask for, and the head of a long body
+
+The measurement that produced `--id`, `--since`/`--until` and `--count` counted two
+more shapes a caller had to assemble for itself: 270 workarounds for reading part
+of a long body and 96 for putting the CLI's output through another program, out of
+1,308. Neither is about which records come back, so neither could be a filter —
+both are a projection over the records `query` already matched.
+
+```bash
+memory query --kind gotcha --fields id,title
+memory query --id 01KZ2WFZ2ASGEZFYG12NQ6QHW6 --fields title,body --body-lines 10
+memory query --about tools/memory/ --body-lines 0
+```
+
+- **`--fields` is a free list of the record's own keys, not a set of named shapes.**
+  Any subset of `version`, `id`, `kind`, `slug`, `scope`, `at`, `about`, `title`,
+  `body`, `anchors`, `origin` comes back, and nothing else does: `--fields title`
+  returns titles with no id, which is what `jq` was being run for. REJECTED: named
+  shapes (`--brief`, `--titles`), which would be this tool guessing which four keys
+  a caller meant, and a bare `--no-body`, which answers one measured shape and none
+  of the others. A name outside the eleven refuses the run and names the field, the
+  way `add --batch` names the line and the key — a key dropped in silence is
+  indistinguishable from a record that does not carry it. A field that *is* named
+  comes back even where the record has nothing under it, so every row of the answer
+  has the same shape; a whole record's `anchors` and `origin` still omit themselves
+  when empty, because nothing about an unprojected record changed.
+- **`--body-lines N` is a leading line count, and its sentinel is load-bearing.**
+  `-1`, the default, is the whole body; `0` is no `body` key at all; `N` is the
+  first N lines, and a body of N lines or fewer comes back whole. REJECTED: a byte
+  range and a window around the `--text` match — lines, because `SplitLines`
+  already cuts content the way an editor numbers it and nothing in the read path
+  ever indexes a body by byte. The default is `-1` rather than `0` because Go's
+  zero value for an unset int flag is `0`: a scheme where `0` meant the whole body
+  would have changed the shape of every existing invocation without anyone touching
+  one. This log's median body is two lines, which is how much an off-by-one here
+  would cost. Named beside a `--fields` list that does not ask for `body`, it does
+  nothing rather than refusing.
+- **The projection runs after the filter and never inside it.** It is a function in
+  `internal/memory` applied to what `Query` already returned, so `Query`'s
+  signature, its filtering loop, `Result.Records`'s type and `Areas` are untouched.
+  The loop is the part that has to keep returning the same records, and not
+  touching it is how that is guaranteed rather than argued.
+- **`query` answers a zero match with `[]` and never with `null`.** `Query`
+  initialised the slice and then overwrote it with a nil one, so `null` meant
+  "nothing matched" and `[]` meant "the guard is withholding" — two answers with no
+  documented distinction, which `--id` turned from rare into ordinary. This is the
+  one existing answer this change makes different, deliberately. `not_found` is
+  exactly what it was: present whenever `--id` was passed, naming every id the
+  query did not match, at exit 0.
+- **On `query` only.** `search` keeps its flag set, its result map and its hint
+  untouched, for the reason `--id` and `--count` are not on it either: every flag
+  costs weight in the MCP contract this surface is heading for, and the measurement
+  does not show these shapes missing from `search`. One consequence is visible and
+  is left visible — `search` still answers a zero match with `null`, because
+  changing that would be changing `search`. The count-before-dump hint on `query`
+  now names the two new flags among the ways out and `search`'s names neither.
+  Three places in all are where an existing invocation's bytes moved, and this is
+  the whole list: the `records` key on `query`'s zero-match reads, that hint text,
+  and the usage string — `query`'s synopsis line gained the two flags, a paragraph
+  describing them was inserted, and `query --help` prints two more entries, so
+  `memory` with no arguments and `memory query --help` both answer differently.
+  Measured against a binary built from `8fa281a` over 35 `query` and `search`
+  invocations covering every pre-existing flag: 28 byte-identical, six differing
+  in `records` alone on a zero match, one — `query --threshold` with the guard
+  tripped — differing in the hint.
+
 ### `query` answers by id, inside a time range, and with a count instead of records
 
 Measured over 2,000 transcripts, an agent went around this tool once per 7.0 uses:
