@@ -71,8 +71,10 @@ file. An entry written *without* one belongs to the repository rather than to an
 plan in it, and every plan-bounded read returns it; see
 [records the repository owns](#records-the-repository-owns).
 
-**Every command reads one log, and one command reads them all.**
-[`state --text`](#what-is-waiting-on-you-across-every-log) reaches every log
+**Every command reads one log unless asked otherwise, and one command reads them
+all.** [`areas`](#which-areas-a-log-answers-for) reads both of these, reported
+apart, and [`query --scope both`](#asking-both-logs-at-once) reads both as one
+answer. [`state --text`](#what-is-waiting-on-you-across-every-log) reaches every log
 under `MEMORY_ROOTS` — a PATH-style list, default `/srv/projects` — because "what
 is waiting on me" is the one question whose answer is not about the repository
 you are standing in. It creates nothing and writes nothing.
@@ -1016,6 +1018,7 @@ memory query --since 2026-08-01T00:00:00Z --until 2026-08-31T23:59:59Z   # both 
 memory query --count --kind gotcha    # how many, and no records
 memory query --fields id,title        # those keys per record, and no others
 memory query --body-lines 5           # the first five lines of every body
+memory query --scope both --id <id>   # from whichever log holds it, and which one that was
 memory search --plan jwt-migration "key rotation"
 memory areas --kind preference   # what can be asked about, in both logs
 memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
@@ -1049,9 +1052,11 @@ directory nobody can write to says nothing about whether the records in it are
 well-formed, but a sweep that covered fewer logs than requested has not passed
 either, and a caller reading only the exit code has to hear about it.
 
-`--scope` is `repo` by default, and `user` is the only other value —
+`--scope` is `repo` by default, and `user` is the only other value a record can
+live at. `query` alone also takes [`both`](#asking-both-logs-at-once), which reads
+the two as one answer, and every other command refuses it —
 [`areas`](#which-areas-a-log-answers-for) is the one command that does not take
-it, because it answers for both. `--plan` is a
+`--scope` at all, because it answers for both. `--plan` is a
 *stamp* on `add`, optional there since a record without one belongs to the
 [repository](#records-the-repository-owns), and a *bound* on `query` and
 `search`; other commands accept it and read the whole log, since `link` and
@@ -1142,6 +1147,47 @@ for less of each record does not make it hand them over. `--limit` and
 A `query` that matches nothing answers with an empty `records` list and never with
 `null`, including a `--id` that names an id the log does not carry — which is
 still listed under `not_found` at exit 0.
+
+### Asking both logs at once
+
+`query --scope both` reads this repository's log and the user log in one
+invocation, for the caller holding an id who does not know which of the two it
+lives in, and for a kind or a text meant to cover both.
+
+```bash
+memory query --scope both --id <id>,<id>
+memory query --scope both --kind preference --about persistence --current
+```
+
+The answer is one `records` list, most recent first, and every record carries the
+`scope` it was written under — `repo` or `user` for anything written or promoted
+since version 2. `--fields` still forces nothing in, so a projection that leaves
+out `scope` leaves out which log a record came from. The envelope says
+`scope: "both"` and names the two logs under `paths`, the repository's first, in
+place of `path`.
+
+- **Each log is filtered on its own and the matches are merged.** Their lines are
+  never read as one log: each log's objective tree is its own, and joining two
+  would let either one move which objective the other calls current. So
+  `current_objective` is the one the repository log resolves, exactly as
+  `--scope repo` names it. `--current` is safe per log for the same reason
+  promotion makes it safe — no edge points across logs.
+- **Everything about the size of the answer is computed over the union.** `count`
+  is the matches across both logs, `--count` returns that number, `--limit N`
+  takes the N most recent of them, and the count-before-dump guard trips on the
+  union even where neither log alone would trip it. `not_found` names only the ids
+  neither log holds.
+- **Nothing is deduplicated.** [Promotion](#promotion) copies a record with its id
+  untouched, so a promoted record comes back twice, once per scope, and counts
+  twice. Hiding one copy would hide that it lives in both.
+- **A user log that does not exist adds nothing**, at exit 0, the way `areas`
+  reads it. Outside a git repository `both` refuses with `bad_scope`, the refusal
+  `--scope repo` gives there, before the user location is touched.
+- **`both` is not a scope.** No record can carry it, `memory kinds` does not list
+  it, and adding it to the [record scopes](#changing-the-schema) would be a schema
+  version. It is a value of one flag on one command: `search`, `edges`, `graph`,
+  `anchors`, `state` and every write refuse it exactly as they did before it
+  existed.
 
 ### Asking about edges, and a walk that cannot dump
 
@@ -1530,6 +1576,14 @@ under different tags is invisible to whoever finds the mistake.
 - `query` answers a zero match with an empty `records` list rather than `null`,
   both when the filter matched nothing and when `--id` named an id the log does not
   carry, and `not_found` still names that id.
+- `query --scope both --id <a>,<b>,<c>`, with `<a>` only in the repository log,
+  `<b>` only in the user log and `<c>` in neither, exits 0 with `<a>` carrying
+  `scope: "repo"` and `<b>` carrying `scope: "user"` in one `records` list, and
+  `not_found` naming `<c>` alone.
+- `query --scope both` against a HOME holding no `.ai-kit/` at all exits 0 and
+  returns the repository log's records, each carrying `scope: "repo"`.
+- `search`, `edges` and `graph` refuse `--scope both` at exit 1 with `bad_scope`,
+  naming the scope they were handed.
 
 ```bash
 go test ./...

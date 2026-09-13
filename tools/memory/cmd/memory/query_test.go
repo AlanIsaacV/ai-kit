@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -104,6 +106,106 @@ func TestBodyLinesTakesTheHeadOfEachBody(t *testing.T) {
 		if body != nil {
 			t.Errorf("--body-lines 0 leaves no body key at all on %q, got %q", title, *body)
 		}
+	}
+}
+
+type scopedRecord struct {
+	ID    string `json:"id"`
+	Scope string `json:"scope"`
+}
+
+func scopedAnswer(t *testing.T, res result) (records []scopedRecord, notFound []string) {
+	t.Helper()
+	if res.code != 0 {
+		t.Fatalf("query --scope both: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	var out struct {
+		Records  []scopedRecord `json:"records"`
+		NotFound []string       `json:"not_found"`
+	}
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatalf("query printed something that is not JSON: %v\n%s", err, res.stdout)
+	}
+	return out.Records, out.NotFound
+}
+
+func TestQueryScopeBothFindsEachIDInTheLogThatHoldsIt(t *testing.T) {
+	r := throwawayRepo(t)
+	inRepo := add(t, r, "RS256 over HS256")
+	res := runBare(t, r, "add", "--scope", "user", "--kind", "decision",
+		"--title", "Tests name the behaviour", "--about", "testing")
+	if res.code != 0 {
+		t.Fatalf("add --scope user: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	inUser := recordID(t, res)
+	const inNeither = "01JXKQ7M4T8YZPABCDEFGHJKMN"
+
+	records, notFound := scopedAnswer(t, runBare(t, r, "query", "--scope", "both",
+		"--id", strings.Join([]string{inRepo, inUser, inNeither}, ",")))
+
+	got := map[string]string{}
+	for _, rec := range records {
+		got[rec.ID] = rec.Scope
+	}
+	want := map[string]string{inRepo: "repo", inUser: "user"}
+	if len(got) != len(want) || len(records) != len(want) {
+		t.Fatalf("one list holding the repo record and the user record and nothing else, got %+v", records)
+	}
+	for id, scope := range want {
+		if got[id] != scope {
+			t.Errorf("record %s carries scope %q, want %q", id, got[id], scope)
+		}
+	}
+	if strings.Join(notFound, ",") != inNeither {
+		t.Errorf("not_found names only the id neither log holds, got %v", notFound)
+	}
+}
+
+func TestQueryScopeBothAnswersFromTheRepoLogWhenThereIsNoUserLog(t *testing.T) {
+	r := throwawayRepo(t)
+	first := add(t, r, "RS256 over HS256")
+	second := add(t, r, "Asymmetric signing")
+	if _, err := os.Stat(filepath.Dir(r.user)); !os.IsNotExist(err) {
+		t.Fatalf("the throwaway HOME has to start with no .ai-kit/ at all, stat said %v", err)
+	}
+
+	records, _ := scopedAnswer(t, runBare(t, r, "query", "--scope", "both"))
+
+	if len(records) != 2 {
+		t.Fatalf("both repo records come back, got %+v", records)
+	}
+	for _, rec := range records {
+		if rec.ID != first && rec.ID != second {
+			t.Errorf("a record the repo log never held came back: %+v", rec)
+		}
+		if rec.Scope != "repo" {
+			t.Errorf("record %s carries scope %q, want repo", rec.ID, rec.Scope)
+		}
+	}
+}
+
+func TestScopeBothIsRefusedByEveryReadButQuery(t *testing.T) {
+	r := throwawayRepo(t)
+	from := add(t, r, "RS256 over HS256")
+
+	for _, args := range [][]string{
+		{"search", "--scope", "both", "RS256"},
+		{"edges", "--scope", "both"},
+		{"graph", "--scope", "both", "--from", from},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			res := runBare(t, r, args...)
+			if res.code != 1 {
+				t.Fatalf("--scope both on %s has to be refused, got exit %d\n%s%s", args[0], res.code, res.stdout, res.stderr)
+			}
+			code, msg := errorCode(t, res)
+			if code != "bad_scope" {
+				t.Errorf("expected a bad_scope refusal, got %q", code)
+			}
+			if !strings.Contains(msg, `"both"`) {
+				t.Errorf("the refusal has to name the scope it was handed, got %q", msg)
+			}
+		})
 	}
 }
 

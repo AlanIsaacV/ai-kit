@@ -100,6 +100,45 @@ func targetsOf(edges []*Edge, t EdgeType) map[string]bool {
 // and the current-objective tie-break is stated in terms of exactly that. See
 // Tree.recordActivity.
 func Query(lines []Line, f Filter) Result {
+	matched, cur := match(lines, f)
+	return bound(matched, cur, f)
+}
+
+// QueryEach answers one filter over several logs as a single result: each log is
+// matched on its own and the count, the limit, the guard and NotFound are applied
+// once over the union.
+//
+// The logs' lines are never concatenated into one Query. Each log's objective tree
+// is derived from that log alone, and one Tree over two logs would join two
+// unrelated hierarchies and let either one change which objective the other calls
+// current. CurrentObjective is therefore the first log's, exactly as Query over
+// that log alone reports it.
+//
+// Nothing is deduplicated: promotion copies a record with its id untouched, so the
+// same id in two logs is two matches, and the first log's copy sorts ahead.
+func QueryEach(logs [][]Line, f Filter) Result {
+	var matched []*Entry
+	var cur *CurrentObjective
+	for i, lines := range logs {
+		m, c := match(lines, f)
+		matched = append(matched, m...)
+		if i == 0 {
+			cur = c
+		}
+	}
+	sortMostRecentFirst(matched)
+	return bound(matched, cur, f)
+}
+
+// sortMostRecentFirst orders by id: an id is a ULID, so lexical order is
+// chronological.
+func sortMostRecentFirst(entries []*Entry) {
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].ID > entries[j].ID })
+}
+
+// match is the filtering half of Query: every entry the filter admits, most recent
+// first, and the current objective when the filter admits objectives.
+func match(lines []Line, f Filter) ([]*Entry, *CurrentObjective) {
 	entries, edges := Entries(lines), Edges(lines)
 
 	settled := map[string]bool{}
@@ -184,10 +223,26 @@ func Query(lines []Line, f Filter) Result {
 		matched = append(matched, e)
 	}
 
-	// Most recent first: an id is a ULID, so lexical order is chronological.
-	sort.SliceStable(matched, func(i, j int) bool { return matched[i].ID > matched[j].ID })
+	sortMostRecentFirst(matched)
 
-	res := Result{Count: len(matched), Records: []*Entry{}}
+	if !wantsObjectives {
+		return matched, nil
+	}
+	cur := tree.Current()
+	// Against the matches rather than the returned records: over the
+	// threshold nothing comes back at all, and "the current objective is
+	// outside your filter" would then be false of every query that asked too
+	// broadly.
+	if cur.ID != "" && !containsID(matched, cur.ID) {
+		cur.OutsideFilter = true
+		cur.Why += "; it falls outside this query's filter, so it is named here rather than replaced by the runner-up"
+	}
+	return matched, &cur
+}
+
+// bound is the half of Query that decides how much of the matches to hand back.
+func bound(matched []*Entry, cur *CurrentObjective, f Filter) Result {
+	res := Result{Count: len(matched), Records: []*Entry{}, CurrentObjective: cur}
 	for _, id := range f.ID {
 		if !containsID(matched, id) {
 			res.NotFound = append(res.NotFound, id)
@@ -218,19 +273,6 @@ func Query(lines []Line, f Filter) Result {
 		}
 	}
 	res.Returned = len(res.Records)
-
-	if wantsObjectives {
-		cur := tree.Current()
-		// Against the matches rather than the returned records: over the
-		// threshold nothing comes back at all, and "the current objective is
-		// outside your filter" would then be false of every query that asked too
-		// broadly.
-		if cur.ID != "" && !containsID(matched, cur.ID) {
-			cur.OutsideFilter = true
-			cur.Why += "; it falls outside this query's filter, so it is named here rather than replaced by the runner-up"
-		}
-		res.CurrentObjective = &cur
-	}
 	return res
 }
 

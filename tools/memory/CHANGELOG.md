@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+### `query --scope both` reads the repository log and the user log as one answer
+
+The measurement behind `--id`, `--fields` and `edges` counted 23 callers reading
+both logs by hand, and 3 of them needed both at once: a record fetched by id from
+the user log, not found there, then looked for in both files with a loop that
+printed which one held it. With `--id`, `--text` and `--kind` in place that was two
+invocations and a merge the caller did itself. It is now one.
+
+```bash
+memory query --scope both --id <id>
+memory query --scope both --kind preference --about persistence --current
+```
+
+- **One `records` list, and every record keeps its own `scope`.** REJECTED: one
+  section per log the way `areas` reports, whose per-log `not_found` would call an
+  id missing from the repository section while the user section held it. The
+  envelope says `scope: "both"` and names the two logs under `paths`, repository
+  first, in place of `path`. `plan`, `count`, `returned`, `truncated` and `records`
+  are always there, and `hint`, `not_found` and `current_objective` appear under
+  exactly the conditions they do on one log.
+- **Each log is filtered on its own, and only the matches are merged.** REJECTED:
+  concatenating the two logs' lines into one `Query`, which would build one
+  objective tree over two unrelated hierarchies. `Query` is now its matching loop
+  and its bounding tail as two functions, and `QueryEach` runs the first per log
+  and the second once over the union, so `count`, `--count`, `--limit`, the guard
+  and `not_found` are the union's with no second copy of any of them. The loop
+  itself did not change. `current_objective` is the repository log's, the same
+  object `--scope repo` returns.
+- **Nothing is deduplicated.** A record `promote` copied into the user log comes
+  back twice, once per scope, and counts twice. REJECTED: collapsing by id, which
+  would hide that it lives in both.
+- **A missing user log adds nothing, at exit 0**, the way `areas` reads it — and
+  like `areas`, the read creates `~/.ai-kit/` on a machine that never had one.
+  Outside a git repository `both` refuses with exactly the `bad_scope` that
+  `--scope repo` gives there, before the user location is touched.
+- **`both` is a value of one flag on one command, not a scope.** REJECTED: a
+  `ScopeBoth` in `internal/memory`, which would reach `Resolve`, `ValidScope`,
+  every write and the `scopes` that `memory kinds` publishes, where widening the
+  set is a schema version; and a separate `--both` flag, which could contradict
+  `--scope user`. `search`, `edges`, `graph`, `anchors`, `state`, `render`,
+  `validate` and every write refuse `--scope both` with the same bytes and exit
+  code as before, and `kinds` still publishes `repo` and `user`.
+- **What an existing invocation now answers differently is the help text, and
+  nothing else.** `memory help` and `memory` with no arguments print a usage whose
+  `--scope` line names `both` on `query` and which gained a paragraph describing
+  it, and `memory query -h` prints the new `--scope` help. `search -h` is
+  unchanged, because the help is rewritten on `query`'s flag set alone. Measured
+  against a binary built from `f32dfe2` over one scratch repository and throwaway
+  HOME: 55 read invocations covering every subcommand the binary dispatches —
+  `query` with no `--scope`, with `--scope repo` and with `--scope user` among
+  them — and 8 writes (`init`, `add`, `add --batch` from a file and from stdin,
+  `link`, `promote`) compared with fresh ids and stamps masked, all byte-identical
+  on stdout with the same exit code; so are 14 `--scope both` refusals and `kinds`.
+
 ### `edges` answers without a starting id, and `graph` can no longer dump
 
 The same measurement that produced `--id`, `--since`/`--until`, `--count`,

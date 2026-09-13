@@ -43,8 +43,9 @@ Usage:
   memory kinds
 
 Common flags:
-  --scope repo|user        which log to act on (default: repo). 'areas' takes no
-                           --scope: it answers for both logs, reported apart.
+  --scope repo|user        which log to act on (default: repo). 'query' alone also
+                           takes 'both'. 'areas' takes no --scope: it answers for
+                           both logs, reported apart.
   --plan SLUG              which plan a record belongs to: stamped by 'add',
                            bounds 'query' and 'search'. Defaults to AI_KIT_PLAN.
                            Other commands accept it and read the whole log, bar
@@ -96,6 +97,16 @@ than dropping it. '--body-lines N' returns the first N lines of each body; 0
 returns no body at all and -1, the default, returns the whole of it. Both are on
 'query' alone, both change the shape of an answer rather than which records are
 in it, and neither is a way past the count-before-dump guard.
+
+'query --scope both' reads this repository's log and the user log in one
+invocation and answers with one 'records' list, each record carrying the 'scope'
+it was written under. Each log is filtered on its own; 'count', '--count',
+'--limit', the guard and 'not_found' are computed over the two together, and
+'current_objective' is the repository log's. The answer names both logs under
+'paths', repository first, and has no 'path'. A record promoted into the user log
+comes back twice, once from each. A missing user log adds nothing, and outside a
+git repository 'both' refuses as 'repo' does. No other command takes 'both', and
+it is not a scope a record can carry.
 
 'edges' lists the relations themselves, and it is the one read that needs no id
 to start from: every edge in the log, or the ones narrowed by '--type', by either
@@ -972,10 +983,17 @@ var queryHintAdvice = []string{
 	"take less of each record with --fields id,title or --body-lines 5",
 }
 
+// scopeBoth is a value of query's --scope and never a memory.Scope. `memory kinds`
+// publishes memory.Scopes() as the scopes a record can carry, and widening that
+// set is a schema-version change, so it is resolved here into the two scopes that
+// do exist before anything calls Resolve.
+const scopeBoth = "both"
+
 func cmdQuery(args []string) error {
 	fs := flag.NewFlagSet("query", flag.ExitOnError)
 	var c common
 	c.bind(fs)
+	fs.Lookup("scope").Usage = "repo|user|both; both reads the repo log and the user log as one answer"
 	about := fs.String("about", "", "comma-separated tags; a tag ending in / matches by path prefix")
 	kinds := fs.String("kind", "", "comma-separated kinds")
 	slug := fs.String("slug", "", "exact slug")
@@ -1007,7 +1025,7 @@ func cmdQuery(args []string) error {
 	if err != nil {
 		return err
 	}
-	return runQuery(&c, memory.Filter{
+	f := memory.Filter{
 		Plan:        plan,
 		ID:          idList,
 		About:       splitList(*about),
@@ -1021,7 +1039,11 @@ func cmdQuery(args []string) error {
 		HintAdvice:  queryHintAdvice,
 		Limit:       *limit,
 		Threshold:   *threshold,
-	}, proj)
+	}
+	if c.scope == scopeBoth {
+		return runQueryBoth(&c, f, proj)
+	}
+	return runQuery(&c, f, proj)
 }
 
 var searchHintAdvice = []string{
@@ -1193,13 +1215,43 @@ func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
 	if err != nil {
 		return err
 	}
-	res := memory.Query(lines, f)
+	out := queryAnswer(memory.Query(lines, f), f, proj...)
+	out["path"], out["scope"] = loc.Path, loc.Scope
+	emit(out)
+	return nil
+}
+
+// runQueryBoth is `query --scope both`. The repository log is resolved first, so
+// that outside a git repository the refusal `--scope repo` gives comes before the
+// user location is created. Both go through load, as `areas` reads them: two known
+// locations, where a missing user log is an empty one rather than a refusal.
+func runQueryBoth(c *common, f memory.Filter, proj memory.Projection) error {
+	logs := make([][]memory.Line, 0, 2)
+	paths := make([]string, 0, 2)
+	for _, s := range []memory.Scope{memory.ScopeRepo, memory.ScopeUser} {
+		sc := common{scope: string(s), plan: c.plan, dir: c.dir}
+		loc, lines, err := sc.load()
+		if err != nil {
+			return err
+		}
+		logs = append(logs, lines)
+		paths = append(paths, loc.Path)
+	}
+	out := queryAnswer(memory.QueryEach(logs, f), f, proj)
+	out["scope"], out["paths"] = scopeBoth, paths
+	emit(out)
+	return nil
+}
+
+// queryAnswer is every key of a query's answer except the ones that say which log
+// was read.
+func queryAnswer(res memory.Result, f memory.Filter, proj ...memory.Projection) map[string]any {
 	records := any(res.Records)
 	if len(proj) > 0 {
 		records = proj[0].Apply(res.Records)
 	}
 	out := map[string]any{
-		"path": loc.Path, "scope": loc.Scope, "plan": f.Plan,
+		"plan":  f.Plan,
 		"count": res.Count, "returned": res.Returned, "truncated": res.Truncated,
 		"records": records,
 	}
@@ -1219,8 +1271,7 @@ func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
 	if res.CurrentObjective != nil {
 		out["current_objective"] = res.CurrentObjective
 	}
-	emit(out)
-	return nil
+	return out
 }
 
 // cmdState is the derivation the README used to say did not exist: what state
