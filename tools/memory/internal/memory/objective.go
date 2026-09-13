@@ -211,6 +211,7 @@ type Tree struct {
 	parent     map[string]string
 	children   map[string][]string
 	superseded map[string]bool
+	answered   map[string]bool
 	settled    map[string]bool
 	touched    map[string]activity
 	anomalies  []Anomaly
@@ -235,6 +236,7 @@ func NewTree(lines []Line) *Tree {
 		allEntries: map[string]*Entry{},
 		edges:      edges,
 		superseded: SupersededIDs(edges),
+		answered:   AnsweredIDs(edges),
 		settled:    SettledIDs(edges),
 		touched:    map[string]activity{},
 	}
@@ -459,6 +461,32 @@ func (t *Tree) Completion(id string) Completion {
 	return c
 }
 
+type OpenRecord struct {
+	ID    string `json:"id"`
+	Kind  Kind   `json:"kind"`
+	Title string `json:"title"`
+}
+
+func (t *Tree) OpenRecords(id string) []OpenRecord {
+	var out []OpenRecord
+	seen := map[string]bool{}
+	for _, e := range t.edges {
+		if e.Type != EdgeDerivesFrom || e.To != id || seen[e.From] {
+			continue
+		}
+		entry := t.allEntries[e.From]
+		if entry == nil || (entry.Kind != KindOpenQuestion && entry.Kind != KindAssumption) {
+			continue
+		}
+		if t.answered[entry.ID] {
+			continue
+		}
+		seen[e.From] = true
+		out = append(out, OpenRecord{ID: entry.ID, Kind: entry.Kind, Title: entry.Title})
+	}
+	return out
+}
+
 // --------------------------------------------------- the current objective ---
 
 // The three rules Current can resolve by, named in the answer so the reading is
@@ -659,18 +687,19 @@ func (t *Tree) recordActivity(lines []Line) {
 
 // ObjectiveState is one objective as the tree sees it.
 type ObjectiveState struct {
-	Repo               string     `json:"repo,omitempty"`
-	ID                 string     `json:"id"`
-	Slug               string     `json:"slug"`
-	Title              string     `json:"title"`
-	Plan               string     `json:"plan,omitempty"`
-	State              State      `json:"state"`
-	Open               bool       `json:"open"`
-	Depth              int        `json:"depth"`
-	Parent             string     `json:"parent,omitempty"`
-	Children           []string   `json:"children"`
-	BlockedByOpenChild []string   `json:"blocked_by_open_child"`
-	Completion         Completion `json:"completion"`
+	Repo               string       `json:"repo,omitempty"`
+	ID                 string       `json:"id"`
+	Slug               string       `json:"slug"`
+	Title              string       `json:"title"`
+	Plan               string       `json:"plan,omitempty"`
+	State              State        `json:"state"`
+	Open               bool         `json:"open"`
+	Depth              int          `json:"depth"`
+	Parent             string       `json:"parent,omitempty"`
+	Children           []string     `json:"children"`
+	BlockedByOpenChild []string     `json:"blocked_by_open_child"`
+	Completion         Completion   `json:"completion"`
+	OpenRecords        []OpenRecord `json:"open_records,omitempty"`
 }
 
 // ExcludedObjective is an objective the report leaves out of the live tree, and
@@ -737,6 +766,7 @@ func (t *Tree) Report() StateReport {
 			Children:           t.Children(o.ID),
 			BlockedByOpenChild: t.BlockedByOpenChild(o.ID),
 			Completion:         t.Completion(o.ID),
+			OpenRecords:        t.OpenRecords(o.ID),
 		})
 	}
 	return rep

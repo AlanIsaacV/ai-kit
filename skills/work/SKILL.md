@@ -879,6 +879,36 @@ diff and verification's report since the session started, and the tail of that
 turn is the worst place left to be composing titles and choosing `--about` tags.
 That is the whole reason this step delegates.
 
+Before the handoff, read what this objective has left open:
+
+```bash
+memory state --id <objective-id>
+```
+
+Inside that objective's entry, beside `completion`, is `open_records`: the
+`open-question` and `assumption` records that derive from this objective and that
+nothing has answered yet, each with its id, kind and title. It is this
+objective's own records, not the plan's — a handful, where a whole tree
+accumulates hundreds — and the field is absent entirely when there are none,
+which is what a clean close looks like rather than a command that failed.
+
+It is read here, and not only at the read-back below, because this is the last
+moment the turn can still settle what it settled. Put the list in front of the
+user, one line each, and say for each whether this turn spoke to it. Their answer
+travels to the subagent in `triage_outcome` in their own words, with the record's
+id, the same way step 8's triage does: answering is an appended edge from the
+record that settles the question, so `record` is what writes it and it can only
+write one for something it was told about. **Nothing gets labelled answered
+here** — an assumption the user did not speak to is still an assumption, and the
+list saying so is what it is for.
+
+**Nothing blocks on this list.** A question that stays open is an ordinary close
+and a long list is not a reason to hold the objective back. What the list changes
+is that the turn saw it while it could still do something about it, instead of
+finding out afterwards from a subagent's account of its own work.
+
+Then hand off:
+
 ```
 objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
@@ -886,7 +916,7 @@ objective_id: <the executable objective's id>
 plan_slug: <tree-slug>
 verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON — empty when step 7 did not run>
-triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer>
+triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; and each open record above that this turn settled, with its id and what settled it>
 closing_state: <met | cancelled | separated>
 confirmed_hypothesis:
 on_demand_kinds:
@@ -990,6 +1020,22 @@ still exited, so "closed" in a report is a claim and this is the evidence.
   though it were. A second failure is a stop: bring it to the user with the CLI's
   own error, because an objective that reads closed in the conversation and open
   in the log is the one failure this check exists to catch.
+
+**The same output also says what stayed open, and that gets said in words.** Read
+`open_records` a second time, out of what this command just returned. Anything
+the turn settled is gone from it — `record` appended the `answers` edge and an
+answered record drops off the list — so what is left is what this objective is
+leaving behind, and the field being absent altogether means it left nothing. It
+is not the list you read before the handoff and it is not meant to be shorter:
+the questions and assumptions `record` just wrote for this close derive from this
+objective too, so they are on it. Tell the user which: how many, and each one's
+title on a line. That is the difference between what stayed open being read out
+of the log and it being inferred from `failures` and `not_recorded`, which are
+the subagent's account of its own work.
+A record still on the list that the user believes this turn settled is worth
+saying out loud right here, while the conversation that settled it is still in
+the room. It refuses nothing — the objective is closed either way, and this is
+the account of what it closed with.
 
 Then, before anything else is chosen, look up at the parent:
 

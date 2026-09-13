@@ -18,6 +18,7 @@ const (
 	headingApproved = "Waiting for you to start it"
 	headingAside    = "Set aside"
 	headingAnomaly  = "Anomalies in the reading"
+	headingRate     = "Closing rate"
 	quietWidth      = 76
 )
 
@@ -106,6 +107,7 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 	}
 	if total == 0 && len(anomalies) == 0 {
 		b.WriteString("\nNothing is open.\n")
+		b.WriteString(renderRate(logs))
 		return b.String()
 	}
 
@@ -136,7 +138,124 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 			fmt.Fprintf(&b, "  %s\n", line)
 		}
 	}
+	b.WriteString(renderRate(logs))
 	return b.String()
+}
+
+type rateRow struct {
+	label  string
+	closed int
+	total  int
+}
+
+func renderRate(logs []LogState) string {
+	byKind, byLog := closingRate(logs)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n%s\n", headingRate)
+	for _, line := range rateLines(byKind, "  ") {
+		fmt.Fprintf(&b, "%s\n", line)
+	}
+	if len(byLog) > 1 {
+		b.WriteString("\n  per log\n")
+		for _, line := range rateLines(byLog, "    ") {
+			fmt.Fprintf(&b, "%s\n", line)
+		}
+	}
+	return b.String()
+}
+
+func closingRate(logs []LogState) (byKind, byLog []rateRow) {
+	answered := map[string]bool{}
+	for _, log := range logs {
+		if log.Tree == nil {
+			continue
+		}
+		for id := range log.Tree.answered {
+			answered[id] = true
+		}
+	}
+
+	kinds := []Kind{KindOpenQuestion, KindAssumption}
+	perKind := map[Kind]*rateRow{}
+	for _, k := range kinds {
+		perKind[k] = &rateRow{label: string(k)}
+	}
+	perLog := map[string]*rateRow{}
+	var names []string
+	counted := map[string]bool{}
+
+	for _, log := range logs {
+		if log.Tree == nil {
+			continue
+		}
+		for id, e := range log.Tree.allEntries {
+			if perKind[e.Kind] == nil || counted[id] {
+				continue
+			}
+			counted[id] = true
+			row, known := perLog[log.Name]
+			if !known {
+				row = &rateRow{label: log.Name}
+				perLog[log.Name] = row
+				names = append(names, log.Name)
+			}
+			row.total++
+			perKind[e.Kind].total++
+			if answered[id] {
+				row.closed++
+				perKind[e.Kind].closed++
+			}
+		}
+	}
+
+	for _, k := range kinds {
+		byKind = append(byKind, *perKind[k])
+	}
+	for _, name := range names {
+		byLog = append(byLog, *perLog[name])
+	}
+	sort.Slice(byLog, func(i, j int) bool {
+		if a, b := share(byLog[i]), share(byLog[j]); a != b {
+			return a < b
+		}
+		return byLog[i].label < byLog[j].label
+	})
+	return byKind, byLog
+}
+
+func rateLines(rows []rateRow, indent string) []string {
+	labelWidth, countWidth := 0, 0
+	counts := make([]string, len(rows))
+	for i, r := range rows {
+		counts[i] = fmt.Sprintf("%d/%d", r.closed, r.total)
+		if len(r.label) > labelWidth {
+			labelWidth = len(r.label)
+		}
+		if len(counts[i]) > countWidth {
+			countWidth = len(counts[i])
+		}
+	}
+	out := make([]string, 0, len(rows))
+	for i, r := range rows {
+		out = append(out, strings.TrimRight(fmt.Sprintf("%s%-*s  %*s  %s",
+			indent, labelWidth, r.label, countWidth, counts[i], percent(r)), " "))
+	}
+	return out
+}
+
+func share(r rateRow) float64 {
+	if r.total == 0 {
+		return 0
+	}
+	return float64(r.closed) / float64(r.total)
+}
+
+func percent(r rateRow) string {
+	if r.total == 0 {
+		return "none written"
+	}
+	return fmt.Sprintf("%5.1f%%", 100*share(r))
 }
 
 func wrapList(names []string, width int) []string {

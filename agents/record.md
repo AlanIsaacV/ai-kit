@@ -33,7 +33,9 @@ source, no `docs/`, no commits, no subagents.
   **their own words** on anything they called not worth fixing and on how a
   `handed-over` criterion went when they ran it. A criterion the orchestrator
   asked about and heard nothing back on arrives as exactly that, unanswered, and
-  that is a state to write down rather than a gap in the field.
+  that is a state to write down rather than a gap in the field. It carries the
+  objective's own open records this turn settled too, each with the record's id
+  and what settled it, which is what tells you to write the `answers` edge.
 - `closing_state` — `met`, `cancelled` or `separated`: which state edge to write.
   The orchestrator decided this with the user; you write it, you do not choose it.
 - `confirmed_hypothesis` — the id and the claim of the `hypothesis` record whose
@@ -150,10 +152,24 @@ One JSON object per line, carrying the fields `add`'s flags carry — `kind`,
 in:
 
 ```jsonl
-{"kind":"decision","title":"<the choice, stated as substance>","body":"<what was chosen, what it displaced>\nProvenance: <you chose this | their words | my call>","about":["<area>"]}
-{"kind":"assumption","title":"<what this turn assumed rather than established>","body":"Provenance: <my call>","about":["<area>"]}
-{"kind":"open-question","title":"<what was left genuinely open>","about":["<area>"]}
+{"kind":"decision","title":"<the choice, stated as substance>","body":"<what was chosen, what it displaced>\nProvenance: <you chose this | their words | my call>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
+{"kind":"assumption","title":"<what this turn assumed rather than established>","body":"Provenance: <my call>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
+{"kind":"open-question","title":"<what was left genuinely open>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
 ```
+
+**Every `decision`, `assumption` and `open-question` you write for this close
+carries that `derives_from` edge to `objective_id`, and there is no exception.**
+It is what makes "what did this objective leave open" a question the log answers
+on its own, instead of a claim this subagent makes about its own work — and it is
+the only reason `work` can read the still-open list back out of the log at the
+close rather than take your report for it. The id is already in your inputs, so
+the edge costs you a key on a line you were writing anyway; a record that goes in
+without it is not findable as this objective's, and appending it afterwards means
+one `link` per record.
+
+`edges` is a list, so a line that already takes an edge keeps it and takes this
+one alongside: a `decision` that settles a carried-in question carries both its
+`answers` edge and its `derives_from`, in the same array.
 
 ```bash
 memory add --plan <plan_slug> --batch <the directory objective_draft is in>/close.jsonl
@@ -194,6 +210,15 @@ Three kinds, and every one of them has a reader:
   handoff a later turn can act on: the closing record is history, while `work`
   step 1 reads open questions back out and puts them in front of the user, which
   is how a check nobody ran gets asked for again instead of closed over.
+
+Those three are exactly the kinds the `derives_from` edge above goes on. A
+question or an assumption is read back per objective at the close, and that list
+is the whole point of the edge; a `decision` carries it for the reason it is
+written at all, being the account of how this objective came to be shaped the way
+it is, which is worth little to a reader who cannot tell which objective shaped
+it. The edge does not extend past those three — a `postmortem` derives from its
+hypothesis and an `adr` from whatever produced it, each as its own section below
+says.
 
 That is the default set: three kinds and no others. Two kinds join it
 conditionally, and each condition is a test that can fail:
@@ -263,6 +288,33 @@ on disk.
   `verify` graded `handed-over`, **that silence is what you write**: it was
   handed over, the user was asked, and no result came back. Left out instead, an
   append-only close carries no trace that anybody was ever meant to run it.
+
+  **And that silence also gets a record of its own: one `open-question` per
+  criterion.** Read which criteria were handed over out of
+  `verify_result.criteria[].verdict` — `verify` returns one entry per criterion
+  and grades it from a closed set of six values, so `handed-over` is something
+  you look up rather than something you decide. Whether the user reported back is
+  the half that is not structured: it exists only as prose in `triage_outcome`,
+  and that is what you read for silence. A criterion `triage_outcome` speaks to
+  has a result, however it went; a criterion it does not mention, or mentions
+  only to say nobody got to it, is one nobody has run. Write one record for each
+  of those, naming that criterion in the title, carrying the same `derives_from`
+  edge every other record on this close carries:
+
+```jsonl
+{"kind":"open-question","title":"Nobody reported a result for the handed-over criterion: <the criterion, as verify quoted it>","body":"`verify` graded it `handed-over`. The script and the instructions are at <the paths verify's evidence names>. It was put to the user in triage and no result came back.","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
+```
+
+  It is the same batch file and no extra command — a line beside the others. The
+  sentence in the closing record's body stays exactly as it is; this joins it
+  rather than replacing it, and the reason is that a sentence in a body cannot be
+  counted. Of the 253 `review-finding` records across 33 logs, 76 mention a
+  handover: 16 say plainly that nobody reported, 1 says it was run, and 59 cannot
+  be classified by their text at all. The kind is what makes it actionable — the
+  default set above already says why an `open-question` is the one part of an
+  unanswered handoff a later turn picks up. One per criterion rather than one
+  listing all of them, because a record naming a single criterion is one a later
+  turn can answer and close on its own.
 
   **The record and the edge on one line is the whole point of writing this as a
   batch.** As two commands they were two runs, and the failure was not symmetric:

@@ -70,6 +70,11 @@ type stateOutput struct {
 			NotCounted  []string `json:"not_counted"`
 			Outstanding []string `json:"outstanding"`
 		} `json:"completion"`
+		OpenRecords []struct {
+			ID    string `json:"id"`
+			Kind  string `json:"kind"`
+			Title string `json:"title"`
+		} `json:"open_records"`
 	} `json:"objectives"`
 	Excluded []struct {
 		ID     string `json:"id"`
@@ -1222,5 +1227,58 @@ func TestCriterion9ErrorsStayJSONInBothModes(t *testing.T) {
 		if msg == "" {
 			t.Errorf("%s: the refusal has to say what went wrong", name)
 		}
+	}
+}
+
+func openRecordIDs(out stateOutput) []string {
+	got := make([]string, 0, len(out.Objectives[0].OpenRecords))
+	for _, r := range out.Objectives[0].OpenRecords {
+		got = append(got, r.ID)
+	}
+	return got
+}
+
+func TestTheOpenRecordsOfAnObjectiveAreItsOwn(t *testing.T) {
+	r := throwawayRepo(t)
+	mine := addObjective(t, r, "The objective whose question this is")
+	theirs := addObjective(t, r, "The other objective in the same plan")
+	myQuestion := addKind(t, r, "open-question", "Whether the closing rate is read at all")
+	theirQuestion := addKind(t, r, "open-question", "Whether the list is short enough to act on")
+	mustLink(t, r, "derives_from", myQuestion, mine)
+	mustLink(t, r, "derives_from", theirQuestion, theirs)
+
+	got := openRecordIDs(one(t, readState(t, r, "--id", mine)))
+	if !contains(got, myQuestion) {
+		t.Errorf("the objective's own open question %s is missing from %v", myQuestion, got)
+	}
+	if contains(got, theirQuestion) {
+		t.Errorf("%s belongs to the other objective and must not be listed here: %v", theirQuestion, got)
+	}
+}
+
+func TestAnAnsweredAssumptionClosesLikeAnOpenQuestion(t *testing.T) {
+	r := throwawayRepo(t)
+	objective := addObjective(t, r, "The objective this turn settled")
+	settled := addKind(t, r, "assumption", "The caller always passes a non-empty list")
+	still := addKind(t, r, "assumption", "Amounts are never negative here")
+	mustLink(t, r, "derives_from", settled, objective)
+	mustLink(t, r, "derives_from", still, objective)
+	mustLink(t, r, "answers", addKind(t, r, "decision", "The list may be empty and the caller checks"), settled)
+
+	got := openRecordIDs(one(t, readState(t, r, "--id", objective)))
+	if contains(got, settled) {
+		t.Errorf("an answered assumption is closed and must not be listed as open: %v", got)
+	}
+	if !contains(got, still) {
+		t.Errorf("the unanswered assumption %s is missing from %v", still, got)
+	}
+
+	res := runBare(t, r, "state", "--text", "--here")
+	if res.code != 0 {
+		t.Fatalf("state --text --here: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	line := summaryLine(t, summaryGroup(t, res.stdout, "Closing rate"), "assumption")
+	if !strings.Contains(line, "1/2") {
+		t.Errorf("the answered assumption has to be in the rate's numerator, got %q", line)
 	}
 }

@@ -623,15 +623,26 @@ own could not be attached to its parent at all.
 
 What this step writes is the objective, one record per surviving assumption, one
 per open question, one per decision the conversation settled, and the edges that
-attach the objective to what it came out of. That is a dozen records carrying
+attach all of it to what it came out of. That is a dozen records carrying
 multi-paragraph bodies, which is a script rather than a command line — so it is
-written as one file and appended by one command.
+written as files and appended by commands that read them.
 
-**Write the file with whatever writes files. Not with the shell.** One JSON object
-per line, each line carrying the fields `add`'s flags carry — `kind`, `title`,
-`body`, `slug`, `about`, `anchor` — plus the edges that line's record takes part
-in. No `echo`, no heredoc, no quoting to get wrong: a body with paragraphs in it is
-a JSON string, and the shell never sees it.
+**It is two files, in this order, and the order is forced.** Every record other
+than the objective carries a `derives_from` edge naming the objective it was
+written for, which is what makes "what did this objective leave open" a question
+the log answers rather than a judgment somebody makes at the close by reading
+titles. That edge names an id, so the objective has to be on disk before the
+lines pointing at it can be written — and one batch cannot do both halves, because
+`internal/memory/batch.go:96-100` says there is no way to draw an edge between two
+entries of the same batch: neither of them has an id a caller could write down. So
+the objective goes in alone and comes back with an id, and the id goes into the
+second file by hand.
+
+**Write both files with whatever writes files. Not with the shell.** One JSON
+object per line, each line carrying the fields `add`'s flags carry — `kind`,
+`title`, `body`, `slug`, `about`, `anchor` — plus the edges that line's record
+takes part in. No `echo`, no heredoc, no quoting to get wrong: a body with
+paragraphs in it is a JSON string, and the shell never sees it.
 
 That is the same precaution the rest of this file takes, applied where it matters
 most: **nothing here says which shell this turn got**, and three shapes vary
@@ -640,36 +651,70 @@ as a redirect. A shell that refuses one of them refuses the whole block at parse
 time, with none of its lines having run. A dozen bodies going through a heredoc is
 a dozen chances to meet one of the three; a file the shell never opens has none.
 
-`.ai-kit/plans/<objective-slug>/records.jsonl`, one line per record:
+First, `.ai-kit/plans/<objective-slug>/objective.jsonl`, holding exactly one line —
+the objective and nothing else:
 
 ```jsonl
 {"kind":"objective","slug":"<the slug you derived in step 5>","title":"<objective one-liner>","body":"<Objective or Deliverable + Constraints + Out of scope + the criteria as written>","about":["<area>","<area>"],"edges":[{"type":"derives_from","to":"<parent-objective-id>"}]}
-{"kind":"assumption","title":"<what you assumed rather than established>","body":"Provenance: <you chose this | their words | my call>","about":["<area>"]}
-{"kind":"open-question","title":"<what is genuinely open>","about":["<area>"]}
-{"kind":"decision","title":"<the choice the conversation settled>","body":"<why this over the alternatives>","about":["<area>"]}
 ```
 
-Then one command, and it is the only one this step runs:
+```bash
+memory add --plan <tree-slug> --batch .ai-kit/plans/<objective-slug>/objective.jsonl
+```
+
+**Read the id off the row that command printed — the one whose kind is
+`objective` — and type it into the second file.** Never capture it: no
+`OBJ=$(memory add …)`, no substitution of any shape. An assignment of a command
+substitution is one of the shapes a shell may refuse outright, at parse time,
+before any line of the block has run, while a shell that accepts it runs the same
+text through — and the id is going into a file the shell never opens anyway. One
+you can read where you wrote it is one you can see is wrong.
+
+Then `.ai-kit/plans/<objective-slug>/records.jsonl`, one line per record, every
+one of them carrying that id:
+
+```jsonl
+{"kind":"assumption","title":"<what you assumed rather than established>","body":"Provenance: <you chose this | their words | my call>","about":["<area>"],"edges":[{"type":"derives_from","to":"<the objective id the first command printed>"}]}
+{"kind":"open-question","title":"<what is genuinely open>","about":["<area>"],"edges":[{"type":"derives_from","to":"<the objective id the first command printed>"}]}
+{"kind":"decision","title":"<the choice the conversation settled>","body":"<why this over the alternatives>","about":["<area>"],"edges":[{"type":"derives_from","to":"<the objective id the first command printed>"}]}
+```
 
 ```bash
 memory add --plan <tree-slug> --batch .ai-kit/plans/<objective-slug>/records.jsonl
 ```
 
-**Every entry in that file is appended in one write, or none of them is.** A line
+The edge goes on every line of that file and there is no exception — an assumption
+without it is one nothing can ask about later. `edges` is a list, so a line that
+already takes an edge of its own keeps it and takes this one alongside: a
+`decision` that settles a question carried in from an earlier turn carries its
+`answers` edge and its `derives_from` in the same array.
+
+**Every entry in one file is appended in one write, or none of them is.** A line
 the tool refuses refuses the whole batch, names the line and the field, and leaves
 the log exactly as it was — which is what makes a file of a dozen records safe to
 write at all. A dozen separate commands had the failure this log cannot undo: the
-third lands, the fourth is refused, and half a plan is on disk forever.
+third lands, the fourth is refused, and half a plan is on disk forever. That
+guarantee is per file and the split does not weaken it: the objective lands whole
+or not at all, and so do its records.
 
-So exit 1 here needs no repair, only a re-run: nothing landed, the file is still on
-disk, and the remedy is to fix the line the refusal named and run the same command
-again. Nothing is written twice, because nothing was written the first time.
+So exit 1 on either command needs no repair, only a re-run of **that** command:
+nothing from its file landed, the file is still on disk, and the remedy is to fix
+the line the refusal named and run it again. Nothing is written twice, because
+nothing was written the first time.
+
+What the split does cost is one state that could not happen before. **A refusal of
+the second command leaves the objective on disk carrying none of its assumptions,
+questions or decisions.** That is visible rather than silent — the refusal names
+the line and the field, and the objective is there to be queried with nothing under
+it — and it is repaired by fixing that line and running **only the second command**
+again. Do not re-run the first. The objective is already in the log, an append-only
+log cannot take a duplicate back, and a second objective line would coin a second
+id that the records pointing at the first one do not name.
 
 **Each line's edges name one endpoint, and the line's own record is the other.**
 `"to"` says this record is the edge's source, which is what `derives_from` wants —
-the child derives from the parent whose id you already have. Nothing is captured
-out of any command's output, and nothing needs to be: the objective's id does not
-exist until the write happens, and no edge here has to name it.
+the child derives from the parent whose id you already have, and every record in
+the second file derives from the objective the first one wrote.
 
 `work` finds the draft by the record's slug, and passing `slug` is what makes
 that slug the draft directory's name too — one name, rather than two that have to
@@ -701,11 +746,11 @@ that mistake. When the investigation ended without a confirmed hypothesis, there
 no target either: the objective you just wrote is the one that makes the thing
 observable, and it caused nothing yet.
 
-One line per surviving assumption — these are open until something answers them,
-and they are what a later verification pass is allowed to challenge. The provenance
-label goes in the body, on its own line, exactly as written above. One line per
-open question. One line per decision the conversation settled, especially a chosen
-option.
+In the second file: one line per surviving assumption — these are open until
+something answers them, and they are what a later verification pass is allowed to
+challenge. The provenance label goes in the body, on its own line, exactly as
+written above. One line per open question. One line per decision the conversation
+settled, especially a chosen option.
 
 That `Provenance:` line is read, not just stored — `work`'s step 1 puts these
 records in front of the user across later turns, and it can only show the label
@@ -729,13 +774,14 @@ by. A record nobody can find by filtering is a record nobody will read.
 
 `add --batch` prints `count`, how many edges went with it, and one row per record —
 id, kind, slug, title — and no bodies: they are already in the file you wrote. The
-objective's id is the row whose kind is `objective`, and it is what step 8 reports
-to the user. Every command prints JSON on success and on failure alike, so check the
-exit code rather than scanning the text.
+first command prints a single row and its kind is `objective`: that id is what the
+second file's edges name and what step 8 reports to the user. Every command prints
+JSON on success and on failure alike, so check the exit code rather than scanning
+the text.
 
-Leave the draft file and the batch file on disk. The draft is the human-readable
-form of what was agreed and the loop will want to look at it; the batch is what was
-actually appended, and `.ai-kit/` is already out of git.
+Leave the draft file and both batch files on disk. The draft is the human-readable
+form of what was agreed and the loop will want to look at it; the batch files are
+what was actually appended, and `.ai-kit/` is already out of git.
 
 ### 8 — Descend, or hand off
 
