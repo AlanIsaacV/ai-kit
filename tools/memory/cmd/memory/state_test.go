@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -719,4 +723,504 @@ func runWithin(t *testing.T, r repo, d time.Duration, args ...string) result {
 		t.Fatalf("running %v: %v", args, err)
 	}
 	return res
+}
+
+type spread struct {
+	root string
+	home string
+}
+
+func throwawaySpread(t *testing.T) spread {
+	t.Helper()
+	return spread{root: t.TempDir(), home: t.TempDir()}
+}
+
+func repoIn(t *testing.T, s spread, rel string) repo {
+	t.Helper()
+	root := filepath.Join(s.root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return repo{
+		root: root,
+		home: s.home,
+		log:  filepath.Join(root, ".ai-kit", "memory.jsonl"),
+		user: filepath.Join(s.home, ".ai-kit", "memory.jsonl"),
+	}
+}
+
+func twoDepths(t *testing.T) (spread, repo, repo) {
+	t.Helper()
+	s := throwawaySpread(t)
+	return s, repoIn(t, s, "alpha"), repoIn(t, s, "group/beta")
+}
+
+func runSpread(t *testing.T, s spread, r repo, args ...string) result {
+	t.Helper()
+	return execMemory(t, r, "", args, "MEMORY_ROOTS="+s.root)
+}
+
+func stateIn(t *testing.T, s spread, r repo, args ...string) result {
+	t.Helper()
+	res := runSpread(t, s, r, append([]string{"state"}, args...)...)
+	if res.code != 0 {
+		t.Fatalf("state %v: exit %d\n%s%s", args, res.code, res.stdout, res.stderr)
+	}
+	return res
+}
+
+func readStateSpread(t *testing.T, s spread, r repo, args ...string) stateOutput {
+	t.Helper()
+	res := stateIn(t, s, r, args...)
+	var out stateOutput
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatalf("state %v printed something that is not JSON: %v\n%s", args, err, res.stdout)
+	}
+	return out
+}
+
+type crossStateOutput struct {
+	Roots      []string `json:"roots"`
+	Logs       []string `json:"logs"`
+	Count      int      `json:"count"`
+	Objectives []struct {
+		Repo     string   `json:"repo"`
+		ID       string   `json:"id"`
+		Title    string   `json:"title"`
+		State    string   `json:"state"`
+		Parent   string   `json:"parent"`
+		Children []string `json:"children"`
+	} `json:"objectives"`
+	Excluded []struct {
+		Repo string `json:"repo"`
+		ID   string `json:"id"`
+	} `json:"excluded"`
+	Current []struct {
+		Repo string `json:"repo"`
+		ID   string `json:"id"`
+		Rule string `json:"rule"`
+	} `json:"current"`
+	Anomalies []struct {
+		Repo    string `json:"repo"`
+		ID      string `json:"id"`
+		Message string `json:"message"`
+	} `json:"anomalies"`
+}
+
+func readCrossState(t *testing.T, s spread, r repo, args ...string) crossStateOutput {
+	t.Helper()
+	res := stateIn(t, s, r, args...)
+	var out crossStateOutput
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatalf("state %v printed something that is not JSON: %v\n%s", args, err, res.stdout)
+	}
+	return out
+}
+
+func summaryLine(t *testing.T, summary, title string) string {
+	t.Helper()
+	for _, line := range strings.Split(summary, "\n") {
+		if strings.Contains(line, title) {
+			return line
+		}
+	}
+	t.Fatalf("the summary names nothing called %q:\n%s", title, summary)
+	return ""
+}
+
+func summaryGroup(t *testing.T, summary, heading string) string {
+	t.Helper()
+	var body []string
+	found := false
+	for _, line := range strings.Split(summary, "\n") {
+		switch {
+		case strings.HasPrefix(line, heading):
+			found = true
+		case !found:
+		case line == "" || strings.HasPrefix(line, " "):
+			body = append(body, line)
+		default:
+			return strings.Join(body, "\n")
+		}
+	}
+	if !found {
+		t.Fatalf("the summary has no %q group:\n%s", heading, summary)
+	}
+	return strings.Join(body, "\n")
+}
+
+func snapshot(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		out[rel] = string(raw)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func sameBytes(t *testing.T, what string, before, after map[string]string) {
+	t.Helper()
+	for rel, was := range before {
+		now, survived := after[rel]
+		if !survived {
+			t.Errorf("%s: a read removed %s", what, rel)
+			continue
+		}
+		if now != was {
+			t.Errorf("%s: %s is not byte-identical after a read\nbefore:\n%s\nafter:\n%s", what, rel, was, now)
+		}
+	}
+	for rel := range after {
+		if _, existed := before[rel]; !existed {
+			t.Errorf("%s: a read created %s", what, rel)
+		}
+	}
+}
+
+func keyAnywhere(v any, want, at string) string {
+	switch node := v.(type) {
+	case map[string]any:
+		for k, sub := range node {
+			here := at + "." + k
+			if k == want {
+				return here
+			}
+			if found := keyAnywhere(sub, want, here); found != "" {
+				return found
+			}
+		}
+	case []any:
+		for i, sub := range node {
+			if found := keyAnywhere(sub, want, fmt.Sprintf("%s[%d]", at, i)); found != "" {
+				return found
+			}
+		}
+	}
+	return ""
+}
+
+func TestCriterion2ALogAtEitherDepthAppearsInTheSummary(t *testing.T) {
+	s := throwawaySpread(t)
+	depths := []struct {
+		rel   string
+		name  string
+		title string
+	}{
+		{"alpha", "alpha", "The objective in the repository directly under the root"},
+		{"group/beta", "beta", "The objective in the repository one level further down"},
+		{"org/group/gamma", "gamma", "The objective in the repository two levels further down"},
+		{"org/group/sub/delta", "delta", "The objective in the repository at the depth bound"},
+	}
+	var standingIn repo
+	for i, d := range depths {
+		r := repoIn(t, s, d.rel)
+		if i == 0 {
+			standingIn = r
+		}
+		addObjective(t, r, d.title)
+	}
+
+	summary := stateIn(t, s, standingIn, "--text").stdout
+
+	for _, d := range depths {
+		if line := summaryLine(t, summary, d.title); !strings.Contains(line, d.name) {
+			t.Errorf("<root>/%s is a log the walk has to reach and its item must name %s, got %q",
+				d.rel, d.name, line)
+		}
+	}
+	if !strings.Contains(summary, "across 4 logs") {
+		t.Errorf("every log found has to be counted as read, got:\n%s", summary)
+	}
+}
+
+func TestCriterion3TheDefaultScopeFollowsTheOutputMode(t *testing.T) {
+	s, here, elsewhere := twoDepths(t)
+	const (
+		mine   = "The objective in the repository I am standing in"
+		theirs = "The objective in the other repository"
+	)
+	mineID := addObjective(t, here, mine)
+	theirsID := addObjective(t, elsewhere, theirs)
+
+	bare := readStateSpread(t, s, here)
+	if len(bare.Objectives) != 1 || bare.Objectives[0].ID != mineID {
+		t.Fatalf("`state` with no flags covers this repository and no other: %+v", bare.Objectives)
+	}
+
+	everyRoot := stateIn(t, s, here, "--text").stdout
+	if !strings.Contains(everyRoot, "across 2 logs") {
+		t.Errorf("`state --text` with no flags covers every root, got:\n%s", everyRoot)
+	}
+	summaryLine(t, everyRoot, mine)
+	summaryLine(t, everyRoot, theirs)
+
+	narrowed := stateIn(t, s, here, "--text", "--here").stdout
+	if !strings.Contains(narrowed, "across 1 log") {
+		t.Errorf("--here narrows the text mode to one log, got:\n%s", narrowed)
+	}
+	summaryLine(t, narrowed, mine)
+	if strings.Contains(narrowed, theirs) {
+		t.Errorf("--here must leave the other repository out, got:\n%s", narrowed)
+	}
+
+	widened := readCrossState(t, s, here, "--all")
+	if len(widened.Roots) != 1 || widened.Roots[0] != s.root {
+		t.Errorf("--all reports the roots it read, got %v", widened.Roots)
+	}
+	if len(widened.Logs) != 2 {
+		t.Fatalf("--all widens the JSON mode to every log, got %v", widened.Logs)
+	}
+	got := map[string]bool{}
+	for _, o := range widened.Objectives {
+		got[o.ID] = true
+	}
+	if !got[mineID] || !got[theirsID] {
+		t.Errorf("--all must carry both repositories' objectives, got %+v", widened.Objectives)
+	}
+}
+
+func TestCriterion4BareStateEmitsExactlyTheFieldsItEmitsToday(t *testing.T) {
+	s, here, elsewhere := twoDepths(t)
+	addObjective(t, elsewhere, "The objective in the other repository")
+
+	parent := addObjective(t, here, "The parent")
+	second := addObjective(t, here, "Another root, and a second parent")
+	kid := child(t, here, parent, "The objective with two parents")
+	appendLine(t, here.log, `{"version":2,"kind":"edge","type":"derives_from","from":"`+kid+
+		`","to":"`+second+`","at":"2026-08-03T10:00:00Z"}`)
+	gone := addObjective(t, here, "The first statement of it")
+	fresh := addObjective(t, here, "A better statement of it")
+	mustLink(t, here, "supersedes", fresh, gone)
+
+	res := stateIn(t, s, here)
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
+		t.Fatalf("state printed something that is not JSON: %v\n%s", err, res.stdout)
+	}
+
+	keys := make([]string, 0, len(doc))
+	for k := range doc {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	want := []string{"anomalies", "count", "current", "excluded", "objectives", "path", "scope"}
+	if strings.Join(keys, ",") != strings.Join(want, ",") {
+		t.Fatalf("the single-repo document is %v, and it has to stay %v", keys, want)
+	}
+
+	for _, key := range []string{"objectives", "excluded", "anomalies"} {
+		if list, ok := doc[key].([]any); !ok || len(list) == 0 {
+			t.Fatalf("this fixture has to put something under %q or the check below proves nothing: %v",
+				key, doc[key])
+		}
+	}
+	if current, ok := doc["current"].(map[string]any); !ok || current["id"] == nil {
+		t.Fatalf("this fixture has to resolve a current objective: %v", doc["current"])
+	}
+	if at := keyAnywhere(doc, "repo", "state"); at != "" {
+		t.Errorf("the field added for the multi-root case must be absent from single-repo output, found it at %s", at)
+	}
+}
+
+func TestCriterion5EveryItemNamesItsRepositoryAndNoTwoTreesMerge(t *testing.T) {
+	s, alpha, beta := twoDepths(t)
+	const (
+		alphaRootTitle  = "The root objective of the first repository"
+		alphaChildTitle = "The child objective of the first repository"
+		betaRootTitle   = "The root objective of the second repository"
+	)
+	alphaRoot := addObjective(t, alpha, alphaRootTitle)
+	alphaChild := child(t, alpha, alphaRoot, alphaChildTitle)
+	betaRoot := addObjective(t, beta, betaRootTitle)
+	mustLink(t, alpha, "approved_for_execution", alphaChild,
+		addKind(t, alpha, "decision", "Work on the first repository's child next"))
+	mustLink(t, beta, "approved_for_execution", betaRoot,
+		addKind(t, beta, "decision", "Work on the second repository's root next"))
+
+	cross := readCrossState(t, s, alpha, "--all")
+
+	owner := map[string]string{}
+	for _, o := range cross.Objectives {
+		if o.Repo == "" {
+			t.Errorf("every item names the repository it came from; %s (%q) names none", o.ID, o.Title)
+		}
+		owner[o.ID] = o.Repo
+	}
+	for id, repoName := range map[string]string{alphaRoot: "alpha", alphaChild: "alpha", betaRoot: "beta"} {
+		if owner[id] != repoName {
+			t.Errorf("%s belongs to %s, reported under %q", id, repoName, owner[id])
+		}
+	}
+	for _, o := range cross.Objectives {
+		if o.Parent != "" && owner[o.Parent] != o.Repo {
+			t.Errorf("%s (%s) was given a parent out of %s; the two logs were merged into one tree",
+				o.ID, o.Repo, owner[o.Parent])
+		}
+		for _, kid := range o.Children {
+			if owner[kid] != o.Repo {
+				t.Errorf("%s (%s) was given a child out of %s; the two logs were merged into one tree",
+					o.ID, o.Repo, owner[kid])
+			}
+		}
+	}
+
+	if len(cross.Current) != len(cross.Logs) {
+		t.Fatalf("each log keeps its own current objective: %d logs, %d answers", len(cross.Logs), len(cross.Current))
+	}
+	current := map[string]string{}
+	for _, c := range cross.Current {
+		if c.Repo == "" {
+			t.Errorf("a current objective that names no repository answers nobody's question: %+v", c)
+		}
+		current[c.Repo] = c.ID
+		if c.Rule != "approved_for_execution" {
+			t.Errorf("%s resolved its current objective by %q, want the mark", c.Repo, c.Rule)
+		}
+	}
+	if current["alpha"] != alphaChild || current["beta"] != betaRoot {
+		t.Errorf("each repository keeps its own current objective, got %v", current)
+	}
+
+	summary := stateIn(t, s, alpha, "--text").stdout
+	for title, repoName := range map[string]string{
+		alphaRootTitle:  "alpha",
+		alphaChildTitle: "alpha",
+		betaRootTitle:   "beta",
+	} {
+		if line := summaryLine(t, summary, title); !strings.Contains(line, repoName) {
+			t.Errorf("the item for %q has to name %s, got %q", title, repoName, line)
+		}
+	}
+}
+
+func TestCriterion6ABlockedObjectiveNamesWhatItWaitsOn(t *testing.T) {
+	s, r, _ := twoDepths(t)
+	const (
+		waitingOn = "Which store the memory consolidates into"
+		untouched = "Whether a depth bound of four stays enough"
+		objective = "The objective that is blocked on one of them"
+	)
+	blocked := addObjective(t, r, objective)
+	question := addKind(t, r, "open-question", waitingOn)
+	addKind(t, r, "open-question", untouched)
+	mustLink(t, r, "blocked", blocked, question)
+
+	summary := stateIn(t, s, r, "--text").stdout
+	group := summaryGroup(t, summary, "Blocked on a question or a decision")
+
+	if !strings.Contains(group, "open-question: "+waitingOn) {
+		t.Errorf("the blocked line has to name the question its edge points at:\n%s", group)
+	}
+	if !strings.Contains(group, objective) {
+		t.Errorf("and the objective under it:\n%s", group)
+	}
+	if strings.Contains(summary, untouched) {
+		t.Errorf("the other open question is pointed at by nothing and must not be named:\n%s", summary)
+	}
+}
+
+func TestCriterion7EveryOpenStateAppearsUnderItsOwnGroup(t *testing.T) {
+	s, r, _ := twoDepths(t)
+	const (
+		plannedTitle   = "The one nobody has approved yet"
+		blockedTitle   = "The one held up by a question"
+		approvedTitle  = "The one cleared to be started"
+		separatedTitle = "The one lifted out and left"
+	)
+	decision := addKind(t, r, "decision", "The decision behind the states")
+	question := addKind(t, r, "open-question", "What is holding it up")
+	addObjective(t, r, plannedTitle)
+	mustLink(t, r, "blocked", addObjective(t, r, blockedTitle), question)
+	mustLink(t, r, "approved_for_execution", addObjective(t, r, approvedTitle), decision)
+	mustLink(t, r, "separated", addObjective(t, r, separatedTitle), decision)
+
+	summary := stateIn(t, s, r, "--text").stdout
+
+	groups := []struct {
+		heading string
+		title   string
+	}{
+		{"Waiting for your approval", plannedTitle},
+		{"Blocked on a question or a decision", blockedTitle},
+		{"Waiting for you to start it", approvedTitle},
+		{"Set aside", separatedTitle},
+	}
+	for _, g := range groups {
+		body := summaryGroup(t, summary, g.heading)
+		if !strings.Contains(body, g.title) {
+			t.Errorf("%q belongs under %q:\n%s", g.title, g.heading, summary)
+		}
+		for _, other := range groups {
+			if other.title != g.title && strings.Contains(body, other.title) {
+				t.Errorf("%q is not in the %q state and must not be listed under it:\n%s",
+					other.title, g.heading, body)
+			}
+		}
+	}
+}
+
+func TestCriterion8NeitherModeWritesAnything(t *testing.T) {
+	s, alpha, beta := twoDepths(t)
+	addObjective(t, alpha, "The objective in the first repository")
+	addObjective(t, beta, "The objective in the second repository")
+	repoIn(t, s, "group/gamma")
+
+	beforeRoot, beforeHome := snapshot(t, s.root), snapshot(t, s.home)
+
+	modes := [][]string{{}, {"--text"}, {"--all"}, {"--text", "--here"}}
+	for pass := 0; pass < 2; pass++ {
+		for _, mode := range modes {
+			stateIn(t, s, alpha, mode...)
+		}
+	}
+
+	sameBytes(t, "under the root", beforeRoot, snapshot(t, s.root))
+	sameBytes(t, "under HOME", beforeHome, snapshot(t, s.home))
+}
+
+func TestCriterion9ErrorsStayJSONInBothModes(t *testing.T) {
+	s, r, _ := twoDepths(t)
+	addObjective(t, r, "The only objective there is")
+	const absent = "01KZ34725V37YX845RTVPC7N0E"
+
+	for name, want := range map[string]struct {
+		args []string
+		code string
+	}{
+		"text over every root": {[]string{"state", "--text", "--id", absent}, "unknown_objective"},
+		"text narrowed here":   {[]string{"state", "--text", "--here", "--id", absent}, "unknown_objective"},
+		"json over every root": {[]string{"state", "--all", "--id", absent}, "unknown_objective"},
+		"both scopes at once":  {[]string{"state", "--all", "--here"}, "conflicting_scope"},
+	} {
+		res := runSpread(t, s, r, want.args...)
+		if res.code == 0 {
+			t.Errorf("%s must be refused, got:\n%s", name, res.stdout)
+			continue
+		}
+		code, msg := errorCode(t, res)
+		if code != want.code {
+			t.Errorf("%s: expected a %s refusal, got %q", name, want.code, code)
+		}
+		if msg == "" {
+			t.Errorf("%s: the refusal has to say what went wrong", name)
+		}
+	}
 }

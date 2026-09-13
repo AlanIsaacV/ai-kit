@@ -71,6 +71,12 @@ file. An entry written *without* one belongs to the repository rather than to an
 plan in it, and every plan-bounded read returns it; see
 [records the repository owns](#records-the-repository-owns).
 
+**Every command reads one log, and one command reads them all.**
+[`state --text`](#what-is-waiting-on-you-across-every-log) reaches every log
+under `MEMORY_ROOTS` — a PATH-style list, default `/srv/projects` — because "what
+is waiting on me" is the one question whose answer is not about the repository
+you are standing in. It creates nothing and writes nothing.
+
 There used to be a third scope, `plan → <repo>/plans/<slug>/memory.jsonl`, and
 removing it is what [schema version 2](#changing-the-schema) is. One file per
 plan was not a tidier arrangement of the same graph, it was a smaller graph: an
@@ -693,6 +699,86 @@ objective is still refused — which is what keeps "blocked on a sibling" and
 informational and nothing acts on it: such an objective is still returned by
 `--current` and is still eligible to be the current one.
 
+### What is waiting on you, across every log
+
+`memory state --text` answers one question — *what is waiting on me* — over every
+log there is, and prints it instead of emitting it:
+
+```
+What is waiting on you — 47 open objectives across 33 logs
+
+Waiting for your approval (34)
+  ai-kit             Know what is waiting on you, and that it is true  (01M2CGQ0CVSFTJ0CNB56RYGXCG)
+  be-md              Persist LATAM trades from the raw-FIX feed  (01M18F1KD0JRPWXV1H91TEBMMC)
+
+Blocked on a question or a decision (2)
+  open-question: tipooperacion = A is still unanswered
+    be-profits-stocks  Load the CO trade-history gap from the OyD day listing  (01M03T9F4HWVYETRTBK9RPN9CZ)
+
+Waiting for you to start it (9)
+  ai-kit             One readable summary of what is waiting, across every log  (01M2CKDPDRP09ESQ6EG27KTRRJ)
+
+Set aside (2)
+  ai-kit             Make the record schema evolvable  (01KZ34725V37YX845RTVPC7N0E)
+
+Nothing waiting (19 logs)
+  be-bm-fix-orders, be-cashout-co, be-deadletter, be-fix-logs, ...
+```
+
+**The default follows the output mode, and the two defaults differ on purpose.**
+JSON is what a skill reads about the repository it is standing in; the text is
+what you read when you are deciding where to go next, and answering that for one
+repository is answering a question you did not ask.
+
+| | JSON | text |
+|---|---|---|
+| no flags | this repository | every log |
+| widened to every log | `--all` | the default |
+| narrowed to this repository | the default | `--here` |
+
+`--all` and `--here` together is a refusal — `conflicting_scope` — rather than a
+precedence nobody would remember.
+
+**Which logs.** There is no registry of repositories, so they are found by a glob
+bounded to six levels below each root in `MEMORY_ROOTS` — a PATH-style list,
+default `/srv/projects` — which is what keeps the scan out of `node_modules` and
+`.git` instead of descending and excluding. Six is one level past the deepest log
+there is today. A log below that is still absent, but no longer silently: when
+discovery finds a log at the deepest level it reaches, the summary says so above
+the count, because from there it cannot tell whether there is more underneath. A
+root that is not a readable directory is refused — `bad_root` — rather than read
+as a root with nothing under it, since a glob answers the same way for both and a
+mistyped root that reads as a quiet machine is the one failure a queue you are
+meant to trust cannot afford. The user log joins them when it exists, labelled
+`user`, since it has no repository to be named after.
+
+**One tree per log, never one tree over all of them.** Concatenating the logs
+would be cheaper and would produce a single "current objective" across every
+repository, which answers nothing. So each log is read on its own and every item
+names where it came from — and in the `--all` JSON every objective, exclusion,
+anomaly and current objective carries a `repo`. That field is `omitempty` and no
+single-log report ever sets it: `memory state` with no flags emits exactly the
+keys it emitted before any of this existed.
+
+**The grouping is read off the state and nothing else** — no body is parsed and
+no prose is matched. `planned` is waiting for your approval, `approved_for_execution`
+is waiting for you to start it, `separated` is set aside, and `blocked` sits under
+the record it waits on, named: the title comes from the `blocked` edge's target,
+so two objectives held up by the same question read as one wait rather than two.
+Terminal objectives are absent, and so is anything superseded or answered.
+
+**It creates nothing.** Every other read resolves its location and creates
+`.ai-kit/` on the way past; this one reads the paths discovery already found, and
+`--here` locates this repository's log rather than resolving it, so asking what is
+waiting leaves no directory behind in any repository it reads.
+
+**Errors stay JSON in both modes**, `--text` included. Only the summary itself is
+text.
+
+**This is expected to be deleted.** Discovery exists because there is one log per
+repository and no index of them. The store that replaces them has nothing to
+discover, and nobody should defend the glob later as architecture.
+
 ## Changing the schema
 
 Every record carries `"version"` — first key on the line, no `omitempty`,
@@ -932,6 +1018,9 @@ memory graph --from <id> --depth 2
 
 memory state                     # every objective: state, tree, blocking, tally
 memory state --id <objective-id> # just that one
+memory state --text              # what is waiting on you, every log, as text
+memory state --text --here       # the same, for this repository only
+memory state --all               # every log, as JSON
 
 memory promote --kind preference --to user --dry-run   # see Promotion
 memory promote --ids <id>,<id> --to user
@@ -940,8 +1029,10 @@ memory validate --all
 ```
 
 Every command prints JSON on stdout on success and on failure alike — except
-`render`, which prints markdown. Exit 0 means the command ran; exit 1 means it
-refused, and the JSON says why.
+`render`, which prints markdown, and
+[`state --text`](#what-is-waiting-on-you-across-every-log), which prints the
+summary. A failure is JSON in every mode, `--text` included. Exit 0 means the
+command ran; exit 1 means it refused, and the JSON says why.
 
 `validate` is the one command where exit 1 is a verdict rather than a refusal. It
 exits 1 when a log fails validation (`ok: false`) and when a location it was asked

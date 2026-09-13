@@ -1,0 +1,58 @@
+Corré el skill `plan`. Esto abre un árbol NUEVO — no cuelga de nada existente.
+
+OBJETIVO: rediseñar el sistema de memoria de ai-kit, de logs JSONL por repo con
+promoción a scope usuario, a un store central único que acepte varios repos, y
+migrar todo lo que ya existe.
+
+YA DECIDIDO, no lo re-litigues:
+- Centralizado. Un solo store, con un registro de repos.
+- NO JSONL. La razón es concreta: hay varios escritores recurrentes y el append
+  concurrente desde varios procesos no es seguro. Éste es el argumento que
+  decide, no el rendimiento ni el tamaño.
+- La migración de lo existente es parte del objetivo, no un objetivo aparte.
+
+ABIERTO, y quiero opciones reales con lo que cuesta cada una:
+- El sustrato. La idea original de la memoria era un grafo de conocimiento, así
+  que un store pensado para grafos puede encajar mejor que uno relacional.
+  Candidatos a EVALUAR, no a asumir: Turso/Limbo (la reescritura de SQLite en
+  Rust, que quiero probar), SQLite a secas, y stores de grafo embebidos
+  (KuzuDB, CozoDB, SurrealDB embebido, Oxigraph, o redb/sled como sustrato con
+  el grafo encima). RESOLVÉ versiones, estado de madurez, garantías de
+  concurrencia y modelo de consulta contra la fuente — no de memoria, que la
+  tuya está vieja para varios de estos.
+- Si el CLI `memory` se reescribe, se envuelve, o se deja como está con otro
+  backend.
+
+EL DEFECTO DE DISEÑO QUE HAY QUE ARREGLAR, no sólo el almacenamiento:
+El esquema mete tres cosas distintas en "repo": dónde vive el log, quién
+escribió el record (`origin.repo`, que sí existe), y de qué trata el record
+(que NO existe). El síntoma concreto: un `gotcha` cuyo `anchor` apunta a un
+archivo de otro repo es rechazado, porque el anchor se valida contra el repo
+del log en vez del repo del sujeto. Centralizar sin agregar la dimensión de
+sujeto reproduce el mismo bug con más records adentro.
+El premio de centralizar no es la query: es que `promote` desaparece — hoy te
+obliga a predecir al escribir qué va a importar después — y que la regla "un
+árbol vive en un solo log" deja de forzar decisiones arbitrarias sobre dónde
+vive un árbol que toca cuatro repos.
+
+PROPIEDADES A PRESERVAR DELIBERADAMENTE (se pierden por default si nadie las
+defiende):
+- Append-only. La supersesión es una arista, no un UPDATE. Un record corregido
+  y el que lo corrigió tienen que seguir los dos ahí.
+- Escritura por lote atómica: entra todo o no entra nada, y una línea mala
+  nombra la línea y el campo y deja el store intacto. Hoy funciona y la
+  recuperación es "arreglá y corré lo mismo de nuevo".
+- Inspeccionable y reparable a mano cuando algo sale mal.
+
+ALCANCE MEDIDO de la migración (2026-08-31, contado, no estimado):
+- 26 logs, 10.849 records, 2.126 aristas, 237 drafts en directorios de planes.
+- Drift de esquema: version 3 (10.454), version 2 (212), version 1 (28).
+- Un kind `unit` con 13 records que no está en la lista de `memory kinds`.
+- 1.120 `gotcha` + 969 `deviation`: todos anclados, todos afectados por la
+  dimensión de sujeto que falta.
+- Los logs más grandes: sentrii 1.677, cerberus-db-mcp 1.432, ai-kit 1.406,
+  .claude-p/skills/ai-kit 1.359, be-profits-stocks 920, be-md 746,
+  be-fix-orders 691, be-bm-fix-orders 687.
+- Hay DOS copias de ai-kit con logs separados y de tamaño parecido
+  (/Volumes/rusty-drive/projects/ai-kit y ~/.claude-p/skills/ai-kit). Cuál es
+  canónica, o si hay que fusionarlas, es parte del problema.

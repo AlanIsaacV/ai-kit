@@ -34,7 +34,7 @@ Usage:
   memory areas     [--kind KINDS] [--plan SLUG]
   memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--current] [--repo-root PATH]
   memory graph     --from ID [--depth N]
-  memory state     [--id ID]
+  memory state     [--id ID] [--text] [--here] [--all]
   memory render    --as KIND
   memory promote   [--ids ID[,ID...]] [--kind KIND[,KIND...]] --to user [--dry-run]
   memory validate  [--all]
@@ -73,11 +73,22 @@ before any flag is parsed, whatever the subcommand. It is one argument where the
 command line meant two, and an unquoted variable that failed to split is what
 produces it. A flag's *value* is never inspected, so a body may say anything.
 
+'state' reads one log or every log, and its default follows the output mode:
+'state' reports this repository as JSON, 'state --text' prints what is waiting on
+you across every log found under MEMORY_ROOTS (a PATH-style list, default
+/srv/projects) plus the user log. '--here' narrows the text to this repository
+and '--all' widens the JSON to every root. No mode of 'state' creates anything:
+the logs it reads are the ones already on disk. A root that is not a readable
+directory is refused ('bad_root') rather than read as a root with nothing under
+it, and a log found at the deepest level the search reaches is reported as such,
+because below it the search cannot say whether there is more.
+
 Every command prints JSON on stdout, on success and on failure alike, except
-'render' which prints markdown. Exit 0 means the command ran; exit 1 means it
-refused, and the JSON says why. 'validate' is the one command where exit 1 is a
-verdict rather than a refusal: it ran, and either a log failed validation
-(ok: false) or a location it was asked to sweep could not be created
+'render' which prints markdown and 'state --text' which prints the summary. A
+failure is JSON in every mode, '--text' included. Exit 0 means the command ran;
+exit 1 means it refused, and the JSON says why. 'validate' is the one command
+where exit 1 is a verdict rather than a refusal: it ran, and either a log failed
+validation (ok: false) or a location it was asked to sweep could not be created
 (init_failed). Those two are reported separately, because a directory nobody can
 write to says nothing about whether the records in it are well-formed.
 `
@@ -292,6 +303,19 @@ func materialize(loc memory.Location) error {
 	return nil
 }
 
+func (c *common) checkScopeFlags() error {
+	if err := memory.ValidScope(memory.Scope(c.scope)); err != nil {
+		return fail("bad_scope", "%s", err.Error())
+	}
+	if c.dir == "" {
+		return nil
+	}
+	if _, err := memory.RepoRoot(c.dir); err != nil {
+		return fail("bad_scope", "%s", err.Error())
+	}
+	return nil
+}
+
 // planFilter is the plan a read command bounds itself to, empty when none was
 // named — an unbounded read over one repo's whole log, which the count-before-dump
 // threshold still guards.
@@ -326,6 +350,15 @@ func (c *common) planStamp() (string, error) {
 
 func (c *common) load() (memory.Location, []memory.Line, error) {
 	loc, err := c.resolve()
+	if err != nil {
+		return loc, nil, err
+	}
+	lines, err := readLog(loc)
+	return loc, lines, err
+}
+
+func (c *common) loadExisting() (memory.Location, []memory.Line, error) {
+	loc, err := c.locate()
 	if err != nil {
 		return loc, nil, err
 	}
@@ -1123,36 +1156,45 @@ func cmdState(args []string) error {
 	var c common
 	c.bind(fs)
 	id := fs.String("id", "", "report one objective instead of every one")
+	text := fs.Bool("text", false, "print what is waiting as text, over every root instead of this repo")
+	here := fs.Bool("here", false, "narrow --text to this repository")
+	all := fs.Bool("all", false, "widen the JSON report to every root")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
-	loc, lines, err := c.load()
+	if *all && *here {
+		return fail("conflicting_scope", "state takes --all or --here, not both")
+	}
+	if *all || (*text && !*here) {
+		if err := c.checkScopeFlags(); err != nil {
+			return err
+		}
+		return stateAcrossRoots(*id, *text)
+	}
+
+	load := c.load
+	if *here {
+		load = c.loadExisting
+	}
+	loc, lines, err := load()
 	if err != nil {
 		return err
 	}
 
-	rep := memory.NewTree(lines).Report()
+	tree := memory.NewTree(lines)
+	rep := tree.Report()
 
 	if *id != "" {
-		objectives := []memory.ObjectiveState{}
-		for _, o := range rep.Objectives {
-			if o.ID == *id {
-				objectives = append(objectives, o)
-			}
-		}
-		excluded := []memory.ExcludedObjective{}
-		for _, e := range rep.Excluded {
-			if e.ID == *id {
-				excluded = append(excluded, e)
-			}
-		}
-		if len(objectives)+len(excluded) == 0 {
+		filtered, n := filterByID(rep, *id)
+		if n == 0 {
 			return fail("unknown_objective", "no objective with id %s in %s", *id, loc.Path)
 		}
-		// The current objective and the anomalies stay as they are. Both are
-		// answers about the whole log, and narrowing to one record does not make
-		// a different objective current.
-		rep.Objectives, rep.Excluded = objectives, excluded
+		rep = filtered
+	}
+
+	if *text {
+		fmt.Print(memory.RenderWaiting([]memory.LogState{{Name: loc.Name(), Tree: tree, Report: rep}}, nil))
+		return nil
 	}
 
 	emit(map[string]any{
@@ -1164,6 +1206,87 @@ func cmdState(args []string) error {
 		"anomalies":  rep.Anomalies,
 	})
 	return nil
+}
+
+func stateAcrossRoots(id string, text bool) error {
+	roots := memory.Roots()
+	found, err := memory.DiscoverLogs(roots)
+	if err != nil {
+		if errors.Is(err, memory.ErrRootUnreadable) {
+			return fail("bad_root", "%s", err.Error())
+		}
+		return fail("discover_failed", "%s", err.Error())
+	}
+	locs := found.Logs
+	warnings := found.Warnings()
+
+	logs := make([]memory.LogState, 0, len(locs))
+	reports := make([]memory.RepoReport, 0, len(locs))
+	paths := make([]string, 0, len(locs))
+	matched := 0
+
+	for _, loc := range locs {
+		lines, err := readLog(loc)
+		if err != nil {
+			return err
+		}
+		tree := memory.NewTree(lines)
+		rep := tree.Report()
+		if id != "" {
+			var n int
+			rep, n = filterByID(rep, id)
+			matched += n
+		}
+		logs = append(logs, memory.LogState{Name: loc.Name(), Tree: tree, Report: rep})
+		reports = append(reports, memory.RepoReport{Repo: loc.Name(), Report: rep})
+		paths = append(paths, loc.Path)
+	}
+
+	if id != "" && matched == 0 {
+		return fail("unknown_objective", "no objective with id %s in any of the %d logs under %s",
+			id, len(locs), strings.Join(roots, ", "))
+	}
+
+	if text {
+		fmt.Print(memory.RenderWaiting(logs, warnings))
+		return nil
+	}
+
+	merged := memory.MergeReports(reports)
+	out := map[string]any{
+		"roots":      roots,
+		"logs":       paths,
+		"count":      len(merged.Objectives),
+		"objectives": merged.Objectives,
+		"excluded":   merged.Excluded,
+		"current":    merged.Current,
+		"anomalies":  merged.Anomalies,
+	}
+	if len(warnings) > 0 {
+		out["warnings"] = warnings
+	}
+	emit(out)
+	return nil
+}
+
+func filterByID(rep memory.StateReport, id string) (memory.StateReport, int) {
+	objectives := []memory.ObjectiveState{}
+	for _, o := range rep.Objectives {
+		if o.ID == id {
+			objectives = append(objectives, o)
+		}
+	}
+	excluded := []memory.ExcludedObjective{}
+	for _, e := range rep.Excluded {
+		if e.ID == id {
+			excluded = append(excluded, e)
+		}
+	}
+	// The current objective and the anomalies stay as they are. Both are
+	// answers about the whole log, and narrowing to one record does not make
+	// a different objective current.
+	rep.Objectives, rep.Excluded = objectives, excluded
+	return rep, len(objectives) + len(excluded)
 }
 
 func cmdGraph(args []string) error {

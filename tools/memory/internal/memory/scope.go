@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 // Location resolves to one memory log on disk.
@@ -119,4 +121,132 @@ func RepoRoot(dir string) (string, error) {
 		}
 		abs = parent
 	}
+}
+
+const (
+	rootsEnv     = "MEMORY_ROOTS"
+	defaultRoot  = "/srv/projects"
+	maxRootDepth = 6
+)
+
+var ErrRootUnreadable = errors.New(`a root named by ` + rootsEnv + ` is not a readable directory, and ` +
+	`the summary refuses rather than reporting the logs it did find: a glob answers with no matches and no ` +
+	`error for a root that is not there, which leaves a mistyped root indistinguishable from a quiet machine`)
+
+func ValidScope(scope Scope) error {
+	if scopes[scope] {
+		return nil
+	}
+	if scope == ScopePlan {
+		return ErrPlanScopeRemoved
+	}
+	return fmt.Errorf("unknown scope %q; valid: %s", scope, joinScopes(Scopes()))
+}
+
+func Roots() []string {
+	raw := os.Getenv(rootsEnv)
+	var roots []string
+	for _, r := range filepath.SplitList(raw) {
+		if strings.TrimSpace(r) == "" {
+			continue
+		}
+		roots = append(roots, filepath.Clean(r))
+	}
+	if len(roots) == 0 {
+		return []string{defaultRoot}
+	}
+	return roots
+}
+
+// DiscoverLogs is deleted when the memory consolidates into one store. It exists
+// only because there is no registry of repositories to read and the logs are one
+// per repository; the store that replaces them has nothing to discover. Nobody
+// should defend it later as architecture.
+func DiscoverLogs(roots []string) (Discovery, error) {
+	var d Discovery
+	seen := make(map[string]bool)
+
+	for _, root := range roots {
+		if err := checkRoot(root); err != nil {
+			return Discovery{}, err
+		}
+		for depth := 1; depth <= maxRootDepth; depth++ {
+			parts := make([]string, 0, depth+3)
+			parts = append(parts, root)
+			for i := 0; i < depth; i++ {
+				parts = append(parts, "*")
+			}
+			parts = append(parts, ".ai-kit", "memory.jsonl")
+
+			matches, err := filepath.Glob(filepath.Join(parts...))
+			if err != nil {
+				return Discovery{}, fmt.Errorf("discover logs under %s: %w", root, err)
+			}
+			if len(matches) > 0 && depth == maxRootDepth {
+				d.StoppedAtMaxDepth = append(d.StoppedAtMaxDepth, root)
+			}
+			for _, path := range matches {
+				if seen[path] {
+					continue
+				}
+				seen[path] = true
+				d.Logs = append(d.Logs, Location{
+					Scope: ScopeRepo,
+					Repo:  filepath.Dir(filepath.Dir(path)),
+					Path:  path,
+				})
+			}
+		}
+	}
+	sort.Slice(d.Logs, func(i, j int) bool { return d.Logs[i].Path < d.Logs[j].Path })
+
+	if user, ok := userLog(); ok && !seen[user.Path] {
+		d.Logs = append(d.Logs, user)
+	}
+	return d, nil
+}
+
+type Discovery struct {
+	Logs              []Location
+	StoppedAtMaxDepth []string
+}
+
+func (d Discovery) Warnings() []string {
+	var out []string
+	for _, root := range d.StoppedAtMaxDepth {
+		out = append(out, fmt.Sprintf(
+			"a log sits %d levels under %s, as deep as this search goes: whatever is below that is not in this list",
+			maxRootDepth, root))
+	}
+	return out
+}
+
+func checkRoot(root string) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		return fmt.Errorf("%v: %w", err, ErrRootUnreadable)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory: %w", root, ErrRootUnreadable)
+	}
+	return nil
+}
+
+func userLog() (Location, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Location{}, false
+	}
+	path := filepath.Join(home, ".ai-kit", "memory.jsonl")
+	if _, err := os.Stat(path); err != nil {
+		return Location{}, false
+	}
+	return Location{Scope: ScopeUser, Path: path}, true
+}
+
+func (l Location) Name() string {
+	if l.Repo == "" {
+		return string(l.Scope)
+	}
+	return filepath.Base(l.Repo)
 }

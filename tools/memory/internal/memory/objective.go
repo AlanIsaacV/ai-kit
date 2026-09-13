@@ -101,7 +101,13 @@ func (s State) Open() bool { return s != StateMet && s != StateCancelled }
 // can check. Edges is what keeps it, and every caller in this package goes
 // through it.
 func ResolveState(edges []*Edge, id string) State {
+	state, _ := ResolveStateEdge(edges, id)
+	return state
+}
+
+func ResolveStateEdge(edges []*Edge, id string) (State, *Edge) {
 	state := StatePlanned
+	var winner *Edge
 	var best time.Time
 	bestSeq := 0
 	found := false
@@ -117,9 +123,9 @@ func ResolveState(edges []*Edge, id string) State {
 		if found && !beats(at, seq, best, bestSeq) {
 			continue
 		}
-		state, best, bestSeq, found = s, at, seq, true
+		state, winner, best, bestSeq, found = s, e, at, seq, true
 	}
-	return state
+	return state, winner
 }
 
 // beats reports whether a challenger displaces the best record seen so far,
@@ -179,6 +185,7 @@ func parseAt(s string) time.Time {
 // rule that arrived after it. What the reader is owed instead is a deterministic
 // answer plus a statement of what was odd about it and which way the tie went.
 type Anomaly struct {
+	Repo    string `json:"repo,omitempty"`
 	ID      string `json:"id"`
 	Message string `json:"message"`
 }
@@ -200,6 +207,7 @@ type Tree struct {
 	objectives []*Entry          // objectives in file order
 	byID       map[string]*Entry // objectives only
 	edges      []*Edge           // every edge in the log, in file order
+	allEntries map[string]*Entry
 	parent     map[string]string
 	children   map[string][]string
 	superseded map[string]bool
@@ -224,6 +232,7 @@ func NewTree(lines []Line) *Tree {
 	edges := Edges(lines)
 	t := &Tree{
 		byID:       map[string]*Entry{},
+		allEntries: map[string]*Entry{},
 		edges:      edges,
 		superseded: SupersededIDs(edges),
 		settled:    SettledIDs(edges),
@@ -239,6 +248,7 @@ func NewTree(lines []Line) *Tree {
 			continue
 		}
 		kinds[e.ID] = e.Kind
+		t.allEntries[e.ID] = e
 		if e.Kind != KindObjective {
 			continue
 		}
@@ -339,12 +349,16 @@ func findCycles(objectives []*Entry, parent map[string]string) []Anomaly {
 // Objectives returns every objective in the log, in file order.
 func (t *Tree) Objectives() []*Entry { return t.objectives }
 
+func (t *Tree) Entry(id string) *Entry { return t.allEntries[id] }
+
 // Anomalies returns what the derivation met that the write path would have
 // refused. Empty for every log this tool wrote on its own.
 func (t *Tree) Anomalies() []Anomaly { return t.anomalies }
 
 // State is the resolved state of any record in the log, objective or not.
 func (t *Tree) State(id string) State { return ResolveState(t.edges, id) }
+
+func (t *Tree) StateEdge(id string) (State, *Edge) { return ResolveStateEdge(t.edges, id) }
 
 // Parent is the objective this one derives from, or "" for a root.
 //
@@ -468,6 +482,7 @@ const (
 // so a skill can offer the resolved one and let the user switch, rather than
 // having to ask every session including when it is obvious.
 type CurrentObjective struct {
+	Repo  string `json:"repo,omitempty"`
 	ID    string `json:"id,omitempty"`
 	Slug  string `json:"slug,omitempty"`
 	Title string `json:"title,omitempty"`
@@ -644,6 +659,7 @@ func (t *Tree) recordActivity(lines []Line) {
 
 // ObjectiveState is one objective as the tree sees it.
 type ObjectiveState struct {
+	Repo               string     `json:"repo,omitempty"`
 	ID                 string     `json:"id"`
 	Slug               string     `json:"slug"`
 	Title              string     `json:"title"`
@@ -664,6 +680,7 @@ type ObjectiveState struct {
 // report looks like a bug in the tool or a missing record; an objective listed
 // with the reason it was set aside is an answer.
 type ExcludedObjective struct {
+	Repo   string `json:"repo,omitempty"`
 	ID     string `json:"id"`
 	Slug   string `json:"slug"`
 	Title  string `json:"title"`
@@ -723,6 +740,45 @@ func (t *Tree) Report() StateReport {
 		})
 	}
 	return rep
+}
+
+type RepoReport struct {
+	Repo   string
+	Report StateReport
+}
+
+type CrossRepoReport struct {
+	Objectives []ObjectiveState    `json:"objectives"`
+	Excluded   []ExcludedObjective `json:"excluded"`
+	Current    []CurrentObjective  `json:"current"`
+	Anomalies  []Anomaly           `json:"anomalies"`
+}
+
+func MergeReports(reports []RepoReport) CrossRepoReport {
+	out := CrossRepoReport{
+		Objectives: []ObjectiveState{},
+		Excluded:   []ExcludedObjective{},
+		Current:    []CurrentObjective{},
+		Anomalies:  []Anomaly{},
+	}
+	for _, r := range reports {
+		for _, o := range r.Report.Objectives {
+			o.Repo = r.Repo
+			out.Objectives = append(out.Objectives, o)
+		}
+		for _, e := range r.Report.Excluded {
+			e.Repo = r.Repo
+			out.Excluded = append(out.Excluded, e)
+		}
+		current := r.Report.Current
+		current.Repo = r.Repo
+		out.Current = append(out.Current, current)
+		for _, a := range r.Report.Anomalies {
+			a.Repo = r.Repo
+			out.Anomalies = append(out.Anomalies, a)
+		}
+	}
+	return out
 }
 
 // -------------------------------------------------------------- write path ---
