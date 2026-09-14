@@ -225,6 +225,35 @@ func CheckEntries(repoRoot string, entries []*Entry) []RecordCheck {
 	return out
 }
 
+type CheckFilter struct {
+	Verdict Verdict
+	Path    string
+}
+
+func FilterChecks(checks []RecordCheck, f CheckFilter) []RecordCheck {
+	path := strings.ToLower(strings.TrimSpace(f.Path))
+	out := make([]RecordCheck, 0, len(checks))
+	for _, c := range checks {
+		if f.Verdict != "" && c.Verdict != f.Verdict {
+			continue
+		}
+		if path != "" && !citesPath(c, path) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func citesPath(c RecordCheck, pathLower string) bool {
+	for _, a := range c.Anchors {
+		if containsFold(a.Path, pathLower) {
+			return true
+		}
+	}
+	return false
+}
+
 // Verdicts is every verdict in a fixed order, so a report can carry all three
 // counts whether or not any record produced them. A key that only appears when
 // it is non-zero makes "nothing changed" and "the field is missing" look alike

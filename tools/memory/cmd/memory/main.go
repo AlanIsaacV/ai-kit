@@ -33,7 +33,7 @@ Usage:
   memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--id IDS] [--since TS] [--until TS] [--current] [--count] [--fields KEYS] [--body-lines N] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
   memory areas     [--kind KINDS] [--plan SLUG]
-  memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--current] [--repo-root PATH]
+  memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--id IDS] [--verdict V] [--path S] [--current] [--repo-root PATH]
   memory edges     [--type TYPES] [--from ID] [--to ID] [--since TS] [--until TS] [--count] [--limit N]
   memory graph     --from ID [--depth N] [--threshold N]
   memory state     [--id ID] [--text] [--here] [--all]
@@ -1142,8 +1142,8 @@ func cmdAreas(args []string) error {
 // It takes the same filter the read commands take, because the question "is what
 // we wrote about this area still true" is asked by area, by kind and by plan the
 // same way every other question here is. What it returns is one verdict per
-// anchored record and never the record's body: this answers whether to go and
-// look, not what the record said.
+// anchored record its filters admit and never the record's body: this answers
+// whether to go and look, not what the record said.
 //
 // Exit 0 whatever the verdicts are. `changed` is an answer, not a refusal, and
 // the exit code in this CLI says whether the command ran.
@@ -1155,11 +1155,29 @@ func cmdAnchors(args []string) error {
 	kinds := fs.String("kind", "", "comma-separated kinds")
 	slug := fs.String("slug", "", "exact slug")
 	text := fs.String("text", "", "case-insensitive substring over title and body")
+	ids := fs.String("id", "", "comma-separated record ids; an id this check did not return is listed under not_found, whether no record carries it, it carries no anchors, or another bound excluded it")
+	verdict := fs.String("verdict", "", "return only the records whose own verdict is this one — "+
+		joinVerdicts(memory.Verdicts())+" — where a record's verdict is its worst anchor's")
+	path := fs.String("path", "", "return only the records carrying an anchor whose path contains this, case-insensitively")
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "check at most N, most recent first")
 	repoRoot := fs.String("repo-root", "", "repository to check against (default: the repo the log lives in)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
+	}
+	idList := splitList(*ids)
+	if len(idList) == 0 && len(namedFlags(fs, "id")) > 0 {
+		return fail("empty_id", "--id %q names no id: a flag that parsed to nothing is what an unset "+
+			"variable looks like, and checking the whole log there would answer a question nobody asked. "+
+			"Name at least one id, or drop --id.", *ids)
+	}
+	var wantVerdict memory.Verdict
+	if len(namedFlags(fs, "verdict")) > 0 {
+		v, err := toVerdict(*verdict)
+		if err != nil {
+			return err
+		}
+		wantVerdict = v
 	}
 	plan, err := c.planFilter()
 	if err != nil {
@@ -1181,6 +1199,7 @@ func cmdAnchors(args []string) error {
 	// unrunnable over a whole log, which is the one way anybody wants to run it.
 	res := memory.Query(lines, memory.Filter{
 		Plan:        plan,
+		ID:          idList,
 		About:       splitList(*about),
 		Kinds:       toKinds(splitList(*kinds)),
 		Slug:        *slug,
@@ -1198,15 +1217,23 @@ func cmdAnchors(args []string) error {
 	for _, r := range checks {
 		counts[r.Verdict]++
 	}
+	records := memory.FilterChecks(checks, memory.CheckFilter{Verdict: wantVerdict, Path: *path})
 
-	emit(map[string]any{
+	out := map[string]any{
 		"path": loc.Path, "scope": loc.Scope, "plan": plan,
 		"repo_root": abs,
 		"matched":   res.Count,
 		"checked":   len(checks),
 		"counts":    counts,
-		"records":   checks,
-	})
+		"records":   records,
+	}
+	if len(namedFlags(fs, "verdict", "path")) > 0 {
+		out["returned"] = len(records)
+	}
+	if len(idList) > 0 {
+		out["not_found"] = nonNil(idsNotReturned(idList, records))
+	}
+	emit(out)
 	return nil
 }
 
@@ -1888,6 +1915,34 @@ func toEdgeTypes(ss []string) ([]memory.EdgeType, error) {
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+func toVerdict(s string) (memory.Verdict, error) {
+	known := memory.Verdicts()
+	v := memory.Verdict(strings.TrimSpace(s))
+	if !slices.Contains(known, v) {
+		return "", fail("unknown_verdict", "%q is not a verdict: --verdict takes one of %s, and one value rather than a list",
+			s, joinVerdicts(known))
+	}
+	return v, nil
+}
+
+func joinVerdicts(vs []memory.Verdict) string {
+	out := make([]string, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, string(v))
+	}
+	return strings.Join(out, ", ")
+}
+
+func idsNotReturned(ids []string, checks []memory.RecordCheck) []string {
+	var out []string
+	for _, id := range ids {
+		if !slices.ContainsFunc(checks, func(c memory.RecordCheck) bool { return c.ID == id }) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func toKinds(ss []string) []memory.Kind {

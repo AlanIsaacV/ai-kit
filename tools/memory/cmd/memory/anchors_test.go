@@ -69,6 +69,8 @@ type anchorsOutput struct {
 	RepoRoot string         `json:"repo_root"`
 	Matched  int            `json:"matched"`
 	Checked  int            `json:"checked"`
+	Returned int            `json:"returned"`
+	NotFound []string       `json:"not_found"`
 	Counts   map[string]int `json:"counts"`
 	Records  []struct {
 		ID      string `json:"id"`
@@ -101,17 +103,29 @@ func checkAnchors(t *testing.T, r repo, args ...string) anchorsOutput {
 	return out
 }
 
-// addGotcha writes the record the whole mechanism exists for, anchored at a
-// citation the caller chooses.
-func addGotcha(t *testing.T, r repo, title, spec string) string {
+// addGotcha writes the record the whole mechanism exists for, anchored at the
+// citations the caller chooses.
+func addGotcha(t *testing.T, r repo, title string, specs ...string) string {
 	t.Helper()
-	res := run(t, r, "add", "--kind", "gotcha", "--title", title,
+	args := []string{"add", "--kind", "gotcha", "--title", title,
 		"--body", "The rate limit upstream is 5/s and this is what stays under it.",
-		"--about", "auth", "--anchor", spec)
+		"--about", "auth"}
+	for _, spec := range specs {
+		args = append(args, "--anchor", spec)
+	}
+	res := run(t, r, args...)
 	if res.code != 0 {
 		t.Fatalf("add --kind gotcha: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
 	return recordID(t, res)
+}
+
+func recordIDs(out anchorsOutput) []string {
+	ids := make([]string, 0, len(out.Records))
+	for _, r := range out.Records {
+		ids = append(ids, r.ID)
+	}
+	return ids
 }
 
 func onlyRecord(t *testing.T, out anchorsOutput) anchorsOutput {
@@ -572,5 +586,73 @@ func TestRepoRootChoosesTheWorkingTreeTheAnchorsAreReadAgainst(t *testing.T) {
 	there := onlyRecord(t, checkAnchors(t, r, "--kind", "gotcha", "--repo-root", other.root))
 	if there.Records[0].Verdict != "changed" {
 		t.Fatalf("the named root is what gets read: %+v", there.Records[0])
+	}
+}
+
+func TestAVerdictFilterTakesTheRecordsVerdictAndNotEachAnchors(t *testing.T) {
+	r := throwawayRepo(t)
+	tokenSource(t, r)
+	srcFile(t, r, "pkg/auth/key.go", "package auth", "", "type Key struct{}")
+
+	mixed := addGotcha(t, r, "The lock is taken before the write, not after",
+		anchorPath+":4-5", "pkg/auth/key.go:3")
+	intact := addGotcha(t, r, "A key is a value everywhere it is passed", "pkg/auth/key.go:3")
+
+	src := srcLines(t, r, anchorPath)
+	src[3] = "\tk.mu.RLock()"
+	srcFile(t, r, anchorPath, src...)
+
+	changed := checkAnchors(t, r, "--kind", "gotcha", "--verdict", "changed")
+	if ids := recordIDs(changed); len(ids) != 1 || ids[0] != mixed {
+		t.Fatalf("a record with one rewritten anchor is a changed record: got %v, want [%s]", ids, mixed)
+	}
+	seen := map[string]int{}
+	for _, a := range changed.Records[0].Anchors {
+		seen[a.Verdict]++
+	}
+	if seen["changed"] != 1 || seen["still_holds"] != 1 {
+		t.Fatalf("the record comes back whole, on its roll-up, not trimmed to the anchors that changed: %v", seen)
+	}
+
+	holds := checkAnchors(t, r, "--kind", "gotcha", "--verdict", "still_holds")
+	if ids := recordIDs(holds); len(ids) != 1 || ids[0] != intact {
+		t.Fatalf("a record whose worst anchor changed does not still hold: got %v, want [%s]", ids, intact)
+	}
+}
+
+func TestARecordWhoseAnchorsBothMatchAPathIsReturnedOnce(t *testing.T) {
+	r := throwawayRepo(t)
+	tokenSource(t, r)
+	srcFile(t, r, "pkg/auth/key.go", "package auth", "", "type Key struct{}")
+
+	twice := addGotcha(t, r, "The lock is taken before the write, not after",
+		anchorPath+":4-5", anchorPath+":1")
+	addGotcha(t, r, "A key is a value everywhere it is passed", "pkg/auth/key.go:3")
+
+	out := checkAnchors(t, r, "--kind", "gotcha", "--path", "token.go")
+	ids := recordIDs(out)
+	if len(ids) != 1 || ids[0] != twice {
+		t.Fatalf("two matching anchors are one record: got %v, want [%s]", ids, twice)
+	}
+	if out.Returned != 1 {
+		t.Errorf("returned counts records the way records does, got %d", out.Returned)
+	}
+	if n := len(out.Records[0].Anchors); n != 2 {
+		t.Errorf("and the record keeps every anchor it was written with, got %d", n)
+	}
+}
+
+func TestAnIdTheLogDoesNotCarryIsReportedNotFound(t *testing.T) {
+	r := throwawayRepo(t)
+	tokenSource(t, r)
+	id := addGotcha(t, r, "The lock is taken before the write, not after", anchorPath+":4-5")
+	const missing = "01JXKQ7M4T8YZPABCDEFGHJKMN"
+
+	out := checkAnchors(t, r, "--id", id+","+missing)
+	if ids := recordIDs(out); len(ids) != 1 || ids[0] != id {
+		t.Fatalf("--id checks the records it names and nothing else: got %v, want [%s]", ids, id)
+	}
+	if strings.Join(out.NotFound, ",") != missing {
+		t.Fatalf("the id the log does not carry has to come back named, got %v", out.NotFound)
 	}
 }

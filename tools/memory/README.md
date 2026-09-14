@@ -484,6 +484,37 @@ Three consequences worth stating, because each looks like an omission:
 It makes no language-model call and no network call, opens files read-only, and
 exits 0 whatever the verdicts are — `changed` is an answer, not a refusal.
 
+### Asking for less than all of it
+
+The whole set with its `counts` roll-up answers "how is the log doing". The three
+narrower questions have flags of their own, and they compose with each other and
+with every filter above by conjunction:
+
+```bash
+memory anchors --kind gotcha --verdict changed   # only the records that drifted
+memory anchors --path pkg/auth/token.go          # only the records citing that file
+memory anchors --id <id>,<id>                    # only these records
+```
+
+- **`--verdict` is the record's verdict, never an anchor's.** It takes one of
+  `still_holds`, `changed`, `could_not_check` — one value, not a list — and
+  anything else is refused naming the value it was handed. Matching per anchor
+  would return a record with one rewritten citation under `still_holds`, which
+  under-reports drift silently.
+- **`--path` matches a case-insensitive substring** of an anchor's `path`, the way
+  `--text` matches title and body. A record citing the same file twice comes back
+  once, carrying every anchor it was written with rather than only the ones that
+  matched.
+- **`--id` takes a comma-separated list** and reports under `not_found` every id it
+  did not hand back — one no record carries, one whose record carries no anchors,
+  one another bound excluded — exactly as [`query --id`](#usage) does.
+
+`checked` and `counts` stay what they are everywhere else: what the check looked
+at and what it found, over every matched record that carried anchors. `returned`
+says how many of those `--verdict` and `--path` admitted, and appears only when
+one of them is named — so an invocation naming none of the three answers exactly
+what it answered before they existed.
+
 ## Edge types
 
 **Relations** — how two records stand to each other.
@@ -1022,6 +1053,9 @@ memory query --scope both --id <id>   # from whichever log holds it, and which o
 memory search --plan jwt-migration "key rotation"
 memory areas --kind preference   # what can be asked about, in both logs
 memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
+memory anchors --kind gotcha --verdict changed   # only the ones that drifted
+memory anchors --path pkg/auth/token.go          # only the ones citing that file
+memory anchors --id <id>,<id>    # only those records, and what it could not check
 memory edges --type supersedes   # every edge of one relation, no starting id
 memory edges --from <id> --since 2026-09-01   # what that record linked this month
 memory graph --from <id> --depth 2
@@ -1430,6 +1464,11 @@ under different tags is invisible to whoever finds the mistake.
   twice reports `still_holds` with both lines and a match count, never a choice.
 - A record's verdict is its worst anchor's, and a record with no anchors is
   skipped rather than counted as holding.
+- `anchors --verdict` filters on that roll-up and not on the individual anchor, so
+  a record with one `changed` anchor and one that holds comes back under
+  `--verdict changed` and not under `--verdict still_holds`; `--path` returns a
+  record whose two anchors both match it once rather than twice; and `--id` names
+  an id the log does not carry under `not_found` rather than answering empty.
 - `anchors` checks every match rather than withholding above the threshold, over
   a log well past it, in under a second; `--repo-root` moves which working tree
   is read without moving the log.

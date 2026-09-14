@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+### `anchors` answers which records drifted, which cite a path, and what one record says
+
+`memory anchors` checked every anchor of every record its filters matched and
+handed back the whole set. That is the right answer to "how is the log doing" and
+the wrong answer to every question anybody actually asks, which is narrower. This
+repository's log today: `--kind gotcha` reports `matched 95, checked 95, changed
+47, still_holds 48` — forty-seven drifted records, and no invocation that returned
+only those. The narrower question was answered by piping the JSON through Python.
+
+```bash
+memory anchors --kind gotcha --verdict changed   # only the records that drifted
+memory anchors --path tools/memory/anchor.go     # only the records citing that file
+memory anchors --id <id>,<id>                    # only these records
+```
+
+- **`--verdict` filters the record's verdict, never an individual anchor's.**
+  REJECTED: matching per anchor, which would return a record with one rewritten
+  citation under `still_holds` — the reading that under-reports drift, and does it
+  silently. A record's verdict is its worst anchor's, and that is the only verdict
+  this flag looks at. It takes one of `still_holds`, `changed`, `could_not_check`,
+  one value and not a comma-separated list, since three values exist and two of
+  them are already the complement of the third; a fourth value is refused naming
+  what it was handed.
+- **`--path` is a case-insensitive substring** over an anchor's `path`, the way
+  `--text` already matches title and body on the same command. REJECTED: globs and
+  regexes, because one matching idiom per command surface is worth more than
+  expressive matching on one flag; and the name `--anchor-path`, because `anchors`
+  is the one command where an unqualified `path` has a single referent. A record
+  citing the same file twice comes back once, carrying every anchor it was written
+  with rather than only the ones that matched.
+- **`--id` takes a comma-separated list and reports `not_found`**, the contract
+  `query --id` established, because two commands answering the same flag
+  differently is what stops an agent trusting either. An id comes back under
+  `not_found` when no record carries it, when the record it names carries no
+  anchors, and when another bound excluded it — the alternative being an answer
+  that is silent about a record it never looked at.
+- **The three compose with each other and with every existing filter by
+  conjunction.** No precedence rule, and none of them turns the count-before-dump
+  guard back on: it stays off for this command, and `--threshold` is still an
+  error here rather than an override.
+- **`checked` and `counts` still describe what the check did**, over every matched
+  record that carried anchors, so `--verdict changed` reads "47 of the 95 I
+  checked". REJECTED: narrowing them to the records that came back, which would
+  make `checked` mean "carried anchors" on one invocation and "survived the
+  filters" on the next, and the gap between `matched` and `checked` stop naming
+  the records that had no anchors. `returned` says how many `--verdict` and
+  `--path` admitted and appears only when one of them was named; `not_found`
+  appears only under `--id`. **An invocation naming none of the three answers
+  byte-for-byte what it answered before.**
+- **Records carrying no anchors are still skipped**, and this did not become the
+  place to report them. `--scope both`, `--count`, `--since`/`--until` and
+  `--threshold` are still not flags on this command, and an anchor is still
+  checked against the working tree rather than a git ref.
+
 ### `query --scope both` reads the repository log and the user log as one answer
 
 The measurement behind `--id`, `--fields` and `edges` counted 23 callers reading
