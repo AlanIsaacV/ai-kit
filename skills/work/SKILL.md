@@ -59,8 +59,12 @@ run, and invoke `plan` for the one that is.
 ## The memory log
 
 Queries report their match count before handing over records, and withhold
-them above a threshold. When that happens, **narrow the query** — do not raise
-the limit to make the wall of text appear. If you genuinely need to read a lot
+them above a threshold. When that happens, **narrow the query** — another
+`--about`, one `--kind` at a time — and do not raise the limit to make the wall
+of text appear. `--fields` and `--body-lines` are not a way out of this: the
+threshold counts what matched before any projection runs, so a withheld answer
+stays withheld however little of each record you asked for. What they change is
+the price of the records that do come back. If you genuinely need to read a lot
 of history, that is a job for a subagent, not for this context.
 
 `memory kinds` is the authority on which record kinds and edge types exist and
@@ -196,6 +200,21 @@ turn when it touches the objective about to run, or the surface that objective i
 going to change. Everything else belongs to a sibling objective, or to code this
 turn never opens, and it stays in the log. A round that dumps every open record
 trains the user to skim the one thing you needed them to read.
+
+That test runs on `title` and `about` and on nothing else in the record. When the
+tree has enough history that the query above comes back as a wall of bodies, take
+it in two: every open record named for the price of its title, the filter made on
+exactly the fields the test uses, and the survivors read whole afterwards.
+
+```bash
+memory query --plan <tree-slug> --kind open-question,assumption --current --fields id,kind,title,about --body-lines 0
+memory query --plan <tree-slug> --id <the surviving ids, comma-separated, pasted from the answer above>
+```
+
+Two calls where one was enough on a short tree, so it is worth it only once the
+bodies outweigh the extra process — and it is no help at all against a withheld
+answer, which stays withheld by the rule above. Narrow that one; this one is about
+what the records cost after they come back.
 
 Then name what the filter dropped, in one line, with its count. The judgment is
 yours to make and it is not yours to make quietly — a record left out in silence
@@ -947,12 +966,27 @@ the subagent as a result.
 
 `confirmed_hypothesis` is filled **only** when this objective came out of a
 `debug` investigation, and then with the hypothesis record's id and its claim —
-nothing else, and never a note explaining that `debug` did not run. Read the id
-off the objective's own record rather than off your memory of the conversation:
-`plan` linked the two with a `caused_by` edge, and `memory graph --from
-<objective-id> --depth 1` shows it. What the subagent needs the claim for is
-deciding whether the lesson generalizes past this bug, which is the one judgment
-at the close that cannot be reconstructed from the diff.
+nothing else, and never a note explaining that `debug` did not run. Read both off
+the log rather than off your memory of the conversation: `plan` linked the two with
+a `caused_by` edge, and two calls turn that edge into the id and the claim.
+
+```bash
+memory edges --from <objective-id> --type caused_by
+memory query --id <the id in the to field of that edge, pasted literally> --fields id,kind,title,body --body-lines 1
+```
+
+`edges` returns edges and nothing else — no record at either end, no bodies — and
+what bounds it is `--from`, `--to` and `--type`. Not the plan: `--plan` on it is
+refused outright with `plan_not_on_edges`, and an `AI_KIT_PLAN` in the environment
+is ignored rather than applied, so the answer spans the whole log and `--from` is
+the only thing keeping it to this objective. `graph` would find the same edge and
+carry back the full record of every node it reached, in either direction and at any
+edge type — measured against this repository's log, 23 KB where the edge alone is
+559 bytes.
+
+What the subagent needs the claim for is deciding whether the lesson generalizes
+past this bug, which is the one judgment at the close that cannot be reconstructed
+from the diff.
 
 Leave it blank on every other objective. Blank is what says "no investigation
 behind this", and the subagent writes no postmortem — which for work that started

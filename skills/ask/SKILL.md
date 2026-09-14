@@ -183,7 +183,7 @@ parses, so the command runs unsubstituted and the brackets stop nothing.
 Two flags carry the target, and both appear on every command that accepts them:
 
 - **`--dir <target-repo>`** resolves *which log* — `<repo>/.ai-kit/memory.jsonl`.
-  Accepted by `query`, `search`, `anchors`, `add`, `link`, `graph`.
+  Accepted by `query`, `search`, `anchors`, `edges`, `add`, `link`, `graph`.
 - **`--repo-root <target-repo>`** resolves *which working tree* the anchors are
   relative to and read from. Accepted by `anchors` and `add`, and by nothing else
   — do not put it on `query` or `link`, which refuse an undefined flag.
@@ -360,7 +360,7 @@ which is this skill's own writing, and nothing else.
 narrow rather than to raise it** — the same discipline step 2 applies to its pair.
 Three kinds over a surface with any history is enough: measured against this
 repository's own log, `--kind adr,decision,gotcha --about tools/memory/ --current`
-returns `count: 29`, `returned: 0`, `truncated: true`, which is no records at all at
+returns `count: 197`, `returned: 0`, `truncated: true`, which is no records at all at
 exit 0. So narrow — one kind at a time, a tighter `--about`, or the phrase through
 `search` — because the alternative reads worse than it sounds: `--limit N` hands
 back the N most recent and reports only *how many* older matches it dropped, so a
@@ -368,6 +368,24 @@ decision taken two years ago is absent from the answer with nothing naming it, a
 an ADR is exactly the record whose age is no argument against it. A wide
 `--threshold` is the same trade paid in context instead: every body loaded into this
 thread so that one of them can be cited.
+
+`--fields` and `--body-lines` are not a fourth way of narrowing and will not get a
+withheld answer back: the threshold counts what matched before any projection runs,
+so the same query with `--fields id,title --body-lines 0` still reports
+`count: 197`, `returned: 0`, `truncated: true`. What they change is how much of each
+record costs you something once records do come back — which is what makes the wide
+read affordable in the one case where narrowing would lose the answer:
+
+```bash
+memory query --dir <target-repo> --kind adr,decision,gotcha --about <area> --current \
+  --threshold -1 --fields id,kind,title,at --body-lines 0
+```
+
+That is the trade rejected above with the body cost taken out: over those same 197
+records, 45 KB of titles and dates against 414 KB of bodies. It answers a different
+question, and only that one — *what exists on this surface*, every match named with
+the date rule 2 makes you cite, none of them read. Pick the few that bear on the
+question and read those whole by id, below.
 
 `search` is the fallback when `--about` tagging does not line up with how you would
 name the surface. Reach for it before concluding the log is empty, because a tag
@@ -380,17 +398,36 @@ where silence about it leaves them unable to tell a gap in the log from a step y
 skipped.
 
 Keep each record's **id and `at` date** with its content from the moment you read
-it. Reconstructing them at write-up time is how a citation ends up pointing at the
-wrong record — and going back for one is more awkward than it looks:
+it. An id you did not keep is not an id you can look up, and reconstructing either
+at write-up time is how a citation ends up pointing at the wrong record. What is
+cheap is going back when you *do* have the id — one process, and only the records
+you name:
 
 ```bash
-memory graph --dir <target-repo> --from <id> --depth 1
+memory query --dir <target-repo> --id <id>,<id> --fields id,kind,title,at,body
 ```
 
-`graph` is the only command that resolves an arbitrary record by id. `query` takes
-no `--id`, and `state --id` answers for objectives alone — pointed at any other
-record it refuses with `unknown_objective`. So the id you cite is worth capturing
-when you have the record in hand rather than looking up afterwards.
+`--id` takes a comma-separated list, which is how the catalogue read above becomes
+an answer: name the few records that bear on the question and read those whole.
+**No `--body-lines` on this one.** It defaults to the whole body, and that whole
+body is what the catalogue bought — every match named at the price of none of them
+read, so the few that survive the pick can be read entire. Three lines of an ADR
+are its opening and not its argument, and rule 3 does not let you cite what you
+did not read.
+
+`state --id` is the one that does not generalize — it answers for objectives alone,
+and pointed at any other record it refuses with `unknown_objective`.
+
+`--id` does not escape the query's own bounds. A record written under a different
+objective tree comes back `count: 0` with that id under `not_found` whenever a
+`--plan` is in force, and `--plan` falls back to `AI_KIT_PLAN` from the environment,
+which no value of the flag clears. So `not_found` says *not under this query's
+bounds* and never *no such record*: step 3's reads carry no `--plan` for exactly
+that reason, and an environment that sets one is the thing to check before
+concluding a record is gone.
+
+The id travels in this thread and is **pasted** into the next command, the way
+every id in this file is. Nothing here captures one command's output into another.
 
 ### 4 — Ask the code, through `explore`
 
@@ -615,7 +652,10 @@ both records answer the same `--current` query and a later ask cannot tell which
 one describes the code — with it, the stale citation stops being checked the
 moment the replacement exists. The old id is not repeated in the body for the
 same reason the anchor is not: the edge is what carries it, and
-`memory graph --from <new-id>` walks to it. What the body adds is *why* the revision happened, which no edge holds.
+`memory edges --from <new-id> --type supersedes` reads it back — the edge on its
+own, with no record attached to either end, bounded by `--from` and `--type` and by
+nothing else. What the body adds is *why* the revision happened, which no edge
+holds.
 
 The user's confirmation is not a formality. A `changed` verdict says the lines
 moved, not what is true now, and writing a revision they never agreed to would put

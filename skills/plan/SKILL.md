@@ -252,20 +252,27 @@ options touch, one area at a time:
 
 ```bash
 memory areas --kind preference
-memory query              --kind preference --about <one of the areas the options touch> --current
-memory query --scope user --kind preference --about <the same area> --current
+memory query --scope both --kind preference --about "<one of the areas the options touch>" --current
 ```
 
 `areas` names the areas anybody has a recorded choice about, in this repo's log
-and the user's, and which record is live in each; the two `query` lines read that
-area's live answer out of each of those logs in turn. **Both lines, always**:
-`query` reads one scope per call and defaults to this repo's, so a choice promoted
-up out of some other repository is named by `areas` and then comes back `count: 0`
-from the repo-scope line alone — and it applies here exactly as much as a local
-one does. No `--plan` on any of the three — these records are written without one
-because they belong to the repository rather than to a tree, and a plan-bounded
-read returns them anyway. Read per area rather than in bulk, so the query stays
-small enough to come back with records in it.
+and the user's, and which record is live in each; `query --scope both` then reads
+that area's live answer out of both of those logs as one answer, most recent
+first, each record naming in its own `scope` which log it came from. **`--scope
+both`, not the default**: on its own `query` reads this repo's log alone, so a
+choice promoted up out of some other repository is named by `areas` one line
+earlier and then comes back `count: 0` — a query that ran correctly and asked the
+wrong log. A promoted choice applies here exactly as much as a local one does,
+which is the whole reason the user's log is read at all. No `--plan` on either
+line — these records are written without one because they belong to the repository
+rather than to a tree, and a plan-bounded read returns them anyway. Read per area
+rather than in bulk, so the query stays under the count at which `query` withholds
+its records and answers `count: N, returned: 0` instead. Asking for less of each
+record does not move that line — the guard counts the matches before `--fields`
+and `--body-lines` project them — but it is what makes a returned record cheap.
+`--fields id,at,title` is the citation below and nothing else, and
+`--body-lines 0` keeps the reasoning out of this thread when only the title is
+going in front of the user.
 
 What comes back goes **beside** the options, as context, never in place of one:
 

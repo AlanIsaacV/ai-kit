@@ -128,14 +128,34 @@ this repository's log and the user's, with which record is live in each. Take th
 `--about` values from what it names, then read those areas one at a time:
 
 ```bash
-env -u AI_KIT_PLAN memory query              --kind decision,gotcha --about <area> --current
-env -u AI_KIT_PLAN memory query --scope user --kind decision,gotcha --about <area> --current
+env -u AI_KIT_PLAN memory query --scope both --kind decision,gotcha --about "<area>" --current
 ```
 
-**Both lines, always**: `query` reads one scope per call and defaults to this
-repo's, so a choice promoted up out of some other repository is named by `areas`
-and then comes back empty from the repo-scope line alone — and it applies here
-exactly as much as a local one does.
+**`--scope both`, always**: it reads this repository's log and the user's as one
+answer, most recent first, with each record naming in its own `scope` which of the
+two it came from. On the default `query` reads this repo's log alone — so a choice
+promoted up out of some other repository is named by `areas` one line earlier and
+then comes back empty here, from a query that ran correctly and asked the wrong
+log. A promoted choice applies exactly as much as a local one does, which is why
+it arrives in the same list rather than in a second pass somebody can skip.
+
+**One call means one threshold over both logs.** `--scope both` pools the two
+before the guard runs, so the count measured against the line at which `query`
+withholds its records is their sum, and an area that sat under it in each log
+alone can cross it here. Past that line the answer is `count: N, returned: 0,
+truncated: true` at exit 0 — records withheld, not absent — and the paragraph
+below must not report it as "nada". Re-read that one area with
+`--scope both --threshold -1 --fields id,kind,scope,title,at --body-lines 0`,
+which names every match with the log it came from and reads none of them, and
+take the few that bear on this work whole by
+`env -u AI_KIT_PLAN memory query --id --scope both`: `--id` is bound by the
+scope and the plan it is asked under, so without both a record the pooled read
+just found in the user's log comes back under `not_found` at exit 0. `--limit`
+would bound the pool rather than each log, and the guard counts the matches
+before `--fields` and `--body-lines` project them — they are no way past it,
+they are what makes the wide read affordable once you are past it. Asked
+without them, `--threshold -1` hands back every matching body out of both
+logs, into the thread step 2 protects by sending `explore` out to read.
 
 Say in one line what came back, including "nada" — a filter that ran and found
 nothing is different from a read that was skipped, and a tag nobody uses is a

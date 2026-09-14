@@ -117,18 +117,29 @@ the thread you are relieving. What you get is pointers, and you open them:
   you take from the objective's own record and the files the diff names:
 
 ```bash
-memory query --plan <plan_slug> --kind open-question,assumption --current --about <areas>
+memory query --plan <plan_slug> --kind open-question,assumption --current --about <areas> \
+  --fields id,kind,title,body --body-lines 3
 memory kinds
 ```
+
+You are recognising records here, not reading them: a title and the first lines
+of a body tell you whether what you are about to write is already there, and
+`--fields` with `--body-lines` is how you ask for that much and no more. Ask
+again without them for the one record that turns out to matter.
 
 Queries report their match count before handing over records, and withhold them
 above a threshold: what comes back is `truncated: true`, an empty `records` array,
 and a `count` of the matches you did not get. When that happens, **narrow the
 query** — another `--about`, one `--kind` at a time, or `--limit N` for the most
-recent — and do not raise the threshold to make the wall of text appear. **An
-empty `records` array is never "nothing exists".** Read it that way once and you
-write the duplicate of a record already on disk, which is the one thing this
-check exists to prevent.
+recent — and do not raise the threshold to make the wall of text appear.
+`--fields` and `--body-lines` are not a fourth way past that wall: the count is
+taken over the matches before either is applied, so a query that was withheld
+stays withheld however little of each record you ask for. What they change is
+what a wall costs — `--threshold -1 --fields id,title` hands back every match as
+an id and a title and nothing else, which is a list you can read rather than the
+dump the threshold exists to stop. **An empty `records` array is never "nothing
+exists".** Read it that way once and you write the duplicate of a record already
+on disk, which is the one thing this check exists to prevent.
 
 `memory kinds` is the authority on which record kinds and edge types exist
 and on which record each state edge is allowed to point at. Resolve it, do not
@@ -414,9 +425,20 @@ memory link --type supersedes --from <the new record> --to <the mistaken record>
 refused.** `"to"` on the batch line above is what puts the new record on the
 `from` side. The reverse — an edge from the mistaken record to the new one — is
 accepted at exit 0 and silently retires the *replacement*, leaving the mistake as
-the live answer. Nothing warns you, because both are legal edges; the only way to
-see it is to read the direction before writing it, or to check `--current`
-afterwards and find the wrong record still coming back.
+the live answer. Nothing warns you, because both are legal edges, so ask the log
+which way this one went:
+
+```bash
+memory edges --type supersedes --to "<the mistaken record id>"
+```
+
+An edge comes back whose `from` is the record you just wrote: the retirement
+landed the right way round. Nothing comes back: the edge is either missing or
+drawn backwards, and the same call with `--from` in place of `--to` says which.
+`edges` reads the edges and nothing else — no record, no body — so this costs one
+call whether or not anything is wrong, which is what makes it worth running every
+time rather than waiting for `--current` to hand you the mistake back as the live
+answer.
 
 `--about` matters here more than usual: a retirement filed under different tags
 from the record it retires is invisible to the reader who finds the mistake.

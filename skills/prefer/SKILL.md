@@ -123,6 +123,10 @@ skill; a human invokes it, and it records what they settle and stops.
    setting. **It no longer keeps a user-scope read below it**: adoptions pile one
    record per repository into a single area, so that is the one read that grows
    without bound, and rule 13 is what carries it past the threshold intact.
+   Asking for less of each record does not move that limit either — the guard
+   counts the matches before `--fields` and `--body-lines` project them — so a
+   projection is about what a returned record costs and never about getting a
+   withheld one back.
 5. **What costs the user attention is divergence, not an enumeration.** A
    preference the repository already obeys is recorded, by rule 6, and is still
    never a round: the obeyed ones go up as one batched line asking whether any of
@@ -171,15 +175,20 @@ skill; a human invokes it, and it records what they settle and stops.
 12. **Read-only over the repository, with the log as the single exception.** No
     file is edited, no `docs/` is created, no scratch file is left behind. Never
     edit the `.jsonl` by hand.
-13. **Every user-scope preference read carries an explicit `--limit`, and the
-    aggregate is computed from the records rather than from `count`.** Past the
-    threshold `memory kinds` reports, `query` returns `count: N, returned: 0,
-    truncated: true` — the count survives and every `origin.repo` and every facet
-    tag is withheld, which is precisely the half the aggregate is made of. An area
-    reaches that threshold only because adoptions accumulate there, so this is a
-    trap rule 6 builds and this rule disarms. Count **distinct `origin.repo`**
-    over the returned records, never records: a repository that changed its mind
-    contributes two records and one repository.
+13. **Every preference read that reaches the user log — `--scope user` or
+    `--scope both` — carries an explicit `--limit`, and the aggregate is computed
+    from the records rather than from `count`.** Past the threshold `memory kinds`
+    reports, `query` returns `count: N, returned: 0, truncated: true` — the count
+    survives and every `origin.repo` and every facet tag is withheld, which is
+    precisely the half the aggregate is made of. An area reaches that threshold
+    only because adoptions accumulate there, so this is a trap rule 6 builds and
+    this rule disarms. `--fields` does not stand in for `--limit` and cannot: the
+    guard counts the matches before it projects them, so a projection makes each
+    returned record cheap and hands back no record that was withheld. Where a read
+    is for the aggregate alone, `--fields title,about,origin` is exactly the three
+    fields it is computed from. Count **distinct `origin.repo`** over the returned
+    records, never records: a repository that changed its mind contributes two
+    records and one repository.
 14. **It records and stops.** No objective, no acceptance criteria, no fix, no
     invocation of `plan`, `work`, `debug`, `ask` or `bootstrap`. When the run turns
     up work worth doing, name it in one line and leave the next move to the user.
@@ -402,23 +411,26 @@ not round on them.
 Then read the live preference for each real area it named, one area at a time:
 
 ```bash
-env -u AI_KIT_PLAN memory query --kind preference --about <area> --current
-env -u AI_KIT_PLAN memory query --scope user --kind preference --about <area> --current --limit 200
+env -u AI_KIT_PLAN memory query --scope both --kind preference --about "<area>" --current --limit 200
 ```
 
 `--current` drops what something explicitly supersedes or answers, which for
-preferences is exactly the retired ones. The second line is not optional on an
-area the user log also carries: a preference promoted up out of some other
-repository applies here too, and a validation pass that never saw it cannot report
-this repository as diverging from it — the silence then reads exactly like
-agreement. `records` comes back `null` rather than `[]` when nothing matched, so
-read `count`.
+preferences is exactly the retired ones. **`--scope both` is not optional**: it
+reads this repository's log and the user's as one answer, each record naming in
+its own `scope` which of the two it came from, and on the default `query` would
+read this repo's alone. A preference promoted up out of some other repository
+applies here too, and a validation pass that never saw it cannot report this
+repository as diverging from it — the silence then reads exactly like agreement.
+`count` is how many matched and `returned` is how many came back; under the limit
+this step carries, the two part company only when the answer was cut — which is
+what `--limit` below is there to prevent, and what `truncated` reports when it was
+set too low. An empty `records` here is an area with nothing live in either log.
 
-**`--limit` on the user-scope line is rule 13, and it is the load-bearing flag in
-this step.** Adoptions accumulate in one user-scope area, one per repository, so
-that area is the one place in either log that grows past the threshold `memory
-kinds` reports — and past it `query` answers with the count and withholds every
-record. Measured, on a user-scope area holding 33 live records:
+**`--limit` is rule 13, and it is the load-bearing flag in this step.** Adoptions
+accumulate in one user-scope area, one per repository, so that area is the one
+place in either log that grows past the threshold `memory kinds` reports — and
+past it `query` answers with the count and withholds every record. Measured, on a
+user-scope area holding 33 live records:
 
 ```
 --about migrations --current               →   count: 33, returned: 0,  truncated: true
@@ -427,8 +439,22 @@ record. Measured, on a user-scope area holding 33 live records:
 
 Both lines exit 0 and both look like answers. The first one has silently dropped
 every `origin.repo` and every facet tag — which is to say the whole aggregate,
-leaving only its size. The repository-scope line above needs no `--limit` because
-rule 6 caps that area at one live record.
+leaving only its size.
+
+**One call means one limit for both logs**, and that is a real change rather than
+a formatting one: `--scope both` pools the two logs and sorts the pool by id
+before the limit is applied, so in general a limit can be spent on one scope
+before the other is reached. What stops that here is rules 6 and 7 — this
+repository's log holds exactly one live preference per area, checked before every
+write — so the pool is that one record plus the adoptions, and 199 of the 200 are
+still the adoptions rule 13 needs. **Do not carry this read's shape to a pair
+where both scopes grow.**
+
+Two things follow for this step. `truncated: true` now means the *union* was cut,
+and the cut takes the oldest first, so read the `scope` on the records rather than
+assuming this repository's own came back inside the bound. And if `truncated` is
+ever `true` here, raise the limit rather than reporting what came back: an
+aggregate computed off a slice is wrong in the direction nobody checks.
 
 A tag ending in `/` matches by path prefix, so an area recorded as `tools/db/` is
 also reached by `--about tools/`. Measured, on a log whose only live preference was
@@ -440,10 +466,16 @@ memory query --kind preference --about tools/ --current   →   count: 1
 
 #### Compute the aggregate, per area
 
-The records the user-scope line returned are the adoptions. Group them, in this
-thread, out of three fields each record already carries — `title` for what was
-chosen, `origin.repo` for where, and the `service/*` entry in `about` for what kind
-of thing that repository is:
+The records that came back with `scope: user` are the adoptions; the one with
+`scope: repo` is this repository's own live answer, and it is what the rest of the
+run checks the repository against. Group the adoptions, in this thread, out of
+three fields each record already carries — `title` for what was chosen,
+`origin.repo` for where, and the `service/*` entry in `about` for what kind of
+thing that repository is. Those three are exactly what
+`--fields title,about,origin` returns and the whole of what the aggregate is
+computed from, which is how step 5 reads it back; the read above carries no
+projection because the repository-scope record is read for what it displaced and
+not only for its title:
 
 - **How many repositories** — distinct `origin.repo`, **not** the record count.
   A repository that changed its mind and superseded its own adoption contributes
@@ -1139,22 +1171,31 @@ destination resolves to the one live answer per repository that step 1's aggrega
 counts. Promoting the live record alone would have produced the same thing, by the
 one-hop rule above.
 
-**Then read the aggregate back, once, and show it.** It is the same read step 1
-ran, and running it here is what turns a promotion into something the user can see
-the effect of:
+**Then read the aggregate back, once, and show it.** It is step 1's read narrowed
+to what the aggregate is made of, and running it here is what turns a promotion
+into something the user can see the effect of:
 
 ```bash
-env -u AI_KIT_PLAN memory query --scope user --kind preference --about <each area you promoted into> --current --limit 200
+env -u AI_KIT_PLAN memory query --scope user --kind preference --about "<each area you promoted into>" --current --limit 200 --fields title,about,origin
 ```
 
 > `migrations` — Goose ahora en 5 repos (4 `api`, 1 `worker`). Este entró como el
 > quinto.
 
-Distinct `origin.repo`, grouped by facet, per rule 13 — and `--limit` carried
-here for the same reason it is carried in step 1, since this is the read most
-likely to be the one that crosses the threshold. A second promotion run is safe:
-ids already at the destination come back under `already_present` rather than being
-written twice, so the count does not move when nothing new adopted.
+**`--scope user` here and not `both`**, deliberately: the aggregate is how many of
+*the user's* repositories chose a thing, and what this run just promoted is in the
+user log already — reading this repository's own copy back beside it would be
+counting one adoption out of two logs. **`--fields title,about,origin` is the
+whole of what the aggregate is computed from** — the title for what was chosen,
+`origin.repo` for where, the `service/*` entry in `about` for what kind of thing
+that repository is — so every body stays out of the thread and nothing is returned
+that the line above does not use. It does not move the count at which `query`
+withholds, which is why `--limit` is still here, carried for the same reason it is
+carried in step 1, since this is the read most likely to be the one that crosses
+the threshold. Distinct `origin.repo`, grouped by facet, per rule 13. A second
+promotion run is safe: ids already at the destination come back under
+`already_present` rather than being written twice, so the count does not move when
+nothing new adopted.
 
 Then stop. If the run turned up work — a divergence the user confirmed is debt, an
 area nobody could settle — name it in one line and leave the next move to them.

@@ -186,7 +186,7 @@ not there, which sends the run to step 5 to author a new one.
 Two flags carry the target, and both appear on every command that accepts them:
 
 - **`--dir <target-repo>`** resolves *which log* — `<repo>/.ai-kit/memory.jsonl`.
-  Accepted by `query`, `search`, `anchors`, `add`, `link`, `graph`.
+  Accepted by `query`, `search`, `anchors`, `edges`, `add`, `link`, `graph`.
 - **`--repo-root <target-repo>`** resolves *which working tree* the anchors are
   relative to and read out of. Accepted by `anchors` and `add`, and by nothing
   else — do not put it on `query` or `link`, which refuse an undefined flag.
@@ -258,7 +258,7 @@ rest of the run does:
 ls -a <target-repo>
 [ -f <target-repo>/README.md ] && echo readme-exists
 [ -f <target-repo>/CLAUDE.md ] && echo claude-exists
-memory query --dir <target-repo> --limit 1 \
+memory query --dir <target-repo> --count \
   | python3 -c 'import sys,json; print("log-has-records" if json.load(sys.stdin)["count"] else "log-is-empty")'
 ```
 
@@ -280,9 +280,12 @@ That is why the count and not a test on the file. Its *existence* stopped being
 evidence of anything the moment a read started creating it, and its *size* is only a
 proxy: a log holding one blank line, or one line some older writer left broken, has
 a size and no records. `query`'s `count` is the number of records the CLI can
-actually read out of it, which is the question being asked — and `--limit 1` keeps
-the answer from carrying any record bodies, since the count is all that is wanted
-here.
+actually read out of it, which is the question being asked — and `--count` reports
+that number with `records: []` and `truncated: false`, which is the whole of what is
+wanted here. The two near misses are worth knowing apart: `--limit 1` bounds how
+many records come back and not what each one carries, so it hands over one record
+whole, body included; `--body-lines 0` keeps every record and drops the bodies.
+Neither answers a question about the count alone.
 
 `log-is-empty` means step 4's first `add` will be the first record this repository's
 log has ever held, and **that gets announced when it happens** — not asked about,
@@ -327,13 +330,33 @@ exactly the record whose age is no argument against it. A wide `--threshold` is
 the same trade paid in context: every body loaded into this thread so that one of
 them can be cited in a `CLAUDE.md` pointer.
 
+The threshold is `query`'s alone. `anchors` has no `--threshold` flag and never
+withholds anything, so it is the line that quietly gets long: every gotcha it
+matched, each with every anchor it checked. Its own lever is `--verdict`, and it is
+not the same kind of narrowing — `matched`, `checked` and `counts` are computed over
+everything that matched, *before* `--verdict` decides which records come back. So it
+does not break the identity rule above: every record the query loaded was still
+checked, and `counts` is what proves it.
+
 What comes back does three things. A `gotcha` already on disk is one you do not
 re-interview and do not re-write. A `gotcha` whose anchor came back `changed` or
 `could_not_check` is named to the user in this same round, with its title and its
 `path:line`: nobody can tell from a hash whether the constraint still binds, and
-this is the one moment somebody who knows the repo is in the conversation. An
-`adr` or a `decision` on this repository is a candidate invariant for the
-`CLAUDE.md` — as a pointer to the record, by step 7, never as a copy of its text.
+this is the one moment somebody who knows the repo is in the conversation. Read
+`counts` for how many of each there are, and when the answer is too long to pick
+them out of by hand, ask for them on their own — `--verdict` takes one value, so
+this is one call per verdict and worth spending only on a verdict `counts` says is
+non-zero:
+
+```bash
+memory anchors --dir <target-repo> --repo-root <target-repo> --kind gotcha --current --verdict changed
+```
+
+Measured against this repository's log while this was written, that returned the 9
+records that had to be named where the unfiltered line returned all 56 it checked,
+with `matched`, `checked` and `counts` identical in both answers. An `adr` or a
+`decision` on this repository is a candidate invariant for the `CLAUDE.md` — as a
+pointer to the record, by step 7, never as a copy of its text.
 
 Say in one line what these returned, including nothing. On a repository the loop
 has never seen, nothing is the ordinary answer, and a filter that ran and found

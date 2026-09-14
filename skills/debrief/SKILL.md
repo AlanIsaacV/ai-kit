@@ -185,18 +185,39 @@ env -u AI_KIT_PLAN memory areas --kind gotcha,preference
 ```
 
 That names every area anybody recorded a gotcha or a preference against, in this
-repository's log and the user's. Take the `--about` values from what it names —
-the ones the files step 2 named land in — and read them one at a time:
+repository's log and the user's. A tag is the only bound `query` has on the
+surface a record is about, so take the `--about` values from what it names — the
+ones the files step 2 named land in — and read them one at a time:
 
 ```bash
-env -u AI_KIT_PLAN memory query              --kind gotcha,preference --about "<area>" --current
-env -u AI_KIT_PLAN memory query --scope user --kind gotcha,preference --about "<area>" --current
+env -u AI_KIT_PLAN memory query --scope both --kind gotcha,preference --about "<area>" --current
 ```
 
-**Both lines, always.** `query` reads one scope per call and defaults to this
-repo's, so a preference promoted up out of another repository is named by `areas`
-and then comes back empty from the repo-scope line alone — and it binds this code
-exactly as much as a local one does.
+**`--scope both`, always.** One call reads this repository's log and the user's as
+one answer, each record naming in its own `scope` which of the two it came from.
+On the default `query` reads this repo's log alone — so a preference promoted up
+out of another repository is named by `areas` one line earlier and then comes back
+empty here, from a query that ran correctly and asked the wrong log. It binds this
+code exactly as much as a local one does, which is why step 4 hands `evaluate` the
+two scopes as one list.
+
+**One call means one threshold over both logs.** `--scope both` pools the two
+before the guard runs, so the count measured against the line at which `query`
+withholds its records is their sum, and an area that sat under it in each log
+alone can cross it here. Past that line the answer is `count: N, returned: 0,
+truncated: true` at exit 0, and what step 4 would hand `evaluate` is an empty
+list out of an area that is anything but empty. Re-read that one area with
+`--scope both --threshold -1 --fields id,kind,scope,title,at --body-lines 0`,
+which names every match with the log it came from and reads none of them, then
+take whole by `env -u AI_KIT_PLAN memory query --id --scope both` the
+ones that bear on the files step 2 listed: `--id` is bound by the scope
+and the plan it is asked under, so without both a record the pooled read
+just found in the user's log comes back under `not_found` at
+exit 0. Step 4 hands `evaluate` the records themselves, so a title is enough to
+choose which ones those are and never enough to hand over. `--limit` would
+bound the pool rather than each log, and the guard counts the matches before
+`--fields` and `--body-lines` project them — they are no way past it, and what
+they change is what being past it costs.
 
 A `gotcha` is the highest-value thing in this log for the half of the report that
 asks what was missed: it is a constraint the code obeys without stating it, so
@@ -204,12 +225,24 @@ nobody finds it by reading the diff. Check whether the code it cites is still
 where it was, and hand the verdict on to `evaluate` with the record:
 
 ```bash
-env -u AI_KIT_PLAN memory anchors --kind gotcha --about "<area>" --current
+env -u AI_KIT_PLAN memory anchors --kind gotcha --path "<a path or a directory from the step 2 list>" --current
 ```
+
+**`--path` here and not `--about`**, because this is the one bound in this step
+that needs no guess: it matches the anchor's own cited path as a case-insensitive
+substring, so the file list step 2 already produced *is* the filter, and one call
+per directory the change touches asks which recorded constraints are anchored in
+the code this work actually edited. `query` has no `--path`, so the tag guess
+stays on the lines above and stops here. `matched`, `checked` and `counts` are
+computed before `--path` narrows anything and still describe every anchored gotcha
+the filter admits; `returned` and `records` are the ones in these files, so
+`returned: 0` reads as "nothing recorded is anchored here" and never as "the log
+is empty".
 
 A gotcha whose anchors came back `changed` is a constraint that may already have
 been broken by the work you are about to read — which is a finding, not a
-housekeeping note.
+housekeeping note. Every record in `records` carries its own verdict alongside its
+anchors, so that partition is read off this answer rather than asked for again.
 
 Say in one line what came back, including "nada". A filter that ran and found
 nothing is a different thing from a read that was skipped.
