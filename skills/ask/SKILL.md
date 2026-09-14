@@ -5,6 +5,9 @@ description: "Answer a question about how a repository works, from the code and 
 
 # ask
 
+Read [the host runtime](references/runtime.md) first for tool invocation,
+delegation, repository paths and the memory prerequisite.
+
 Answer one question about a repository, from the two places an answer can honestly
 come from, and cite every sentence.
 

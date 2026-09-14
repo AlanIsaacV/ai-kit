@@ -105,6 +105,7 @@ requests.
 
 ```bash
 make install
+make doctor
 ```
 
 That builds the log CLI to `bin/memory` and then makes symlinks, all of them
@@ -114,6 +115,7 @@ pointing back at the clone it was run from:
 ~/.local/bin/memory              ->  <clone>/bin/memory
 ~/.claude/skills/ai-kit          ->  <clone>
 ~/.agents/skills/ai-kit-<name>   ->  <clone>/skills/<name>
+~/.codex/agents/ai-kit-<role>.toml -> <clone>/bin/codex-agents/ai-kit-<role>.toml
 ```
 
 The first is what lets the skills call `memory` by name instead of carrying a
@@ -122,22 +124,64 @@ repository as a skills plugin. The third is one link per directory under
 `skills/`, which is how Codex finds them — one at a time rather than as a plugin,
 so a skill added to `skills/` gets its own link the next time this runs, while a
 skill renamed or removed leaves its old link behind, which no re-run clears and
-you delete by hand. Codex reads that directory when a session starts, so the
-skills appear in the next session you open and not in one already running.
-Nothing else on the machine is touched — no shell profile, no configuration
-file — which is also why `~/.local/bin` has to already be on your `PATH` for the
-name to resolve; `make install` says so when it is not, and leaves fixing it to
-you.
+you delete by hand. The fourth installs all six native Codex roles, named
+`ai-kit-explore`, `ai-kit-implement`, `ai-kit-verify`, `ai-kit-review`,
+`ai-kit-evaluate` and `ai-kit-record`. Their generated TOML wrappers load the
+original `agents/*.md` contracts and [shared runtime guide](runtime.md), keeping
+one source of instructions. Codex agents inherit the current model; Claude's
+`sonnet` and `opus` aliases stay in the Claude metadata.
+
+Codex skills remain in `~/.agents/skills`; agent definitions go into
+`$CODEX_HOME/agents` when `CODEX_HOME` is set, otherwise `~/.codex/agents`.
+To override installation destinations explicitly, pass `BIN_DIR`, `SKILLS_DIR`,
+`CODEX_SKILLS_DIR` or `CODEX_AGENTS_DIR` to make, and use the same overrides for
+`make doctor`. Start a fresh host session after installing agents. Codex can
+detect skill edits automatically; restart it if a change has not appeared.
+
+The installer leaves shell profiles and existing host configuration files
+alone. Add `~/.local/bin` to the PATH inherited by your coding agent. For Bash,
+put this in `~/.bash_profile`, or in `~/.bashrc` **before** any early return for
+noninteractive shells:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Restart the host from a terminal with that PATH. A running Codex session may
+retain an older shell environment. `make doctor` exits nonzero when `memory`
+does not resolve to this installation, a link is missing or broken, or a
+generated agent definition needs rebuilding. It reports the repair command.
+It checks local installation files and PATH; it does not invoke an AI model.
 
 Running it again rebuilds the binary and replaces every link with the same link,
 so repeating it costs nothing and it is what to run after changing
-`tools/memory/`.
+`tools/memory/` or agent metadata. Existing real files and directories at link
+destinations are preserved and reported as installation errors. Move any
+conflicting files you want to keep, then rerun the install.
 
-Deleting those symlinks undoes the install, the per-skill ones included; there is
+Deleting those symlinks undoes the install, the per-skill and per-agent ones included; there is
 no `make uninstall`, because those paths are the whole footprint and a target for
 removing them would only be a second place to keep them written down.
 
-Installing requires Go 1.26+ and nothing else.
+Installing requires Go 1.26+, Python 3.10+ and make on a POSIX system. Use a
+Claude Code version supporting skills-directory plugins and a Codex version
+supporting personal TOML agents. Claude Code 2.1.270 reported eight skills and
+six agents; Codex 0.154.0 reported eight skills. The native Codex role files
+were validated locally; a full delegated model run was not exercised. See the official
+[Claude skills-directory plugin documentation](https://code.claude.com/docs/en/skills#skills-directory-plugins),
+[Codex skill discovery documentation](https://learn.chatgpt.com/docs/build-skills)
+and [Codex agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+In Claude Code, `claude plugin details ai-kit` should show eight skills and six
+agents. Invoke skills as `/ai-kit:plan` or `/ai-kit:work`. In Codex, select the
+installed skills or invoke `$ai-kit:plan` / `$ai-kit:work`; the native agent names
+use hyphens instead of colons. Both hosts load the same skill files, including
+the runtime guide that maps skill transitions, questions and delegation.
+
+The repository ships one executable tool, `memory`. It bundles no MCP server.
+The optional codebase graph tools mentioned by `explore` require a separately
+configured MCP server; the agent falls back to searching files when those tools
+are unavailable.
 
 ## The check
 

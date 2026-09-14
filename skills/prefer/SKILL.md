@@ -5,6 +5,9 @@ description: "Get a repository's stack and convention preferences out of somebod
 
 # prefer
 
+Read [the host runtime](references/runtime.md) first for tool invocation,
+delegation, repository paths and the memory prerequisite.
+
 Record what this repository chose, and why, in the one place a *why* can live.
 
 A choice has two halves and only one of them needs writing down. **Which library

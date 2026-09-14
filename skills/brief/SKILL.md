@@ -5,6 +5,9 @@ description: "Think a piece of work through with the person who is going to writ
 
 # brief
 
+Read [the host runtime](references/runtime.md) first for tool invocation,
+delegation, repository paths and the memory prerequisite.
+
 Turn a piece of work into a written map for the person who is about to implement
 it, and stop there. The detailed design stays in the conversation and gets
 rebuilt at the keyboard, which is where the practice is.

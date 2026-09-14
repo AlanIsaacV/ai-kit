@@ -5,6 +5,9 @@ description: "Read code the person wrote themselves and tell them two things: wh
 
 # debrief
 
+Read [the host runtime](references/runtime.md) first for tool invocation,
+delegation, repository paths and the memory prerequisite.
+
 The second read, after the code is written and by somebody who did not write it.
 Two halves: what is missing against what the work was trying to do, and what
 would be better. Each finding carries the reasoning, and nothing on disk moves.

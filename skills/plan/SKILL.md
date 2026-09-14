@@ -5,6 +5,9 @@ description: "Author an objective before any code is written — explore the pro
 
 # plan
 
+Read [the host runtime](references/runtime.md) first for tool invocation,
+delegation, repository paths and the memory prerequisite.
+
 Turn a request into a written objective, at whatever depth the work actually
 sits, and stop there. When the objective is too big for one session, plan one of
 its children in the same conversation, and keep going until you reach one a

@@ -5,6 +5,9 @@ description: "Execute one objective end to end: resolve which objective you are 
 
 # work
 
+Read [the host runtime](references/runtime.md) first for tool invocation,
+delegation, repository paths and the memory prerequisite.
+
 One turn of the loop: pick the objective this turn executes, build it, check it
 honestly, learn from it, decide what is next.
 
@@ -509,7 +512,12 @@ Bash call belongs in it next to the subagent launches, not in a message of its
 own. Where there is a seam, launch the seam alone, wait for it, then launch the
 rest together.
 
-#### Codex can execute a part instead of `implement`
+#### Claude Code can send a part to the optional Codex companion
+
+This subsection applies only when the orchestrator is Claude Code and chooses
+the optional Codex executor. When the orchestrator is Codex, launch its native
+`ai-kit-implement` role through the host runtime and skip this subsection; no
+companion plugin is required.
 
 A part's executor is a choice, and `implement` is the default: it is the one
 that already knows this contract, reads the draft itself and writes its own
@@ -551,7 +559,8 @@ node <the path that printed> task --write --fresh --background '<the handover, a
   Codex part with nothing running beside it can go foreground and return
   directly.
 
-Codex does not read this skill and has no agent file behind it, so **everything
+A companion-launched Codex part does not automatically receive this skill or
+the `implement` contract, so **everything
 `implement` gets from its own definition has to be in the prompt text**: the
 objective, the draft path, this part's `scope`, the constraints, and the rules
 that actually bind — stay inside the draft's scope, match the code around you,

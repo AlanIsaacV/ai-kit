@@ -5,6 +5,9 @@ description: "Take a symptom — something is wrong and nobody yet knows why —
 
 # debug
 
+Read [the host runtime](references/runtime.md) first for tool invocation,
+delegation, repository paths and the memory prerequisite.
+
 Turn a symptom into a stated cause, with the evidence that established it, and
 stop there. What happens next — one objective or a tree of them — is `plan`'s
 decision, taken in the same conversation, from what this skill hands it.

@@ -5,6 +5,9 @@ description: "Give a repository the two files a newcomer — human or agent — 
 
 # bootstrap
 
+Read [the host runtime](references/runtime.md) first for tool invocation,
+delegation, repository paths and the memory prerequisite.
+
 Two files, one invocation, for a repository this loop has never seen: a
 `README.md` for whoever arrives at it, and a `CLAUDE.md` for whatever agent is
 put to work in it.
