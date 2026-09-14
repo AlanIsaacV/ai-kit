@@ -39,8 +39,7 @@ only ways out are rewriting history or keeping dead values alive forever. See
 one repo, or two repos merged later, both produce an `ADR-0001` with different
 content. A ULID is generated locally, sorts chronologically, and cannot
 collide — so promoting a record between scopes changes one field and rewrites
-no references anywhere. The human-facing number is rendered at read time, per
-scope, by `memory render`.
+no references anywhere.
 
 **A query reports its count before it hands over records.** This is the point
 of the whole tool. An agent that asks a broad question and receives two hundred
@@ -1069,12 +1068,10 @@ memory state --all               # every log, as JSON
 
 memory promote --kind preference --to user --dry-run   # see Promotion
 memory promote --ids <id>,<id> --to user
-memory render  --as adr
 memory validate --all
 ```
 
 Every command prints JSON on stdout on success and on failure alike — except
-`render`, which prints markdown, and
 [`state --text`](#what-is-waiting-on-you-across-every-log), which prints the
 summary. A failure is JSON in every mode, `--text` included. Exit 0 means the
 command ran; exit 1 means it refused, and the JSON says why.

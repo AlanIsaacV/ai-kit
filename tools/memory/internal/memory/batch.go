@@ -233,6 +233,9 @@ func batchDecodeProblem(num int, raw string, err error) Problem {
 	if errors.As(err, &typeErr) {
 		p.Field = typeErr.Field
 		if typeErr.Type == stringListType {
+			if key := wrongShapedListKey(raw); key != "" {
+				p.Field = key
+			}
 			if typeErr.Value == "array" {
 				p.Message = "is an array with something other than a string in it; every element has to be a string"
 			} else {
@@ -244,6 +247,32 @@ func batchDecodeProblem(num int, raw string, err error) Problem {
 
 	p.Message = msg
 	return p
+}
+
+func wrongShapedListKey(raw string) string {
+	dec := json.NewDecoder(strings.NewReader(raw))
+	if _, err := dec.Token(); err != nil {
+		return ""
+	}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		key, _ := tok.(string)
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return ""
+		}
+		if key != "about" && key != "anchor" {
+			continue
+		}
+		var l StringList
+		if err := json.Unmarshal(value, &l); err != nil {
+			return key
+		}
+	}
+	return ""
 }
 
 // splitTags expands the comma-separated form of `about` so that ["auth,pkg/auth/"]

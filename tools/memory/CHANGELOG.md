@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### `render` is gone, and a batch names the key whose shape is wrong
+
+`memory render --as KIND` printed markdown for every record of a kind, numbering
+them `ADR-0001` and up at read time. It was invoked zero times across the 2,000
+transcripts measured for the surface, and nothing in this repository names it —
+not a skill, not an agent, not a script, not the Makefile, not the plugin
+manifest. Every other command has at least one of the two.
+
+- `memory render --as KIND` is gone, and so are `internal/memory.Render` and the
+  two tests that exercised it. A command with no caller and no reader is not a
+  surface, it is a claim about one — and it is not free either: every line of
+  usage text is read by the agent deciding what this tool can do. The read-time
+  numbering goes with it; nothing else computed one. `SupersededIDs` and
+  `AnsweredIDs` stay, because `--current` and the objective tree read them.
+- **A wrong-shaped `about` or `anchor` is refused by its key on every
+  toolchain.** That refusal is a `*json.UnmarshalTypeError` because the decoder
+  fills `Field` in on that one type as it unwinds — which Go's `encoding/json`
+  does for a plain type mismatch, and does not do, since the v2 decoder, for an
+  error handed back from an `UnmarshalJSON` method. So `{"about": 5}` and
+  `{"anchor": 7}` had gone back to refusing identically, with `raw` truncated at
+  120 characters and the key nowhere in the answer. The key is now read off the
+  line itself, which is the one place it is certainly written, and the decoder's
+  `Field` is still used where it carries one.
+
 ### `anchors` answers which records drifted, which cite a path, and what one record says
 
 `memory anchors` checked every anchor of every record its filters matched and
@@ -95,9 +119,9 @@ memory query --scope both --kind preference --about persistence --current
   `ScopeBoth` in `internal/memory`, which would reach `Resolve`, `ValidScope`,
   every write and the `scopes` that `memory kinds` publishes, where widening the
   set is a schema version; and a separate `--both` flag, which could contradict
-  `--scope user`. `search`, `edges`, `graph`, `anchors`, `state`, `render`,
-  `validate` and every write refuse `--scope both` with the same bytes and exit
-  code as before, and `kinds` still publishes `repo` and `user`.
+  `--scope user`. `search`, `edges`, `graph`, `anchors`, `state`, `validate` and
+  every write refuse `--scope both` with the same bytes and exit code as before,
+  and `kinds` still publishes `repo` and `user`.
 - **What an existing invocation now answers differently is the help text, and
   nothing else.** `memory help` and `memory` with no arguments print a usage whose
   `--scope` line names `both` on `query` and which gained a paragraph describing

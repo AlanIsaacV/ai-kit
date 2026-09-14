@@ -525,38 +525,6 @@ func TestGraphUnknownRoot(t *testing.T) {
 	}
 }
 
-// The sequential number is computed at read time. Nothing stores it, which is
-// what makes aggregating two repos a concatenation instead of a renumbering
-// pass that rewrites content.
-func TestRenderNumbersChronologically(t *testing.T) {
-	first := entry(t, KindADR, "First decision record", "auth")
-	second := entry(t, KindADR, "Second decision record", "orders")
-	other := entry(t, KindDecision, "Not an ADR", "auth")
-
-	out := Render([]*Entry{second, other, first}, nil, KindADR, ScopeRepo)
-
-	iFirst := strings.Index(out, "ADR-0001 — First decision record")
-	iSecond := strings.Index(out, "ADR-0002 — Second decision record")
-	if iFirst < 0 || iSecond < 0 {
-		t.Fatalf("expected both ADRs numbered in write order:\n%s", out)
-	}
-	if iFirst > iSecond {
-		t.Error("numbering ran backwards")
-	}
-	if strings.Contains(out, "Not an ADR") {
-		t.Error("render leaked a record of another kind")
-	}
-}
-
-func TestRenderMarksSuperseded(t *testing.T) {
-	old := entry(t, KindADR, "Old record", "auth")
-	fresh := entry(t, KindADR, "New record", "auth")
-	out := Render([]*Entry{old, fresh}, []*Edge{supersedes(t, fresh, old)}, KindADR, ScopeRepo)
-	if !strings.Contains(out, "status: superseded") {
-		t.Fatalf("a superseded record must say so:\n%s", out)
-	}
-}
-
 func TestProjectionReturnsExactlyTheFieldsItWasNamed(t *testing.T) {
 	store := Open(filepath.Join(t.TempDir(), ".ai-kit", "memory.jsonl"))
 	first := entry(t, KindDecision, "RS256 over HS256", "auth")

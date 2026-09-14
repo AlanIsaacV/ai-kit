@@ -37,7 +37,6 @@ Usage:
   memory edges     [--type TYPES] [--from ID] [--to ID] [--since TS] [--until TS] [--count] [--limit N]
   memory graph     --from ID [--depth N] [--threshold N]
   memory state     [--id ID] [--text] [--here] [--all]
-  memory render    --as KIND
   memory promote   [--ids ID[,ID...]] [--kind KIND[,KIND...]] --to user [--dry-run]
   memory validate  [--all]
   memory kinds
@@ -130,13 +129,13 @@ it, and a log found at the deepest level the search reaches is reported as such,
 because below it the search cannot say whether there is more.
 
 Every command prints JSON on stdout, on success and on failure alike, except
-'render' which prints markdown and 'state --text' which prints the summary. A
-failure is JSON in every mode, '--text' included. Exit 0 means the command ran;
-exit 1 means it refused, and the JSON says why. 'validate' is the one command
-where exit 1 is a verdict rather than a refusal: it ran, and either a log failed
-validation (ok: false) or a location it was asked to sweep could not be created
-(init_failed). Those two are reported separately, because a directory nobody can
-write to says nothing about whether the records in it are well-formed.
+'state --text' which prints the summary. A failure is JSON in every mode,
+'--text' included. Exit 0 means the command ran; exit 1 means it refused, and
+the JSON says why. 'validate' is the one command where exit 1 is a verdict
+rather than a refusal: it ran, and either a log failed validation (ok: false) or
+a location it was asked to sweep could not be created (init_failed). Those two
+are reported separately, because a directory nobody can write to says nothing
+about whether the records in it are well-formed.
 `
 
 func main() {
@@ -167,8 +166,6 @@ func main() {
 		err = cmdGraph(os.Args[2:])
 	case "state":
 		err = cmdState(os.Args[2:])
-	case "render":
-		err = cmdRender(os.Args[2:])
 	case "promote":
 		err = cmdPromote(os.Args[2:])
 	case "validate":
@@ -1539,25 +1536,6 @@ func cmdGraph(args []string) error {
 		out["hint"] = res.Hint
 	}
 	emit(out)
-	return nil
-}
-
-func cmdRender(args []string) error {
-	fs := flag.NewFlagSet("render", flag.ExitOnError)
-	var c common
-	c.bind(fs)
-	as := fs.String("as", "", "kind to render, e.g. adr")
-	if err := parseFlags(fs, args); err != nil {
-		return err
-	}
-	if *as == "" {
-		return fail("missing_kind", "render needs --as <kind>")
-	}
-	loc, lines, err := c.load()
-	if err != nil {
-		return err
-	}
-	fmt.Print(memory.Render(memory.Entries(lines), memory.Edges(lines), memory.Kind(*as), loc.Scope))
 	return nil
 }
 

@@ -572,7 +572,7 @@ func TestAnArgumentInFlagPositionWithASpaceIsRefusedBeforeParsing(t *testing.T) 
 	// refuse anyway would leave this proving nothing.
 	for _, sub := range []string{
 		"init", "add", "link", "query", "search", "areas", "anchors",
-		"graph", "state", "render", "promote", "validate", "kinds",
+		"graph", "state", "promote", "validate", "kinds",
 	} {
 		res := execMemory(t, r, "", []string{sub, "--kind decision"})
 		code, _ := errorCode(t, res)
