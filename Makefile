@@ -19,6 +19,7 @@ build:
 # nothing, so it runs on a clone with no Go toolchain on it.
 check:
 	"$(REPO)/scripts/check-frontmatter"
+	"$(REPO)/scripts/check-surface-adoption"
 
 doctor check-install:
 	@"$(REPO)/scripts/check-install" --repo "$(REPO)" --bin "$(BIN)" --bin-link "$(BIN_LINK)" --claude-link "$(SKILL_LINK)" --skills-dir "$(CODEX_SKILLS_DIR)" --agents-dir "$(CODEX_AGENTS_DIR)" --build-dir "$(CODEX_AGENT_BUILD_DIR)"

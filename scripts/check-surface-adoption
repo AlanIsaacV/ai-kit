@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+
+import re
+import sys
+from pathlib import Path
+
+SURFACE_DIRS = ("skills", "agents")
+SNIFF_BYTES = 4096
+NEAR_SITES = 3
+FENCE = re.compile(r"^[ \t]*(```+|~~~+)")
+INLINE = re.compile(r"`([^`\n]+)`")
+CONTINUED = re.compile(r"\\[ \t]*$")
+
+
+def invocation(command: str) -> re.Pattern:
+    return re.compile(r"\bmemory\s+" + command + r"\b")
+
+
+def alternative(
+    command: str, flag: str | None
+) -> tuple[str, re.Pattern, re.Pattern | None]:
+    return (
+        f"memory {command}",
+        invocation(command),
+        re.compile(flag) if flag is not None else None,
+    )
+
+
+ELEMENTS = (
+    ("memory edges", (alternative("edges", None),)),
+    ("query --fields", (alternative("query", r"--fields\b"),)),
+    ("query --body-lines", (alternative("query", r"--body-lines\b"),)),
+    ("query --scope both", (alternative("query", r"--scope[ \t=]+both\b"),)),
+    (
+        "anchors --verdict or anchors --path",
+        (
+            alternative("anchors", r"--verdict\b"),
+            alternative("anchors", r"--path\b"),
+        ),
+    ),
+    (
+        "query --id or anchors --id",
+        (
+            alternative("query", r"--id\b"),
+            alternative("anchors", r"--id\b"),
+        ),
+    ),
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def walk(root: Path) -> list[Path]:
+    found = []
+    stack = [root]
+    seen = {root.resolve()}
+    while stack:
+        for entry in sorted(stack.pop().iterdir()):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                target = entry.resolve()
+                if target in seen:
+                    continue
+                seen.add(target)
+                stack.append(entry)
+            elif entry.is_file():
+                found.append(entry)
+    return sorted(found)
+
+
+def read_lines(path: Path) -> list[str] | None:
+    try:
+        with path.open("rb") as handle:
+            if b"\0" in handle.read(SNIFF_BYTES):
+                return None
+        return path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def units(lines: list[str]):
+    marker = None
+    pending: list[str] = []
+    start = 0
+    for number, raw in enumerate(lines, start=1):
+        fence = FENCE.match(raw)
+        if fence and (marker is None or raw.strip().startswith(marker)):
+            if pending:
+                yield start, " ".join(pending), True
+                pending = []
+            marker = None if marker else fence.group(1)[:3]
+            continue
+        if marker:
+            if not pending:
+                start = number
+            stripped = raw.rstrip()
+            if CONTINUED.search(stripped):
+                pending.append(CONTINUED.sub(" ", stripped))
+                continue
+            pending.append(stripped)
+            yield start, " ".join(pending), True
+            pending = []
+            continue
+        for span in INLINE.finditer(raw):
+            yield number, span.group(1), False
+    if pending:
+        yield start, " ".join(pending), True
+
+
+def satisfied(unit: str, command: re.Pattern, flag: re.Pattern | None) -> bool:
+    if not command.search(unit):
+        return False
+    return flag is None or flag.search(unit) is not None
+
+
+def pointer(
+    alternatives: tuple, sites: list[tuple[int, str, Path, int]], looked: str
+) -> str:
+    commands: list[str] = []
+    for name, _, flag in alternatives:
+        if flag is not None and name not in commands:
+            commands.append(name)
+    if not commands:
+        return (
+            "The command is the whole of that element, so no flag was dropped and "
+            "no file half carries it: the invocation is gone outright and its site "
+            "has to be chosen rather than pointed at."
+        )
+    joined = " nor ".join(f"`{name}`" for name in commands)
+    if not sites:
+        return (
+            f"No file names {joined} without it either, so there is no file to "
+            f"point at: the command left {looked} with the flag."
+        )
+    shown = sorted(sites, key=lambda site: site[0])[:NEAR_SITES]
+    listed = ", ".join(f"{path}:{number} (`{name}`)" for _, name, path, number in shown)
+    rest = len(sites) - len(shown)
+    more = f", and {rest} more" if rest else ""
+    return (
+        "It was expected in one of the files that already run the command without "
+        f"it: {listed}{more}."
+    )
+
+
+def main() -> int:
+    root = repo_root()
+    found: dict[str, tuple[Path, int]] = {}
+    near: dict[str, list[tuple[int, str, Path, int]]] = {
+        element: [] for element, _ in ELEMENTS
+    }
+    marked: dict[str, set[tuple[Path, int]]] = {
+        element: set() for element, _ in ELEMENTS
+    }
+    absent_dirs = []
+    seen: set[Path] = set()
+    read = 0
+
+    for name in SURFACE_DIRS:
+        base = root / name
+        if not base.is_dir():
+            absent_dirs.append(name)
+            continue
+        for path in walk(base):
+            target = path.resolve()
+            if target in seen:
+                continue
+            seen.add(target)
+            lines = read_lines(path)
+            if lines is None:
+                continue
+            read += 1
+            relative = path.relative_to(root)
+            for number, unit, blocked in units(lines):
+                for element, alternatives in ELEMENTS:
+                    if element in found:
+                        continue
+                    if any(satisfied(unit, *pair[1:]) for pair in alternatives):
+                        found[element] = (relative, number)
+                        continue
+                    for command, pattern, flag in alternatives:
+                        if flag is None or not pattern.search(unit):
+                            continue
+                        if (relative, number) in marked[element]:
+                            break
+                        marked[element].add((relative, number))
+                        near[element].append(
+                            (0 if blocked else 1, command, relative, number)
+                        )
+                        break
+
+    looked = ", ".join(f"{name}/" for name in SURFACE_DIRS)
+    for name in absent_dirs:
+        print(
+            f"error: {name}/ is not a directory in {root}; the surface this "
+            "check reads is not there to read.",
+            file=sys.stderr,
+        )
+
+    missing = [pair for pair in ELEMENTS if pair[0] not in found]
+    for element, alternatives in missing:
+        print(
+            f"error: no command block and no inline instruction under {looked} "
+            f"names `{element}`, across the {read} text files read. The CLI "
+            "carries it and the prose no longer reaches for it. "
+            + pointer(alternatives, near[element], looked),
+            file=sys.stderr,
+        )
+    if missing or absent_dirs:
+        print(
+            f"error: {len(missing)} of {len(ELEMENTS)} surface elements are "
+            "named nowhere an agent would act on them. Name each at the call "
+            "site where the prose already performs the read it does better.",
+            file=sys.stderr,
+        )
+        return 1
+
+    for element, _ in ELEMENTS:
+        path, number = found[element]
+        print(f"{element}: {path}:{number}")
+    print(
+        f"{len(ELEMENTS)} surface elements named, {read} text files read under "
+        f"{looked}. Presence is not adoption: this check sees a token in a "
+        "command block, not whether the prose around it is worth reading."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
