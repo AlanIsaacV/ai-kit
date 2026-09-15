@@ -54,7 +54,7 @@ is probably why it is the one that gets used.
 ## The memory log
 
 State lives in an append-only log, read and written only through the `memory`
-CLI. Never edit the `.jsonl` by hand.
+CLI. Never edit the log by hand.
 
 Every placeholder in a command below is quoted, and that is a precaution rather
 than a habit: **nothing here says which shell this turn got**, and three shapes

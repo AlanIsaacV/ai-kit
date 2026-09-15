@@ -50,6 +50,9 @@ Common flags:
                            Other commands accept it and read the whole log, bar
                            'edges', which refuses it: an edge carries no plan.
   --dir PATH               start directory for repo discovery (default: cwd)
+  --store PATH             the store every log lives in (default:
+                           /srv/projects/.ai-kit/memory.db). Every command takes
+                           it, after the subcommand name like any other flag.
 
 There is one log per repo, at <repo>/.ai-kit/memory.jsonl. The plan a record
 belongs to lives in the record, as origin.plan, so any two records can be linked
@@ -120,13 +123,12 @@ is a smaller '--depth', or '--threshold -1' for the whole walk however big.
 
 'state' reads one log or every log, and its default follows the output mode:
 'state' reports this repository as JSON, 'state --text' prints what is waiting on
-you across every log found under MEMORY_ROOTS (a PATH-style list, default
-/srv/projects) plus the user log. '--here' narrows the text to this repository
-and '--all' widens the JSON to every root. No mode of 'state' creates anything:
-the logs it reads are the ones already on disk. A root that is not a readable
-directory is refused ('bad_root') rather than read as a root with nothing under
-it, and a log found at the deepest level the search reaches is reported as such,
-because below it the search cannot say whether there is more.
+you across every log in the store. '--here' narrows the text to this repository
+and '--all' widens the JSON to every log the store holds. No mode of 'state'
+creates anything and none walks the filesystem: the logs are the ones the store
+already carries, so one whose repository has since been moved or deleted is
+reported like any other. An objective two logs both carry at one scope is
+reported once, from the first of them.
 
 Every command prints JSON on stdout, on success and on failure alike, except
 'state --text' which prints the summary. A failure is JSON in every mode,
@@ -234,8 +236,8 @@ func (c *common) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.dir, "dir", "", "start directory for repo discovery")
 }
 
-// parseFlags is fs.Parse plus one refusal, and every subcommand calls it instead
-// of calling fs.Parse itself.
+// parseFlags is fs.Parse plus one refusal and the store, and every subcommand
+// calls it instead of calling fs.Parse itself.
 //
 // The refusal is for an argument in flag position that begins with `-` and
 // contains a space. That is one argument where the command line meant two, and
@@ -255,6 +257,7 @@ func (c *common) bind(fs *flag.FlagSet) {
 // There is no escape hatch. A caller who genuinely means an argument of that
 // shape is passing it as a flag's value, which this never looks at.
 func parseFlags(fs *flag.FlagSet, args []string) error {
+	store := fs.String("store", memory.DefaultStorePath, "the store every log lives in")
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		// Where the flag package stops parsing, this stops looking: `--` ends the
@@ -285,7 +288,13 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 		}
 		i++ // the next argument is this flag's value, and a value is never inspected
 	}
-	return fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := memory.UseStore(*store); err != nil {
+		return fail("bad_store", "%s", err.Error())
+	}
+	return nil
 }
 
 // locate resolves a location without creating it. Nearly everything goes through
@@ -431,6 +440,21 @@ func readLog(loc memory.Location) ([]memory.Line, error) {
 	return lines, nil
 }
 
+func writeLog(loc memory.Location) *memory.Store {
+	s := memory.Open(loc.Path)
+	s.Scope = loc.Scope
+	s.RepoID = gitcmd.RepoIdentity(loc.Repo)
+	return s
+}
+
+func logAt(l memory.Log) memory.Location {
+	loc := memory.Location{Scope: l.Scope, Path: l.Path}
+	if l.Scope == memory.ScopeRepo {
+		loc.Repo = filepath.Dir(filepath.Dir(l.Path))
+	}
+	return loc
+}
+
 // ------------------------------------------------------------- subcommands ---
 
 func cmdInit(args []string) error {
@@ -547,7 +571,7 @@ func cmdAdd(args []string) error {
 		os.Exit(1)
 	}
 
-	if err := memory.Open(loc.Path).Append(e); err != nil {
+	if err := writeLog(loc).Append(e); err != nil {
 		return fail("write_failed", "%s", err.Error())
 	}
 	emit(map[string]any{"path": loc.Path, "record": e})
@@ -758,7 +782,7 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 		prior = append(prior, edge)
 	}
 
-	if err := memory.Open(loc.Path).Append(records...); err != nil {
+	if err := writeLog(loc).Append(records...); err != nil {
 		return fail("write_failed", "%s", err.Error())
 	}
 
@@ -966,7 +990,7 @@ func cmdLink(args []string) error {
 		return fail("not_a_tree", "%s", err.Error())
 	}
 
-	if err := memory.Open(loc.Path).Append(edge); err != nil {
+	if err := writeLog(loc).Append(edge); err != nil {
 		return fail("write_failed", "%s", err.Error())
 	}
 	emit(map[string]any{"path": loc.Path, "edge": edge})
@@ -1324,7 +1348,7 @@ func cmdState(args []string) error {
 		if err := c.checkScopeFlags(); err != nil {
 			return err
 		}
-		return stateAcrossRoots(*id, *text)
+		return stateAcrossLogs(*id, *text)
 	}
 
 	load := c.load
@@ -1363,30 +1387,26 @@ func cmdState(args []string) error {
 	return nil
 }
 
-func stateAcrossRoots(id string, text bool) error {
-	roots := memory.Roots()
-	found, err := memory.DiscoverLogs(roots)
+func stateAcrossLogs(id string, text bool) error {
+	sources, err := memory.SourcePaths("")
 	if err != nil {
-		if errors.Is(err, memory.ErrRootUnreadable) {
-			return fail("bad_root", "%s", err.Error())
-		}
-		return fail("discover_failed", "%s", err.Error())
+		return fail("read_failed", "%s", err.Error())
 	}
-	locs := found.Logs
-	warnings := found.Warnings()
-
-	logs := make([]memory.LogState, 0, len(locs))
-	reports := make([]memory.RepoReport, 0, len(locs))
-	paths := make([]string, 0, len(locs))
+	var paths []string
+	logs := make([]memory.LogState, 0, len(sources))
+	reports := make([]memory.RepoReport, 0, len(sources))
+	seen := map[string]bool{}
 	matched := 0
 
-	for _, loc := range locs {
+	for _, src := range sources {
+		loc := logAt(src)
+		paths = append(paths, src.Path)
 		lines, err := readLog(loc)
 		if err != nil {
 			return err
 		}
 		tree := memory.NewTree(lines)
-		rep := tree.Report()
+		rep := dropSeen(tree.Report(), loc.Scope, seen)
 		if id != "" {
 			var n int
 			rep, n = filterByID(rep, id)
@@ -1394,34 +1414,53 @@ func stateAcrossRoots(id string, text bool) error {
 		}
 		logs = append(logs, memory.LogState{Name: loc.Name(), Tree: tree, Report: rep})
 		reports = append(reports, memory.RepoReport{Repo: loc.Name(), Report: rep})
-		paths = append(paths, loc.Path)
 	}
 
 	if id != "" && matched == 0 {
-		return fail("unknown_objective", "no objective with id %s in any of the %d logs under %s",
-			id, len(locs), strings.Join(roots, ", "))
+		return fail("unknown_objective", "no objective with id %s in any of the %d logs in %s",
+			id, len(paths), memory.CurrentStore())
 	}
 
 	if text {
-		fmt.Print(memory.RenderWaiting(logs, warnings))
+		fmt.Print(memory.RenderWaiting(logs, nil))
 		return nil
 	}
 
 	merged := memory.MergeReports(reports)
-	out := map[string]any{
-		"roots":      roots,
+	emit(map[string]any{
 		"logs":       paths,
 		"count":      len(merged.Objectives),
 		"objectives": merged.Objectives,
 		"excluded":   merged.Excluded,
 		"current":    merged.Current,
 		"anomalies":  merged.Anomalies,
-	}
-	if len(warnings) > 0 {
-		out["warnings"] = warnings
-	}
-	emit(out)
+	})
 	return nil
+}
+
+func dropSeen(rep memory.StateReport, scope memory.Scope, seen map[string]bool) memory.StateReport {
+	first := func(id string) bool {
+		key := id + "\x00" + string(scope)
+		if seen[key] {
+			return false
+		}
+		seen[key] = true
+		return true
+	}
+	objectives := []memory.ObjectiveState{}
+	for _, o := range rep.Objectives {
+		if first(o.ID) {
+			objectives = append(objectives, o)
+		}
+	}
+	excluded := []memory.ExcludedObjective{}
+	for _, e := range rep.Excluded {
+		if first(e.ID) {
+			excluded = append(excluded, e)
+		}
+	}
+	rep.Objectives, rep.Excluded = objectives, excluded
+	return rep
 }
 
 func filterByID(rep memory.StateReport, id string) (memory.StateReport, int) {
@@ -1629,7 +1668,7 @@ func cmdPromote(args []string) error {
 	)
 
 	if len(plan.Records) > 0 && !*dryRun {
-		if err := memory.Open(dstLoc.Path).Append(plan.Records...); err != nil {
+		if err := writeLog(dstLoc).Append(plan.Records...); err != nil {
 			return fail("write_failed", "%s", err.Error())
 		}
 	}
@@ -1675,24 +1714,27 @@ func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	var c common
 	c.bind(fs)
-	all := fs.Bool("all", false, "validate every log reachable from here")
+	all := fs.Bool("all", false, "validate every log in the store")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 
+	// A location that could not be created is reported and never dropped: an
+	// .ai-kit/ nobody can write to still reads, records and all, and validating a
+	// smaller set than the caller asked about while answering ok=true is the
+	// failure --all already had once. It never touches `ok`, because whether a
+	// directory could be created says nothing about whether the records inside it
+	// are well-formed, and collapsing the two would leave a caller unable to tell
+	// a corrupt log from a read-only one. It does move the exit code — see below.
 	var locs []memory.Location
+	notCreated := []string{}
 	if *all {
-		// Every scope there is. It used to include the plan scope, and that made
-		// --all a sweep that swept nothing: resolving it needed a single plan
-		// directory to pick, a repo with several had none, and the loop skipped
-		// the failure and reported ok over an empty set. With one log per repo
-		// there is nothing left to guess.
-		for _, s := range []memory.Scope{memory.ScopeRepo, memory.ScopeUser} {
-			l, err := memory.Resolve(s, c.dir)
-			if err != nil {
-				continue // a scope that cannot be resolved simply has no log
-			}
-			locs = append(locs, l)
+		sources, err := memory.SourcePaths("")
+		if err != nil {
+			return fail("read_failed", "%s", err.Error())
+		}
+		for _, src := range sources {
+			locs = append(locs, logAt(src))
 		}
 	} else {
 		l, err := c.locate()
@@ -1700,19 +1742,6 @@ func cmdValidate(args []string) error {
 			return err
 		}
 		locs = append(locs, l)
-	}
-
-	// The sweep creates what it resolved, like every other command, and it is a
-	// read, so failing to create is best-effort exactly as it is in resolve. What
-	// it must not do is drop the location: an .ai-kit/ nobody can write to still
-	// reads, records and all, and validating a smaller set than the caller asked
-	// about while answering ok=true is the failure --all already had once. The
-	// failures are reported instead, and they never touch `ok`: whether a directory
-	// could be created says nothing about whether the records inside it are
-	// well-formed, and collapsing the two would leave a caller unable to tell a
-	// corrupt log from a read-only one. They do move the exit code — see below.
-	notCreated := []string{}
-	for _, l := range locs {
 		if err := materialize(l); err != nil {
 			notCreated = append(notCreated, err.Error())
 		}

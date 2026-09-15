@@ -173,7 +173,7 @@ func TestLinkRefusesASecondObjectiveParent(t *testing.T) {
 	second := addObjective(t, r, "Another root")
 	kid := child(t, r, first, "The objective below")
 
-	before := len(lines(t, r.log))
+	before := len(lines(t, r, r.log))
 	res := link(t, r, "derives_from", kid, second)
 	if res.code == 0 {
 		t.Fatal("an objective has one parent; the second must be refused")
@@ -188,7 +188,7 @@ func TestLinkRefusesASecondObjectiveParent(t *testing.T) {
 	if !strings.Contains(msg, first) {
 		t.Errorf("the refusal must name the parent it already has, got %q", msg)
 	}
-	if after := len(lines(t, r.log)); after != before {
+	if after := len(lines(t, r, r.log)); after != before {
 		t.Fatalf("a refused link wrote to the log: %d lines became %d", before, after)
 	}
 
@@ -207,7 +207,7 @@ func TestLinkRefusesACycleAndNamesThePath(t *testing.T) {
 	b := child(t, r, a, "B")
 	c := child(t, r, b, "C")
 
-	before := len(lines(t, r.log))
+	before := len(lines(t, r, r.log))
 	res := link(t, r, "derives_from", a, c)
 	if res.code == 0 {
 		t.Fatal("a → c closes a cycle and must be refused")
@@ -221,7 +221,7 @@ func TestLinkRefusesACycleAndNamesThePath(t *testing.T) {
 			t.Errorf("the refusal must name the whole path; %s is missing from %q", id, msg)
 		}
 	}
-	if after := len(lines(t, r.log)); after != before {
+	if after := len(lines(t, r, r.log)); after != before {
 		t.Fatalf("a refused link wrote to the log: %d lines became %d", before, after)
 	}
 
@@ -232,7 +232,7 @@ func TestLinkRefusesACycleAndNamesThePath(t *testing.T) {
 	if res.code == 0 {
 		t.Fatal("an objective cannot derive from itself")
 	}
-	if after := len(lines(t, r.log)); after != before {
+	if after := len(lines(t, r, r.log)); after != before {
 		t.Fatalf("a refused self-edge wrote to the log: %d lines became %d", before, after)
 	}
 }
@@ -297,7 +297,7 @@ func TestStateResolvesTheWholeSequenceThroughTheCLI(t *testing.T) {
 	}
 	// The stale edges are still on disk. That trace is the history a mutable
 	// status field would have destroyed the moment the block cleared.
-	if n := strings.Count(strings.Join(lines(t, r.log), "\n"), `"type":"blocked"`); n != 1 {
+	if n := strings.Count(strings.Join(lines(t, r, r.log), "\n"), `"type":"blocked"`); n != 1 {
 		t.Errorf("the blocked edge must still be on disk, found %d", n)
 	}
 }
@@ -316,8 +316,8 @@ func TestStateTiesAndOutOfOrderEdgesResolveByTheStatedRule(t *testing.T) {
 	}
 	// A `met` at noon, then a `cancelled` written afterwards but dated the
 	// morning: recency decides, so it loses.
-	appendLine(t, r.log, stateEdge("met", "2026-08-03T12:00:00Z"))
-	appendLine(t, r.log, stateEdge("cancelled", "2026-08-03T09:00:00Z"))
+	appendLine(t, r, r.log, stateEdge("met", "2026-08-03T12:00:00Z"))
+	appendLine(t, r, r.log, stateEdge("cancelled", "2026-08-03T09:00:00Z"))
 	if got := one(t, readState(t, r, "--id", objective)); got.Objectives[0].State != "met" {
 		t.Fatalf("a later line with an older `at` must not win, got %q", got.Objectives[0].State)
 	}
@@ -325,7 +325,7 @@ func TestStateTiesAndOutOfOrderEdgesResolveByTheStatedRule(t *testing.T) {
 	// And now one sharing the winner's `at` exactly, which is what two edges
 	// appended in the same second look like. Only the file order can separate
 	// them, and the later line wins.
-	appendLine(t, r.log, stateEdge("cancelled", "2026-08-03T12:00:00Z"))
+	appendLine(t, r, r.log, stateEdge("cancelled", "2026-08-03T12:00:00Z"))
 	if got := one(t, readState(t, r, "--id", objective)); got.Objectives[0].State != "cancelled" {
 		t.Fatalf("with a shared `at` the later line wins, got %q", got.Objectives[0].State)
 	}
@@ -480,10 +480,10 @@ func TestTheCurrentObjectiveTieBreaksByTheLaterLineInTheFile(t *testing.T) {
 	}
 	// Line 1: O1. Line 2: O2. Line 3: an edge touching both. Line 4: O3.
 	// O1 and O2 are last touched on line 3; O3's own entry is line 4.
-	appendLine(t, r.log, objectiveLine(o1, "o1"))
-	appendLine(t, r.log, objectiveLine(o2, "o2"))
-	appendLine(t, r.log, edgeLine(o2, o1))
-	appendLine(t, r.log, objectiveLine(o3, "o3"))
+	appendLine(t, r, r.log, objectiveLine(o1, "o1"))
+	appendLine(t, r, r.log, objectiveLine(o2, "o2"))
+	appendLine(t, r, r.log, edgeLine(o2, o1))
+	appendLine(t, r, r.log, objectiveLine(o3, "o3"))
 
 	got := readQuery(t, r, "query", "--plan", "demo", "--kind", "objective", "--current")
 	if got.Count != 3 {
@@ -657,11 +657,11 @@ func TestAMalformedTreeIsReportedAndNeitherHangsNorFails(t *testing.T) {
 		return `{"version":2,"kind":"edge","type":"derives_from","from":"` + from +
 			`","to":"` + to + `","at":"2026-08-03T10:00:00Z"}`
 	}
-	appendLine(t, r.log, parentEdge(a, b))
-	appendLine(t, r.log, parentEdge(b, c))
-	appendLine(t, r.log, parentEdge(c, a))
-	appendLine(t, r.log, parentEdge(twoParents, a))
-	appendLine(t, r.log, parentEdge(twoParents, b))
+	appendLine(t, r, r.log, parentEdge(a, b))
+	appendLine(t, r, r.log, parentEdge(b, c))
+	appendLine(t, r, r.log, parentEdge(c, a))
+	appendLine(t, r, r.log, parentEdge(twoParents, a))
+	appendLine(t, r, r.log, parentEdge(twoParents, b))
 
 	res := runWithin(t, r, 30*time.Second, "state")
 	if res.code != 0 {
@@ -711,7 +711,8 @@ func runWithin(t *testing.T, r repo, d time.Duration, args ...string) result {
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, memoryBin, afterSubcommand(t, args, "--dir", r.root)...)
+	cmd := exec.CommandContext(ctx, memoryBin,
+		afterSubcommand(t, afterSubcommand(t, args, "--dir", r.root), "--store", r.store)...)
 	cmd.Env = append(os.Environ(), "HOME="+r.home, "AI_KIT_AUTHOR=test-suite", "AI_KIT_PLAN=")
 	cmd.Dir = r.root
 	var stdout, stderr strings.Builder
@@ -731,13 +732,14 @@ func runWithin(t *testing.T, r repo, d time.Duration, args ...string) result {
 }
 
 type spread struct {
-	root string
-	home string
+	root  string
+	home  string
+	store string
 }
 
 func throwawaySpread(t *testing.T) spread {
 	t.Helper()
-	return spread{root: t.TempDir(), home: t.TempDir()}
+	return spread{root: t.TempDir(), home: t.TempDir(), store: throwawayStore(t)}
 }
 
 func repoIn(t *testing.T, s spread, rel string) repo {
@@ -747,11 +749,18 @@ func repoIn(t *testing.T, s spread, rel string) repo {
 		t.Fatal(err)
 	}
 	return repo{
-		root: root,
-		home: s.home,
-		log:  filepath.Join(root, ".ai-kit", "memory.jsonl"),
-		user: filepath.Join(s.home, ".ai-kit", "memory.jsonl"),
+		root:  root,
+		home:  s.home,
+		log:   filepath.Join(root, ".ai-kit", "memory.jsonl"),
+		user:  filepath.Join(s.home, ".ai-kit", "memory.jsonl"),
+		store: s.store,
 	}
+}
+
+func sorted(paths ...string) []string {
+	out := append([]string{}, paths...)
+	sort.Strings(out)
+	return out
 }
 
 func twoDepths(t *testing.T) (spread, repo, repo) {
@@ -762,7 +771,7 @@ func twoDepths(t *testing.T) (spread, repo, repo) {
 
 func runSpread(t *testing.T, s spread, r repo, args ...string) result {
 	t.Helper()
-	return execMemory(t, r, "", args, "MEMORY_ROOTS="+s.root)
+	return execMemory(t, r, "", args)
 }
 
 func stateIn(t *testing.T, s spread, r repo, args ...string) result {
@@ -785,7 +794,6 @@ func readStateSpread(t *testing.T, s spread, r repo, args ...string) stateOutput
 }
 
 type crossStateOutput struct {
-	Roots      []string `json:"roots"`
 	Logs       []string `json:"logs"`
 	Count      int      `json:"count"`
 	Objectives []struct {
@@ -947,7 +955,7 @@ func TestCriterion2ALogAtEitherDepthAppearsInTheSummary(t *testing.T) {
 
 	for _, d := range depths {
 		if line := summaryLine(t, summary, d.title); !strings.Contains(line, d.name) {
-			t.Errorf("<root>/%s is a log the walk has to reach and its item must name %s, got %q",
+			t.Errorf("<root>/%s is a log the store holds and its item must name %s, got %q",
 				d.rel, d.name, line)
 		}
 	}
@@ -987,11 +995,9 @@ func TestCriterion3TheDefaultScopeFollowsTheOutputMode(t *testing.T) {
 	}
 
 	widened := readCrossState(t, s, here, "--all")
-	if len(widened.Roots) != 1 || widened.Roots[0] != s.root {
-		t.Errorf("--all reports the roots it read, got %v", widened.Roots)
-	}
-	if len(widened.Logs) != 2 {
-		t.Fatalf("--all widens the JSON mode to every log, got %v", widened.Logs)
+	if strings.Join(widened.Logs, ",") != strings.Join(sorted(here.log, elsewhere.log), ",") {
+		t.Fatalf("--all widens the JSON mode to every log the store holds, and names each of them, got %v",
+			widened.Logs)
 	}
 	got := map[string]bool{}
 	for _, o := range widened.Objectives {
@@ -1009,7 +1015,7 @@ func TestCriterion4BareStateEmitsExactlyTheFieldsItEmitsToday(t *testing.T) {
 	parent := addObjective(t, here, "The parent")
 	second := addObjective(t, here, "Another root, and a second parent")
 	kid := child(t, here, parent, "The objective with two parents")
-	appendLine(t, here.log, `{"version":2,"kind":"edge","type":"derives_from","from":"`+kid+
+	appendLine(t, here, here.log, `{"version":2,"kind":"edge","type":"derives_from","from":"`+kid+
 		`","to":"`+second+`","at":"2026-08-03T10:00:00Z"}`)
 	gone := addObjective(t, here, "The first statement of it")
 	fresh := addObjective(t, here, "A better statement of it")
@@ -1281,4 +1287,51 @@ func TestAnAnsweredAssumptionClosesLikeAnOpenQuestion(t *testing.T) {
 	if !strings.Contains(line, "1/2") {
 		t.Errorf("the answered assumption has to be in the rate's numerator, got %q", line)
 	}
+}
+
+func crossStateUnder(t *testing.T, r repo, home string) crossStateOutput {
+	t.Helper()
+	res := execMemory(t, r, "", afterSubcommand(t, []string{"state", "--all"}, "--dir", r.root), "HOME="+home)
+	if res.code != 0 {
+		t.Fatalf("state --all under HOME=%s: exit %d\n%s%s", home, res.code, res.stdout, res.stderr)
+	}
+	var out crossStateOutput
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatalf("state --all printed something that is not JSON: %v\n%s", err, res.stdout)
+	}
+	return out
+}
+
+func TestEachLogKeepsTheScopeItWasStoredUnderWhoeverIsReading(t *testing.T) {
+	r := throwawayRepo(t)
+	id := addObjective(t, r, "The objective that was promoted out of its repository")
+	if res := runBare(t, r, "promote", "--ids", id, "--to", "user"); res.code != 0 {
+		t.Fatalf("promote --ids %s --to user: exit %d\n%s%s", id, res.code, res.stdout, res.stderr)
+	}
+
+	mine := crossStateUnder(t, r, r.home)
+	stranger := crossStateUnder(t, r, t.TempDir())
+
+	if mine.Count != 2 {
+		t.Fatalf("a record and its promoted copy are two records, held apart by scope: %+v", mine.Objectives)
+	}
+	if stranger.Count != mine.Count {
+		t.Errorf("the scope of a log is stored with its rows, so reading from another HOME must not "+
+			"collapse the pair: %d records there against %d here", stranger.Count, mine.Count)
+	}
+	if strings.Join(stranger.Logs, ",") != strings.Join(mine.Logs, ",") {
+		t.Errorf("both readers see the same logs: %v against %v", stranger.Logs, mine.Logs)
+	}
+	if strings.Join(repoLabels(stranger), ",") != strings.Join(repoLabels(mine), ",") {
+		t.Errorf("the repository a record came from is stored with its rows, so reading from another HOME "+
+			"must not relabel it: %v against %v", repoLabels(stranger), repoLabels(mine))
+	}
+}
+
+func repoLabels(out crossStateOutput) []string {
+	labels := make([]string, 0, len(out.Objectives))
+	for _, o := range out.Objectives {
+		labels = append(labels, o.Repo)
+	}
+	return labels
 }

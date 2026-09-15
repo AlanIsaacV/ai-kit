@@ -191,7 +191,7 @@ func TestAGotchaWithoutAnAnchorIsRefusedAndWithOneIsAccepted(t *testing.T) {
 	r := throwawayRepo(t)
 	tokenSource(t, r)
 	add(t, r, "RS256 over HS256")
-	before := len(lines(t, r.log))
+	before := len(lines(t, r, r.log))
 
 	res := run(t, r, "add", "--kind", "gotcha",
 		"--title", "The retry count is somebody else's rate limit", "--about", "auth")
@@ -214,12 +214,12 @@ func TestAGotchaWithoutAnAnchorIsRefusedAndWithOneIsAccepted(t *testing.T) {
 	if !strings.Contains(refusal.Problems[0].Message, "--anchor") {
 		t.Errorf("and say how to satisfy it, got %q", refusal.Problems[0].Message)
 	}
-	if after := len(lines(t, r.log)); after != before {
+	if after := len(lines(t, r, r.log)); after != before {
 		t.Fatalf("a refused add must write nothing, log went from %d to %d lines", before, after)
 	}
 
 	addGotcha(t, r, "The lock is taken before the write, not after", anchorPath+":4-5")
-	if after := len(lines(t, r.log)); after != before+1 {
+	if after := len(lines(t, r, r.log)); after != before+1 {
 		t.Fatalf("the same record with an anchor must be accepted, log went from %d to %d lines", before, after)
 	}
 
@@ -237,7 +237,7 @@ func TestAnAnchorThatCannotBeResolvedIsRefusedAtWriteTime(t *testing.T) {
 	r := throwawayRepo(t)
 	tokenSource(t, r)
 	add(t, r, "RS256 over HS256")
-	before := len(lines(t, r.log))
+	before := len(lines(t, r, r.log))
 
 	for name, spec := range map[string]string{
 		"no such file":     "pkg/auth/nope.go:3",
@@ -257,7 +257,7 @@ func TestAnAnchorThatCannotBeResolvedIsRefusedAtWriteTime(t *testing.T) {
 			t.Errorf("%s (%q): expected a bad_anchor refusal, got %q", name, spec, code)
 		}
 	}
-	if after := len(lines(t, r.log)); after != before {
+	if after := len(lines(t, r, r.log)); after != before {
 		t.Fatalf("a refused add must write nothing, log went from %d to %d lines", before, after)
 	}
 }
@@ -269,7 +269,7 @@ func TestMovedTextStillHoldsAndTheRecordIsNotRewritten(t *testing.T) {
 	r := throwawayRepo(t)
 	tokenSource(t, r)
 	id := addGotcha(t, r, "The lock is taken before the write, not after", anchorPath+":4-5")
-	written := lines(t, r.log)
+	written := lines(t, r, r.log)
 
 	before := checkAnchors(t, r, "--kind", "gotcha")
 	onlyRecord(t, before)
@@ -301,7 +301,7 @@ func TestMovedTextStillHoldsAndTheRecordIsNotRewritten(t *testing.T) {
 		t.Errorf("the counts carry every verdict, got %v", after.Counts)
 	}
 
-	if now := lines(t, r.log); strings.Join(now, "\n") != strings.Join(written, "\n") {
+	if now := lines(t, r, r.log); strings.Join(now, "\n") != strings.Join(written, "\n") {
 		t.Fatal("the check must not rewrite the record it checked")
 	}
 }
@@ -532,8 +532,8 @@ func TestAGotchaIsWritableAtUserScopeOnlyWithARepoRoot(t *testing.T) {
 		t.Errorf("--repo given explicitly is not a default and must not be overridden, got %q",
 			out.Record.Origin.Repo)
 	}
-	if _, err := os.Stat(r.user); err != nil {
-		t.Fatalf("the record went to the user log: %v", err)
+	if len(lines(t, r, r.user)) == 0 {
+		t.Fatal("the record never reached the user log")
 	}
 }
 

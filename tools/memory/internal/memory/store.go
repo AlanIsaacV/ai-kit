@@ -1,149 +1,236 @@
 package memory
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
-// Store is an append-only JSONL log.
+// Store is one log: the rows of the memory store that carry its source path.
 //
 // The one invariant that matters: no operation in this package ever rewrites,
-// reorders or removes a line that is already on disk. Corrections are new
-// lines; invalidation is a supersedes edge. That is what makes the log
-// trustworthy as history, and it is why nothing here opens a file for
-// truncation.
+// reorders or removes a row that is already stored. Corrections are new rows;
+// invalidation is a supersedes edge. That is what makes the log trustworthy as
+// history, and it is why nothing here issues an UPDATE or a DELETE.
 type Store struct {
-	Path string
+	Path      string
+	StorePath string
+	Scope     Scope
+	RepoID    string
 }
 
 func Open(path string) *Store { return &Store{Path: path} }
 
+func OpenIn(store, path string) *Store { return &Store{Path: path, StorePath: store} }
+
 // gitignoreSentinel is the whole content of the .gitignore written inside the
-// log directory.
+// .ai-kit directory.
 const gitignoreSentinel = "*\n"
 
-// ensureDir creates the log's directory and, with it, the .gitignore that keeps
-// the directory out of git.
+// ensureDir creates the .ai-kit directory and, with it, the .gitignore that
+// keeps the directory out of git. It reports whether this call was the one that
+// wrote the sentinel.
 //
 // The sentinel goes *inside* the directory rather than as a line appended to the
 // repository's own .gitignore: that file belongs to the repository and is not
 // this tool's to edit, and a `*` from within covers everything the loop later
-// puts here — the log, and the drafts under plans/ — without a second line ever
-// being needed. It is written with no check for whether there is a git
-// repository above it, because outside one it is inert rather than wrong.
-func (s *Store) ensureDir() error {
+// puts here — the drafts under plans/ — without a second line ever being needed.
+// It is written with no check for whether there is a git repository above it,
+// because outside one it is inert rather than wrong.
+func (s *Store) ensureDir() (created bool, err error) {
 	dir := filepath.Dir(s.Path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+		return false, err
 	}
 	name := filepath.Join(dir, ".gitignore")
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
-	if err != nil {
-		if os.IsExist(err) {
-			return nil
-		}
-		return err
-	}
-	if _, err := f.WriteString(gitignoreSentinel); err != nil {
-		f.Close()
-		// Leave nothing behind. An empty .gitignore ignores nothing, and O_EXCL
-		// means no later run would ever get the chance to repair it.
-		os.Remove(name)
-		return err
-	}
-	return f.Close()
-}
-
-// Init creates the log, its parent directory and that directory's .gitignore if
-// they do not exist. It never touches an existing file.
-func (s *Store) Init() (created bool, err error) {
-	if err := s.ensureDir(); err != nil {
-		return false, err
-	}
-	f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
 	if err != nil {
 		if os.IsExist(err) {
 			return false, nil
 		}
 		return false, err
 	}
+	if _, err := f.WriteString(gitignoreSentinel); err != nil {
+		f.Close()
+		// Leave nothing behind. An empty .gitignore ignores nothing, and O_EXCL
+		// means no later run would ever get the chance to repair it.
+		os.Remove(name)
+		return false, err
+	}
 	return true, f.Close()
 }
 
-// Append writes one record as a single line at the end of the log.
-//
-// The write is guarded by an advisory lock because parallel subagents are a
-// normal part of this workflow — two of them closing out at the same moment
-// must not interleave halves of two records on one line.
+// Init creates the .ai-kit directory, its .gitignore and the store itself if
+// they do not exist. It never touches a row that is already there, and created
+// reports whether this call was this repository's first contact.
+func (s *Store) Init() (created bool, err error) {
+	created, err = s.ensureDir()
+	if err != nil {
+		return false, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return created, err
+	}
+	db, err := createStore(store)
+	if err != nil {
+		return created, err
+	}
+	return created, db.Close()
+}
+
+// Append writes each record as one row at the end of the log.
 func (s *Store) Append(records ...any) error {
 	if len(records) == 0 {
 		return nil
 	}
-	if err := s.ensureDir(); err != nil {
+	store, err := s.store()
+	if err != nil {
+		return err
+	}
+	source, err := s.source()
+	if err != nil {
+		return err
+	}
+	if _, err := s.ensureDir(); err != nil {
 		return err
 	}
 
-	var buf strings.Builder
+	raw := make([]string, 0, len(records))
 	for _, r := range records {
 		b, err := MarshalLine(r)
 		if err != nil {
 			return fmt.Errorf("marshal record: %w", err)
 		}
-		buf.Write(b)
-		buf.WriteByte('\n')
+		raw = append(raw, string(b))
 	}
 
-	f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	db, err := createStore(store)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer db.Close()
 
-	unlock, err := lockFile(f)
+	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return fmt.Errorf("append to %s: %w", s.Path, err)
 	}
-	defer unlock()
+	defer tx.Rollback()
 
-	if _, err := f.WriteString(buf.String()); err != nil {
-		return err
+	var next int
+	if err := tx.QueryRow(`SELECT coalesce(max(line_number), 0) + 1 FROM lines WHERE source_path = ?`, source).Scan(&next); err != nil {
+		return fmt.Errorf("append to %s: %w", s.Path, err)
 	}
-	return f.Sync()
+
+	insert, err := tx.Prepare(`INSERT INTO lines (source_path, line_number, scope, repo_id, raw) VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("append to %s: %w", s.Path, err)
+	}
+	defer insert.Close()
+
+	scope := s.scope()
+	for i, line := range raw {
+		if _, err := insert.Exec(source, next+i, string(scope), s.repoID(records[i], scope), line); err != nil {
+			return fmt.Errorf("append to %s:%d: %w", s.Path, next+i, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("append to %s: %w", s.Path, err)
+	}
+	return nil
 }
 
 // Read parses the whole log. A line that fails to parse becomes a Line with
 // Err set rather than aborting the read: one bad line must not make the lines
 // around it unreadable.
 func (s *Store) Read() ([]Line, error) {
-	f, err := os.Open(s.Path)
+	store, err := s.store()
 	if err != nil {
+		return nil, err
+	}
+	source, err := s.source()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(store); err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
+		return nil, fmt.Errorf("read %s: %w", store, err)
+	}
+
+	db, err := openStore(store)
+	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT line_number, raw FROM lines WHERE source_path = ? ORDER BY line_number ASC`, source)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", s.Path, err)
+	}
+	defer rows.Close()
 
 	var lines []Line
-	sc := bufio.NewScanner(f)
-	// Bodies can be long; the default 64 KiB token limit is not enough.
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	num := 0
-	for sc.Scan() {
-		num++
-		raw := strings.TrimSpace(sc.Text())
-		if raw == "" {
-			continue
+	for rows.Next() {
+		var num int
+		var raw string
+		if err := rows.Scan(&num, &raw); err != nil {
+			return lines, fmt.Errorf("read %s: %w", s.Path, err)
 		}
 		lines = append(lines, ParseLine(num, raw))
 	}
-	if err := sc.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return lines, fmt.Errorf("read %s: %w", s.Path, err)
 	}
 	return lines, nil
+}
+
+func (s *Store) store() (string, error) {
+	path := s.StorePath
+	if path == "" {
+		path = currentStore
+	}
+	if path == "" {
+		return "", errNoStore
+	}
+	return filepath.Abs(path)
+}
+
+func (s *Store) source() (string, error) {
+	abs, err := filepath.Abs(s.Path)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", s.Path, err)
+	}
+	return abs, nil
+}
+
+func (s *Store) scope() Scope {
+	if s.Scope != "" {
+		return s.Scope
+	}
+	user, err := Resolve(ScopeUser, "")
+	if err != nil {
+		return ScopeRepo
+	}
+	abs, err := s.source()
+	if err != nil || abs != user.Path {
+		return ScopeRepo
+	}
+	return ScopeUser
+}
+
+func (s *Store) repoID(record any, scope Scope) any {
+	if scope == ScopeUser {
+		return nil
+	}
+	if s.RepoID != "" {
+		return s.RepoID
+	}
+	if e, ok := record.(*Entry); ok && e.Origin != nil && e.Origin.RepoID != "" {
+		return e.Origin.RepoID
+	}
+	return nil
 }
 
 // Entries returns only the well-formed entries, in write order.

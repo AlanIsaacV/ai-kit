@@ -117,7 +117,7 @@ four things that cannot be read are asked once in step 3.
 ## The memory log
 
 State lives in an append-only log, read and written only through the `memory`
-CLI. Never edit the `.jsonl` by hand.
+CLI. Never edit the log by hand.
 
 ### The one directory that decides everything: the target repository
 
@@ -152,10 +152,10 @@ inside a git repository. Say so and ask, rather than proceeding:
 Then take the answer, confirm the path printed, and use it. **What must never
 happen is a `memory` call with `--dir` empty**, because an empty `--dir` is not a
 refusal — it resolves the log from the current directory instead, which on step 4
-means `add` creating or appending to `.ai-kit/memory.jsonl` in a different
-repository, at exit 0, with nothing in the output saying which one. And not only on
-step 4: every command creates the location it resolves, so even step 1's reads
-leave an `.ai-kit/` in whatever repository the flag pointed at. The refusal
+means `add` filing the record under a different repository, at exit 0, with
+nothing in the output saying which one. And not only on step 4: every command
+creates the location it resolves, so even step 1's reads leave an `.ai-kit/` in
+whatever repository the flag pointed at. The refusal
 below covers a path that *is* passed and is not a repo; it never fires on the
 empty string, so this stop is the only thing standing between a mistyped path and
 another repository's tree gaining a directory it never asked for.
@@ -185,8 +185,9 @@ not there, which sends the run to step 5 to author a new one.
 
 Two flags carry the target, and both appear on every command that accepts them:
 
-- **`--dir <target-repo>`** resolves *which log* — `<repo>/.ai-kit/memory.jsonl`.
-  Accepted by `query`, `search`, `anchors`, `edges`, `add`, `link`, `graph`.
+- **`--dir <target-repo>`** resolves *which log* — the records filed under
+  `<repo>`. Accepted by `query`, `search`, `anchors`, `edges`, `add`, `link`,
+  `graph`.
 - **`--repo-root <target-repo>`** resolves *which working tree* the anchors are
   relative to and read out of. Accepted by `anchors` and `add`, and by nothing
   else — do not put it on `query` or `link`, which refuse an undefined flag.
@@ -202,14 +203,13 @@ Two measured behaviours, so neither surprises you:
 - **A directory that is not inside a git repository is refused**: exit 1 with
   `code: bad_scope`, "not inside a git repository". That is a stop, and the honest
   response is to say the path is not a repo and ask for the right one.
-- **A git repository with no log yet returns `count: 0` at exit 0, and creates the
-  log while answering** — `<repo>/.ai-kit/`, an empty `memory.jsonl` and a
-  `.gitignore` containing `*` that keeps the whole directory out of `git status`.
-  Any command that resolves a location creates it, a read as much as a write, so
-  neither the directory nor the file says anything about whether anything was ever
-  written there. `count` does, and it is what step 1 reads: the number of records
-  the CLI can parse out of the log, which is 0 for a log that does not exist yet and
-  0 for one that exists holding nothing.
+- **A git repository with no log yet returns `count: 0` at exit 0, and creates
+  `<repo>/.ai-kit/` while answering** — the directory and a `.gitignore` containing
+  `*` that keeps it out of `git status`, and nothing else. Any command that
+  resolves a location creates it, a read as much as a write, so the directory says
+  nothing about whether anything was ever written there. `count` does, and it is
+  what step 1 reads: the number of records the CLI can read back for this
+  repository, which is 0 for one nobody has ever written about.
 
 ### What this skill writes, and under what
 
@@ -273,27 +273,26 @@ existing README: the only lines you touch are the ones you are adding.
 
 **`log-is-empty`** is not an error and needs no `init`. Any `memory` command that
 resolves a location creates it — including this very query and the three reads a few
-lines below — so `.ai-kit/` and an empty `memory.jsonl` exist from that moment
-whether or not anything is ever written to them.
+lines below — so `.ai-kit/` exists from that moment whether or not anything is ever
+written to this repository's log.
 
-That is why the count and not a test on the file. Its *existence* stopped being
-evidence of anything the moment a read started creating it, and its *size* is only a
-proxy: a log holding one blank line, or one line some older writer left broken, has
-a size and no records. `query`'s `count` is the number of records the CLI can
-actually read out of it, which is the question being asked — and `--count` reports
-that number with `records: []` and `truncated: false`, which is the whole of what is
-wanted here. The two near misses are worth knowing apart: `--limit 1` bounds how
-many records come back and not what each one carries, so it hands over one record
-whole, body included; `--body-lines 0` keeps every record and drops the bodies.
-Neither answers a question about the count alone.
+That is why the count and not a test on the directory. Its *existence* stopped being
+evidence of anything the moment a read started creating it, and nothing beside it in
+the tree answers the question either. `query`'s `count` is the number of records the
+CLI can actually read back for this repository, which is the question being asked —
+and `--count` reports that number with `records: []` and `truncated: false`, which is
+the whole of what is wanted here. The two near misses are worth knowing apart:
+`--limit 1` bounds how many records come back and not what each one carries, so it
+hands over one record whole, body included; `--body-lines 0` keeps every record and
+drops the bodies. Neither answers a question about the count alone.
 
 `log-is-empty` means step 4's first `add` will be the first record this repository's
 log has ever held, and **that gets announced when it happens** — not asked about,
 announced. The consent for the write is the invocation; what the user is owed is
-knowing that a log now exists in their tree with content in it and what that content
+knowing that this repository now has a log with content in it and what that content
 is. Nothing about this depends on running before the three queries below: a read
-creates the file and writes no records into it, so the count still answers the same
-question afterwards.
+creates the directory and writes no records anywhere, so the count still answers the
+same question afterwards.
 
 Then read what the log already holds, because on a repository the loop has seen
 before this is where half the `CLAUDE.md` comes from and none of it should be
@@ -607,12 +606,12 @@ part an append-only log will not let them undo:
 > vas a aprobar o rechazar al final son el `README.md` y el `CLAUDE.md`, no esto.
 
 And if step 1 printed `log-is-empty`, these are the first records this repository's
-log has ever held, so name the path in the same breath:
+log has ever held, so say where they live in the same breath:
 
 > Este repo no tenía nada guardado: estos `<n>` gotchas son los primeros de su log
-> de memoria — `<target-repo>/.ai-kit/memory.jsonl`. Es un archivo JSONL append-only, y
-> queda fuera de git por su propio `.gitignore` adentro de `.ai-kit/`, sin tocar el
-> `.gitignore` del repo. El `CLAUDE.md` va a apuntar ahí.
+> de memoria, que es append-only y se lee con el CLI `memory`. En el árbol del repo
+> no queda más que `.ai-kit/`, afuera de git por su propio `.gitignore` adentro, sin
+> tocar el `.gitignore` del repo. El `CLAUDE.md` va a apuntar ahí.
 
 ### 5 — Compose the README, section by section
 

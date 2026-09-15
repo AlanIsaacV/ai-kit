@@ -69,7 +69,7 @@ document.
 ## The memory log
 
 State lives in an append-only log, read and written only through the `memory`
-CLI. Never edit the `.jsonl` by hand.
+CLI. Never edit the log by hand.
 
 **The write in step 8 always names its tree with `--plan`**, and so does step 1's
 objective read — placing this work in a tree is a question about that tree. The

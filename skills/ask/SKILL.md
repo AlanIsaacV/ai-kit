@@ -102,12 +102,12 @@ skill; a human invokes it, and it answers and stops.
 12. **This skill never checks whether a memory log exists, never runs `init`, and
     never asks permission to create one.** Any `memory` command that resolves a
     location creates it where it lands, at exit 0 and silently — a `query` as much
-    as an `add` (`tools/memory/internal/memory/store.go:37`). So the first read of
+    as an `add` (`tools/memory/internal/memory/store.go:40`). So the first read of
     this run leaves `<target>/.ai-kit/` behind even when nothing is persisted,
-    holding an empty log and a `.gitignore` containing `*` that keeps the whole
-    directory out of `git status`. That cost is known and accepted: the request to
-    persist is the consent for what gets *written*, and a question about an
-    invisible directory is ceremony charged to the user.
+    holding a `.gitignore` containing `*` that keeps the whole directory out of
+    `git status`. That cost is known and accepted: the request to persist is the
+    consent for what gets *written*, and a question about an invisible directory
+    is ceremony charged to the user.
 13. **It answers and stops.** No objective, no criteria, no fix, no invocation of
     `plan`, `work` or `debug`. When the answer turns up work worth doing, name it
     in one line and leave the next move to the user.
@@ -117,7 +117,7 @@ skill; a human invokes it, and it answers and stops.
 ## The memory log
 
 State lives in an append-only log, read and written only through the `memory`
-CLI. Never edit the `.jsonl` by hand.
+CLI. Never edit the log by hand.
 
 ### The one directory that decides everything: the target repository
 
@@ -155,10 +155,10 @@ inside a git repository. Say so and ask, rather than proceeding:
 Then take the answer, confirm the path printed, and use it. **What must never
 happen is a `memory` call with `--dir` empty**, because an empty `--dir` is not a
 refusal — it resolves the log from the current directory instead, which on step 6
-means `add` creating or appending to `.ai-kit/memory.jsonl` in a different
-repository, at exit 0, with nothing in the output saying which one. And not only on
-step 6: every command creates the location it resolves, so a read with the flag
-dropped leaves an `.ai-kit/` in that repository too. The refusal
+means `add` filing the record under a different repository, at exit 0, with
+nothing in the output saying which one. And not only on step 6: every command
+creates the location it resolves, so a read with the flag dropped leaves an
+`.ai-kit/` in that repository too. The refusal
 below covers a path that *is* passed and is not a repo; it never fires on the empty
 string, so this stop is the only thing standing between a mistyped path and a claim
 about one repository filed in another.
@@ -182,8 +182,9 @@ parses, so the command runs unsubstituted and the brackets stop nothing.
 
 Two flags carry the target, and both appear on every command that accepts them:
 
-- **`--dir <target-repo>`** resolves *which log* — `<repo>/.ai-kit/memory.jsonl`.
-  Accepted by `query`, `search`, `anchors`, `edges`, `add`, `link`, `graph`.
+- **`--dir <target-repo>`** resolves *which log* — the records filed under
+  `<repo>`. Accepted by `query`, `search`, `anchors`, `edges`, `add`, `link`,
+  `graph`.
 - **`--repo-root <target-repo>`** resolves *which working tree* the anchors are
   relative to and read from. Accepted by `anchors` and `add`, and by nothing else
   — do not put it on `query` or `link`, which refuse an undefined flag.
@@ -201,11 +202,11 @@ Two measured behaviours of the target directory, so neither surprises you:
   `code: bad_scope`, "not inside a git repository". That is a stop, and the honest
   response is to say the path is not a repo and ask for the right one — not to
   retry from somewhere else.
-- **A git repository with no log yet returns `count: 0` at exit 0, and creates the
-  log while answering** — `<repo>/.ai-kit/`, an empty `memory.jsonl` and the
-  `.gitignore` that hides them both. Which means `count: 0` still cannot
-  distinguish *nobody wrote anything about this* from *nothing was ever written
-  here at all*. Never report the second: what you know is that the query came back
+- **A git repository with no log yet returns `count: 0` at exit 0, and creates
+  `<repo>/.ai-kit/` while answering** — the directory and the `.gitignore` that
+  hides it, and nothing else. Which means `count: 0` still cannot distinguish
+  *nobody wrote anything about this* from *nothing was ever written here at
+  all*. Never report the second: what you know is that the query came back
   empty, and that is what to say.
 
 ### What this skill writes, and under what

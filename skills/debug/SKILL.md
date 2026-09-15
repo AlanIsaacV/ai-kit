@@ -81,7 +81,7 @@ size what it finds.
 ## The memory log
 
 State lives in an append-only log, read and written only through the `memory`
-CLI. Never edit the `.jsonl` by hand.
+CLI. Never edit the log by hand.
 
 **Every `memory` call in this skill passes `--dir`, and it points at the repo the
 loop is running in** — the one whose `.ai-kit/` holds the log, where `plan` writes

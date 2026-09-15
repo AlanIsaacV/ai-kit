@@ -526,7 +526,8 @@ func TestGraphUnknownRoot(t *testing.T) {
 }
 
 func TestProjectionReturnsExactlyTheFieldsItWasNamed(t *testing.T) {
-	store := Open(filepath.Join(t.TempDir(), ".ai-kit", "memory.jsonl"))
+	dir := t.TempDir()
+	store := OpenIn(filepath.Join(dir, "memory.db"), filepath.Join(dir, ".ai-kit", "memory.jsonl"))
 	first := entry(t, KindDecision, "RS256 over HS256", "auth")
 	first.Body = "Per-service key rotation requires asymmetric signing."
 	first.Origin = &Origin{Plan: "jwt-migration"}

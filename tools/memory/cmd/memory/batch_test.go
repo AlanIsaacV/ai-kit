@@ -99,7 +99,7 @@ func entryLine(t *testing.T, fields map[string]any) string {
 func TestABatchIsOneWriteOrNoWriteAtAll(t *testing.T) {
 	r := throwawayRepo(t)
 	add(t, r, "Something already in the log")
-	before := fileBytes(t, r.log)
+	before := logText(t, r, r.log)
 
 	good := make([]string, 0, 25)
 	for i := 1; i <= 25; i++ {
@@ -114,11 +114,11 @@ func TestABatchIsOneWriteOrNoWriteAtAll(t *testing.T) {
 	if out.Count != 25 || len(out.Records) != 25 {
 		t.Fatalf("25 entries in, 25 out: count %d, records %d", out.Count, len(out.Records))
 	}
-	if got := len(lines(t, r.log)) - len(strings.Split(strings.TrimRight(string(before), "\n"), "\n")); got != 25 {
+	if got := len(lines(t, r, r.log)) - len(strings.Split(strings.TrimRight(before, "\n"), "\n")); got != 25 {
 		t.Fatalf("the log should have grown by exactly 25 lines, grew by %d", got)
 	}
 	// Every id is distinct and every one of them is on disk.
-	onDisk := strings.Join(lines(t, r.log), "\n")
+	onDisk := strings.Join(lines(t, r, r.log), "\n")
 	seen := map[string]bool{}
 	for _, rec := range out.Records {
 		if seen[rec.ID] {
@@ -131,7 +131,7 @@ func TestABatchIsOneWriteOrNoWriteAtAll(t *testing.T) {
 	}
 
 	// The same file with line 13 carrying a kind the closed set does not hold.
-	beforeRefusal := fileBytes(t, r.log)
+	beforeRefusal := logText(t, r, r.log)
 	bad := make([]string, len(good))
 	copy(bad, good)
 	bad[12] = entryLine(t, map[string]any{
@@ -144,7 +144,7 @@ func TestABatchIsOneWriteOrNoWriteAtAll(t *testing.T) {
 	if len(ref.Problems) != 1 || ref.Problems[0].Line != 13 || ref.Problems[0].Field != "kind" {
 		t.Fatalf("the problem must name line 13 and the kind field, got %+v", ref.Problems)
 	}
-	if got := fileBytes(t, r.log); string(got) != string(beforeRefusal) {
+	if got := logText(t, r, r.log); got != beforeRefusal {
 		t.Fatalf("a refused batch must leave the log byte-identical\nbefore %d bytes\nafter  %d bytes",
 			len(beforeRefusal), len(got))
 	}
@@ -329,7 +329,7 @@ func TestABatchEdgeMeetsTheSameThreeChecksLinkApplies(t *testing.T) {
 	parentA := addKind(t, r, "objective", "Parent A")
 	parentB := addKind(t, r, "objective", "Parent B")
 	assumption := addKind(t, r, "assumption", "Something assumed")
-	before := fileBytes(t, r.log)
+	before := logText(t, r, r.log)
 
 	cases := []struct {
 		name string
@@ -385,7 +385,7 @@ func TestABatchEdgeMeetsTheSameThreeChecksLinkApplies(t *testing.T) {
 		if !strings.Contains(msg, "line 1") {
 			t.Errorf("%s: the refusal must name the line to fix, got %q", c.name, msg)
 		}
-		if got := fileBytes(t, r.log); string(got) != string(before) {
+		if got := logText(t, r, r.log); got != before {
 			t.Fatalf("%s: the log must be byte-identical after a refusal", c.name)
 		}
 	}
@@ -417,7 +417,7 @@ func TestARefusalNamesTheLineRatherThanAnIDThatWasNeverWritten(t *testing.T) {
 	}
 	// Every id left in the message has to be one that is actually on disk.
 	onDisk := map[string]bool{}
-	for _, raw := range lines(t, r.log) {
+	for _, raw := range lines(t, r, r.log) {
 		var e struct {
 			ID string `json:"id"`
 		}
@@ -510,7 +510,7 @@ func TestBatchAndTheRecordFlagsAreRefusedTogether(t *testing.T) {
 	if !strings.Contains(msg, "--title") {
 		t.Errorf("the refusal should name the flag that was also passed, got %q", msg)
 	}
-	if got := strings.TrimSpace(string(fileBytes(t, r.log))); got != "" {
+	if got := strings.TrimSpace(logText(t, r, r.log)); got != "" {
 		t.Fatalf("nothing may be written, log holds %q", got)
 	}
 }
@@ -549,7 +549,7 @@ func TestABatchPathThatCannotBeReadIsRefused(t *testing.T) {
 func TestAnArgumentInFlagPositionWithASpaceIsRefusedBeforeParsing(t *testing.T) {
 	r := throwawayRepo(t)
 	add(t, r, "Something already in the log")
-	before := fileBytes(t, r.log)
+	before := logText(t, r, r.log)
 
 	res := run(t, r, "add", "--kind decision", "--title", "x", "--about", "y")
 	code, msg := errorCode(t, res)
@@ -563,7 +563,7 @@ func TestAnArgumentInFlagPositionWithASpaceIsRefusedBeforeParsing(t *testing.T) 
 	if !strings.Contains(msg, "unquoted variable") {
 		t.Errorf("the refusal must ask about the unquoted variable, got %q", msg)
 	}
-	if got := fileBytes(t, r.log); string(got) != string(before) {
+	if got := logText(t, r, r.log); got != before {
 		t.Fatal("nothing may be written")
 	}
 
@@ -721,7 +721,7 @@ type diskEntry struct {
 // appended.
 func entryByID(t *testing.T, r repo, id string) diskEntry {
 	t.Helper()
-	for _, raw := range lines(t, r.log) {
+	for _, raw := range lines(t, r, r.log) {
 		var e diskEntry
 		if err := json.Unmarshal([]byte(raw), &e); err != nil {
 			continue
@@ -743,7 +743,7 @@ func edgeEnds(t *testing.T, r repo, typ string) (from, to string) {
 		From string `json:"from"`
 		To   string `json:"to"`
 	}
-	for _, raw := range lines(t, r.log) {
+	for _, raw := range lines(t, r, r.log) {
 		var got = e
 		if err := json.Unmarshal([]byte(raw), &got); err != nil {
 			continue

@@ -55,14 +55,23 @@ would read as "here is the answer" when it is a fragment of one.
 ~/.ai-kit/memory.jsonl        user   distilled across repos, promoted deliberately
 ```
 
+**Those two paths name logs, not files.** Every record on the machine lives in one
+SQLite store — `/srv/projects/.ai-kit/memory.db` — and a log is the rows in it
+carrying that path as their `source_path`. Nothing there is ever rewritten: the
+table is insert-only, so a correction is a new row and an invalidation is a
+`supersedes` edge, exactly as it was when a log was a file. `--store PATH` points
+any command at a different store, which is what makes a throwaway one possible;
+with none given every command uses the default above.
+
 Both ignore themselves. The first command that resolves a location creates the
 `.ai-kit/` directory — on a read as much as on a write — and writes a
-`.gitignore` containing `*` inside it, which covers the log and everything else
-the loop puts there. So a repository that has never run this loop needs no setup,
-and its own `.gitignore` is never edited. On a read the creation is best-effort: a
-repository nobody can write to still answers `query` with what its log holds, and
-only a write refuses when the directory cannot be made. Promotion between the two
-scopes is always an explicit act.
+`.gitignore` containing `*` inside it, which covers everything the loop puts
+there. No `memory.jsonl` is written beside it: the path is the log's name and the
+rows are in the store. So a repository that has never run this loop needs no
+setup, and its own `.gitignore` is never edited. On a read the creation is
+best-effort: a repository nobody can write to still answers `query` with what its
+log holds, and only a write refuses when the directory cannot be made. Promotion
+between the two scopes is always an explicit act.
 
 **One log per repo, and the plan lives in the record.** An entry carries
 `origin.plan`, and `--plan <slug>` is a filter over that field — not a choice of
@@ -73,10 +82,10 @@ plan in it, and every plan-bounded read returns it; see
 **Every command reads one log unless asked otherwise, and one command reads them
 all.** [`areas`](#which-areas-a-log-answers-for) reads both of these, reported
 apart, and [`query --scope both`](#asking-both-logs-at-once) reads both as one
-answer. [`state --text`](#what-is-waiting-on-you-across-every-log) reaches every log
-under `MEMORY_ROOTS` — a PATH-style list, default `/srv/projects` — because "what
-is waiting on me" is the one question whose answer is not about the repository
-you are standing in. It creates nothing and writes nothing.
+answer. [`state --text`](#what-is-waiting-on-you-across-every-log) reaches every log the
+store holds, because "what is waiting on me" is the one question whose answer is
+not about the repository you are standing in. It creates nothing and writes
+nothing.
 
 There used to be a third scope, `plan → <repo>/plans/<slug>/memory.jsonl`, and
 removing it is what [schema version 2](#changing-the-schema) is. One file per
@@ -771,18 +780,12 @@ repository is answering a question you did not ask.
 `--all` and `--here` together is a refusal — `conflicting_scope` — rather than a
 precedence nobody would remember.
 
-**Which logs.** There is no registry of repositories, so they are found by a glob
-bounded to six levels below each root in `MEMORY_ROOTS` — a PATH-style list,
-default `/srv/projects` — which is what keeps the scan out of `node_modules` and
-`.git` instead of descending and excluding. Six is one level past the deepest log
-there is today. A log below that is still absent, but no longer silently: when
-discovery finds a log at the deepest level it reaches, the summary says so above
-the count, because from there it cannot tell whether there is more underneath. A
-root that is not a readable directory is refused — `bad_root` — rather than read
-as a root with nothing under it, since a glob answers the same way for both and a
-mistyped root that reads as a quiet machine is the one failure a queue you are
-meant to trust cannot afford. The user log joins them when it exists, labelled
-`user`, since it has no repository to be named after.
+**Which logs.** Every distinct `source_path` the store holds, in path order. There
+is no registry of repositories and no scan of the filesystem: a log is in the
+answer because a record was written to it, so a repository that has never run this
+loop is absent rather than empty, and one whose checkout has since been moved or
+deleted still reports its history. The user log joins them when the store holds
+one, labelled `user`, since it has no repository to be named after.
 
 **One tree per log, never one tree over all of them.** Concatenating the logs
 would be cheaper and would produce a single "current objective" across every
@@ -800,16 +803,12 @@ so two objectives held up by the same question read as one wait rather than two.
 Terminal objectives are absent, and so is anything superseded or answered.
 
 **It creates nothing.** Every other read resolves its location and creates
-`.ai-kit/` on the way past; this one reads the paths discovery already found, and
+`.ai-kit/` on the way past; this one takes its paths out of the store, and
 `--here` locates this repository's log rather than resolving it, so asking what is
 waiting leaves no directory behind in any repository it reads.
 
 **Errors stay JSON in both modes**, `--text` included. Only the summary itself is
 text.
-
-**This is expected to be deleted.** Discovery exists because there is one log per
-repository and no index of them. The store that replaces them has nothing to
-discover, and nobody should defend the glob later as architecture.
 
 ## Changing the schema
 
@@ -1017,7 +1016,7 @@ Five things a reader will expect to be wrong, and are not:
 ## Usage
 
 ```bash
-memory init                      # creates <repo>/.ai-kit/memory.jsonl
+memory init                      # creates <repo>/.ai-kit/ and this repo's log in the store
 
 memory add   --plan jwt-migration --kind decision \
              --title "RS256 over HS256" \
@@ -1076,12 +1075,19 @@ Every command prints JSON on stdout on success and on failure alike — except
 summary. A failure is JSON in every mode, `--text` included. Exit 0 means the
 command ran; exit 1 means it refused, and the JSON says why.
 
+`validate --all` validates every log the store holds, each on its own, with its
+own set of known ids — so an edge pointing at a record that exists only under
+another `source_path` is still reported dangling, exactly as it was when the logs
+were separate files.
+
 `validate` is the one command where exit 1 is a verdict rather than a refusal. It
 exits 1 when a log fails validation (`ok: false`) and when a location it was asked
 to sweep could not be created (`init_failed`), and those two stay separate keys: a
 directory nobody can write to says nothing about whether the records in it are
 well-formed, but a sweep that covered fewer logs than requested has not passed
-either, and a caller reading only the exit code has to hear about it.
+either, and a caller reading only the exit code has to hear about it. Only the
+one-log sweep can report `init_failed`: `--all` takes its set out of the store and
+creates nothing, so there is nothing there for it to fall short of.
 
 `--scope` is `repo` by default, and `user` is the only other value a record can
 live at. `query` alone also takes [`both`](#asking-both-logs-at-once), which reads
@@ -1099,6 +1105,13 @@ objective is current are properties of the log, so narrowing the derivation woul
 change the answers rather than the view. With no `--plan`, `AI_KIT_PLAN` is used.
 `promote` is in that second group too: it reads the whole source log, so a class
 sweep is not silently narrowed by a plan slug somebody passed out of habit.
+
+`--store` is on every subcommand and defaults to `/srv/projects/.ai-kit/memory.db`.
+It names the store, not the log: `--dir` and `--scope` still choose which log
+inside it is read or written. Like every other flag it goes *after* the
+subcommand, and before any positional text — `memory search --store PATH "key
+rotation"`, never after the text, which the flag package would swallow as more of
+it.
 
 `--about` matches by exact tag or by path prefix: a tag ending in `/` catches
 everything under it, so `--about pkg/auth/` finds a record tagged

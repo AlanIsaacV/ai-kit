@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/alanv/ai-kit/tools/memory/internal/memory"
+	_ "modernc.org/sqlite"
 )
 
 // These tests drive the built binary rather than calling into the package.
@@ -43,10 +45,11 @@ func TestMain(m *testing.M) {
 // repo is a throwaway repo plus the private HOME the tool's user scope resolves
 // into.
 type repo struct {
-	root string // the repo root, whose .ai-kit/memory.jsonl is the only log
-	home string // HOME, so nothing here can reach the real user-scope log
-	log  string // <root>/.ai-kit/memory.jsonl
-	user string // <home>/.ai-kit/memory.jsonl
+	root  string // the repo root, whose .ai-kit/memory.jsonl names its log
+	home  string // HOME, so nothing here can reach the real user-scope log
+	log   string // <root>/.ai-kit/memory.jsonl
+	user  string // <home>/.ai-kit/memory.jsonl
+	store string
 }
 
 // throwawayRepo is a repo root the tool will accept. RepoRoot only looks for a
@@ -59,13 +62,18 @@ type repo struct {
 // to cross.
 func throwawayRepo(t *testing.T) repo {
 	t.Helper()
-	r := repo{root: t.TempDir(), home: t.TempDir()}
+	r := repo{root: t.TempDir(), home: t.TempDir(), store: throwawayStore(t)}
 	if err := os.MkdirAll(filepath.Join(r.root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	r.log = filepath.Join(r.root, ".ai-kit", "memory.jsonl")
 	r.user = filepath.Join(r.home, ".ai-kit", "memory.jsonl")
 	return r
+}
+
+func throwawayStore(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "memory.db")
 }
 
 type result struct {
@@ -97,23 +105,25 @@ func runStdin(t *testing.T, r repo, stdin string, args ...string) result {
 
 // execMemory runs the binary with the arguments exactly as given — no --dir, no
 // --plan — which is what a test about `kinds` needs, since that is the one
-// subcommand binding neither. The environment is set here and only here, so no
-// way of running the binary can reach the real logs.
+// subcommand binding neither. The store and the environment are set here and
+// only here, so no way of running the binary can reach the real store.
+//
+// --store is what bounds a write now, and it is the only thing that does: --dir
+// picks the source path a row is filed under, not the file the row lands in, so
+// an invocation that named the repo and forgot the store would append to
+// /srv/projects/.ai-kit/memory.db — permanently, since the store is insert-only.
 //
 // extraEnv is appended last, and os/exec keeps the last occurrence of a name, so a
 // caller may override one of the three set here — PATH included, which is how a
 // test counts what the tool shells out to.
 func execMemory(t *testing.T, r repo, stdin string, args []string, extraEnv ...string) result {
 	t.Helper()
-	cmd := exec.Command(memoryBin, args...)
+	cmd := exec.Command(memoryBin, afterSubcommand(t, args, "--store", r.store)...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	cmd.Env = append(os.Environ(), "HOME="+r.home, "AI_KIT_AUTHOR=test-suite", "AI_KIT_PLAN=")
 	cmd.Env = append(cmd.Env, extraEnv...)
-	// Belt as well as braces: --dir already points at the throwaway repo, and so
-	// does the working directory, so a helper that ever failed to pass the flag
-	// still could not reach the log of the repo these tests run inside.
 	cmd.Dir = r.root
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -196,16 +206,76 @@ func errorCode(t *testing.T, res result) (code, message string) {
 	return out.Code, out.Error
 }
 
-func lines(t *testing.T, path string) []string {
+func lines(t *testing.T, r repo, path string) []string {
 	t.Helper()
-	raw, err := os.ReadFile(path)
+	if _, err := os.Stat(r.store); os.IsNotExist(err) {
+		return nil
+	}
+	db := openStore(t, r)
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT raw FROM lines WHERE source_path = ? ORDER BY line_number ASC`, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, raw)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
-func appendLine(t *testing.T, path, line string) {
+func logText(t *testing.T, r repo, path string) string {
+	t.Helper()
+	return strings.Join(lines(t, r, path), "\n")
+}
+
+func openStore(t *testing.T, r repo) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", r.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	return db
+}
+
+func appendLine(t *testing.T, r repo, path, line string) {
+	t.Helper()
+	db := openStore(t, r)
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS lines (
+		source_path TEXT    NOT NULL,
+		line_number INTEGER NOT NULL,
+		scope       TEXT    NOT NULL,
+		repo_id     TEXT,
+		raw         TEXT    NOT NULL,
+		PRIMARY KEY (source_path, line_number)
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	scope := "repo"
+	if path == r.user {
+		scope = "user"
+	}
+	if _, err := db.Exec(
+		`INSERT INTO lines (source_path, line_number, scope, repo_id, raw)
+		 SELECT ?, coalesce(max(line_number), 0) + 1, ?, NULL, ? FROM lines WHERE source_path = ?`,
+		path, scope, line, path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func appendToFile(t *testing.T, path, line string) {
 	t.Helper()
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -231,7 +301,7 @@ func TestAddAndLinkStampTheCurrentSchemaVersion(t *testing.T) {
 		t.Fatalf("link: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
 
-	got := lines(t, r.log)
+	got := lines(t, r, r.log)
 	if len(got) != 3 {
 		t.Fatalf("expected two entries and one edge, got %d lines", len(got))
 	}
@@ -270,7 +340,7 @@ func TestAddDefaultsToTheRepoScope(t *testing.T) {
 			Plan string `json:"plan"`
 		} `json:"origin"`
 	}
-	if err := json.Unmarshal([]byte(lines(t, r.log)[0]), &rec); err != nil {
+	if err := json.Unmarshal([]byte(lines(t, r, r.log)[0]), &rec); err != nil {
 		t.Fatal(err)
 	}
 	if rec.Scope != "repo" {
@@ -279,8 +349,8 @@ func TestAddDefaultsToTheRepoScope(t *testing.T) {
 	if rec.Origin.Plan != "demo" {
 		t.Errorf("expected origin.plan to carry the plan, got %q", rec.Origin.Plan)
 	}
-	if _, err := os.Stat(r.user); !os.IsNotExist(err) {
-		t.Errorf("nothing should have touched the user log: %v", err)
+	if got := lines(t, r, r.user); len(got) != 0 {
+		t.Errorf("nothing should have touched the user log, it holds %d lines", len(got))
 	}
 }
 
@@ -290,13 +360,13 @@ func TestAddDefaultsToTheRepoScope(t *testing.T) {
 func TestThereIsNoFlagForTheVersion(t *testing.T) {
 	r := throwawayRepo(t)
 	add(t, r, "RS256 over HS256")
-	before := lines(t, r.log)
+	before := lines(t, r, r.log)
 
 	res := run(t, r, "add", "--kind", "decision", "--title", "Forced", "--about", "auth", "--version", "3")
 	if res.code == 0 {
 		t.Fatal("--version should not be a flag this tool accepts")
 	}
-	if after := lines(t, r.log); len(after) != len(before) {
+	if after := lines(t, r, r.log); len(after) != len(before) {
 		t.Fatalf("a refused add must write nothing, log went from %d to %d lines", len(before), len(after))
 	}
 }
@@ -308,7 +378,7 @@ func TestThereIsNoFlagForTheVersion(t *testing.T) {
 func TestNoFlagOrVariableReopensThePlanScope(t *testing.T) {
 	r := throwawayRepo(t)
 	add(t, r, "RS256 over HS256")
-	before := lines(t, r.log)
+	before := lines(t, r, r.log)
 
 	for _, args := range [][]string{
 		{"add", "--scope", "plan", "--kind", "decision", "--title", "Sneaky", "--about", "auth"},
@@ -320,19 +390,19 @@ func TestNoFlagOrVariableReopensThePlanScope(t *testing.T) {
 			t.Fatalf("%v was accepted; the plan scope must not be reachable", args)
 		}
 	}
-	if after := lines(t, r.log); len(after) != len(before) {
+	if after := lines(t, r, r.log); len(after) != len(before) {
 		t.Fatalf("nothing refused may reach disk, log went from %d to %d lines", len(before), len(after))
 	}
 
 	// Via the environment, which is the other place leniency tends to hide.
-	cmd := exec.Command(memoryBin, "add", "--kind", "decision", "--title", "Sneaky",
+	cmd := exec.Command(memoryBin, "add", "--store", r.store, "--kind", "decision", "--title", "Sneaky",
 		"--about", "auth", "--plan", "demo", "--dir", r.root)
 	cmd.Env = append(os.Environ(), "HOME="+r.home, "AI_KIT_AUTHOR=test-suite",
 		"AI_KIT_SCOPE=plan", "MEMORY_SCOPE=plan", "AI_KIT_ALLOW_PLAN_SCOPE=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("the add itself should still succeed at the repo scope: %v\n%s", err, out)
 	}
-	for _, line := range lines(t, r.log) {
+	for _, line := range lines(t, r, r.log) {
 		if strings.Contains(line, `"scope":"plan"`) {
 			t.Fatalf("an environment variable talked the gate into the plan scope: %s", line)
 		}
@@ -355,13 +425,13 @@ func TestNoFlagOrVariableReopensThePlanScope(t *testing.T) {
 func TestNothingWritesTheUnitKindAndTheRecordsThatDoStillRead(t *testing.T) {
 	r := throwawayRepo(t)
 	add(t, r, "RS256 over HS256")
-	appendLine(t, r.log, `{"id":"01KZ34GQZ7T0WZPT4BBBMN93EK","kind":"unit","slug":"an-unstamped-unit",`+
+	appendLine(t, r, r.log, `{"id":"01KZ34GQZ7T0WZPT4BBBMN93EK","kind":"unit","slug":"an-unstamped-unit",`+
 		`"scope":"plan","at":"2026-08-01T10:00:00Z","about":["auth"],`+
 		`"title":"A unit written before the stamp existed","origin":{"plan":"demo"}}`)
-	appendLine(t, r.log, `{"version":2,"id":"01KZ4N1PM38APVV93MG3J38BD2","kind":"unit","slug":"a-v2-unit",`+
+	appendLine(t, r, r.log, `{"version":2,"id":"01KZ4N1PM38APVV93MG3J38BD2","kind":"unit","slug":"a-v2-unit",`+
 		`"scope":"repo","at":"2026-08-02T10:00:00Z","about":["auth"],`+
 		`"title":"A unit written while the kind was still current","origin":{"plan":"demo"}}`)
-	before := lines(t, r.log)
+	before := lines(t, r, r.log)
 
 	res := run(t, r, "add", "--kind", "unit", "--title", "One more unit", "--about", "auth")
 	if res.code == 0 {
@@ -394,7 +464,7 @@ func TestNothingWritesTheUnitKindAndTheRecordsThatDoStillRead(t *testing.T) {
 		t.Errorf("and the set it may use instead, with `unit` no longer in it, got %q",
 			refusal.Problems[0].Message)
 	}
-	if after := lines(t, r.log); len(after) != len(before) {
+	if after := lines(t, r, r.log); len(after) != len(before) {
 		t.Fatalf("a refused add must write nothing, log went from %d to %d lines", len(before), len(after))
 	}
 
@@ -418,7 +488,7 @@ func TestNothingWritesTheUnitKindAndTheRecordsThatDoStillRead(t *testing.T) {
 func TestAMistypedFlagIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 	r := throwawayRepo(t)
 	add(t, r, "RS256 over HS256")
-	before := lines(t, r.log)
+	before := lines(t, r, r.log)
 
 	res := run(t, r, "add", "--kind", "decision", "--titel", "Typo", "--about", "auth")
 	if res.code == 0 {
@@ -427,7 +497,7 @@ func TestAMistypedFlagIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 	if !strings.Contains(res.stderr, "titel") {
 		t.Errorf("the refusal should name the flag it did not recognise, got %q", res.stderr)
 	}
-	if after := lines(t, r.log); len(after) != len(before) {
+	if after := lines(t, r, r.log); len(after) != len(before) {
 		t.Fatalf("a refused add must write nothing, log went from %d to %d lines", len(before), len(after))
 	}
 }
@@ -488,9 +558,9 @@ func TestValidateJudgesV1DeclinesTheUnknownAndComplainsOnlyAboutTheBroken(t *tes
 	// Written by some later binary: unknown version, and every field wrong by
 	// today's rules. If the sweep ever fell back to the current schema this
 	// line would produce a fistful of problems.
-	appendLine(t, r.log, `{"version":99,"id":"01KZ34725V37YX845RTVPC7N0E","kind":"unheard-of",`+
+	appendLine(t, r, r.log, `{"version":99,"id":"01KZ34725V37YX845RTVPC7N0E","kind":"unheard-of",`+
 		`"slug":"Not A Slug","scope":"galaxy","at":"whenever","about":[],"title":""}`)
-	appendLine(t, r.log, `{"kind":"decision",`)
+	appendLine(t, r, r.log, `{"kind":"decision",`)
 
 	out, code := validateOne(t, r)
 	rep := out.Reports[0]
@@ -524,7 +594,7 @@ func TestValidateJudgesV1DeclinesTheUnknownAndComplainsOnlyAboutTheBroken(t *tes
 func TestAnUnknownVersionAloneDoesNotFailTheSweep(t *testing.T) {
 	r := throwawayRepo(t)
 	add(t, r, "RS256 over HS256")
-	appendLine(t, r.log, `{"version":99,"id":"01KZ34725V37YX845RTVPC7N0E","kind":"unheard-of",`+
+	appendLine(t, r, r.log, `{"version":99,"id":"01KZ34725V37YX845RTVPC7N0E","kind":"unheard-of",`+
 		`"slug":"Not A Slug","scope":"galaxy","at":"whenever","about":[],"title":""}`)
 
 	out, code := validateOne(t, r)
@@ -556,19 +626,16 @@ func TestUnstampedRecordsAreJudgedAsV1AndLeftAlone(t *testing.T) {
 
 	// No version key, plus a key this binary has never heard of: exactly what
 	// a log written before and after this change looks like from here.
-	appendLine(t, r.log, `{"id":"01KZ2WHVK0GPM4XWVFFKYXGMHQ","kind":"decision","slug":"unstamped",`+
+	appendLine(t, r, r.log, `{"id":"01KZ2WHVK0GPM4XWVFFKYXGMHQ","kind":"decision","slug":"unstamped",`+
 		`"scope":"plan","at":"2026-08-01T10:00:00Z","about":["auth"],`+
 		`"title":"Written before the stamp","confidence":"high","origin":{"plan":"demo"}}`)
-	appendLine(t, r.log, `{"kind":"edge","type":"relates_to","from":"01KZ2WHVK0GPM4XWVFFKYXGMHQ",`+
+	appendLine(t, r, r.log, `{"kind":"edge","type":"relates_to","from":"01KZ2WHVK0GPM4XWVFFKYXGMHQ",`+
 		`"to":"01KZ34725V37YX845RTVPC7N0E","at":"2026-08-01T10:00:00Z"}`)
-	appendLine(t, r.log, `{"version":1,"id":"01KZ34725V37YX845RTVPC7N0E","kind":"adr","slug":"stamped",`+
+	appendLine(t, r, r.log, `{"version":1,"id":"01KZ34725V37YX845RTVPC7N0E","kind":"adr","slug":"stamped",`+
 		`"scope":"plan","at":"2026-08-01T10:05:00Z","about":["auth"],"title":"Written after it",`+
 		`"origin":{"plan":"demo"}}`)
 
-	before, err := os.ReadFile(r.log)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := logText(t, r, r.log)
 
 	out, code := validateOne(t, r)
 	if !out.OK || code != 0 {
@@ -608,17 +675,14 @@ func TestUnstampedRecordsAreJudgedAsV1AndLeftAlone(t *testing.T) {
 		}
 	}
 
-	after, err := os.ReadFile(r.log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(after) != string(before) {
+	after := logText(t, r, r.log)
+	if after != before {
 		t.Fatal("reading the log rewrote it; nothing already written may be touched")
 	}
 	// The bytes are the proof: printing a resolved 1 must not put one on disk,
 	// and neither must a version bump reach back and restamp what is already
 	// there.
-	if !strings.Contains(string(after), `{"id":"01KZ2WHVK0GPM4XWVFFKYXGMHQ","kind":"decision"`) {
+	if !strings.Contains(after, `{"id":"01KZ2WHVK0GPM4XWVFFKYXGMHQ","kind":"decision"`) {
 		t.Fatalf("the unstamped line no longer looks unstamped:\n%s", after)
 	}
 	if !strings.Contains(string(after), `"version":1,"id":"01KZ34725V37YX845RTVPC7N0E"`) {
@@ -656,8 +720,11 @@ func TestInitCreatesTheRepoLogAndRefusesThePlanScope(t *testing.T) {
 	if out.Scope != "repo" || !out.Created {
 		t.Errorf("expected a freshly created repo-scope log, got %+v", out)
 	}
-	if _, err := os.Stat(r.log); err != nil {
-		t.Fatalf("the log is not on disk: %v", err)
+	if _, err := os.Stat(r.store); err != nil {
+		t.Fatalf("the store the log lives in is not on disk: %v", err)
+	}
+	if _, err := os.Stat(r.log); !os.IsNotExist(err) {
+		t.Fatalf("the log is rows in the store, so no file may be left at its path: %v", err)
 	}
 
 	res = run(t, r, "init", "--scope", "plan")
@@ -680,7 +747,8 @@ func TestInitCreatesTheRepoLogAndRefusesThePlanScope(t *testing.T) {
 // that narrows a closed set has to narrow this list with it. Otherwise the tool
 // goes on advertising a value it refuses.
 func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
-	// `kinds` reads no log and takes no flags, so it is run bare.
+	// `kinds` reads no log, so it is run bare: with no --store to point it
+	// anywhere, it still has nothing to open.
 	cmd := exec.Command(memoryBin, "kinds")
 	stdout, err := cmd.Output()
 	if err != nil {
@@ -877,14 +945,14 @@ func TestAStateEdgeIsWrittenOnlyWhenSomethingJustifiesIt(t *testing.T) {
 			ok[k] = true
 		}
 		for kind, id := range targets {
-			before := len(lines(t, r.log))
+			before := len(lines(t, r, r.log))
 			res := runBare(t, r, "link", "--type", typ, "--from", source, "--to", id)
 
 			if ok[kind] {
 				if res.code != 0 {
 					t.Errorf("%s → %s must be accepted: exit %d\n%s%s", typ, kind, res.code, res.stdout, res.stderr)
 				}
-				if after := len(lines(t, r.log)); after != before+1 {
+				if after := len(lines(t, r, r.log)); after != before+1 {
 					t.Errorf("%s → %s should have appended one line, went from %d to %d", typ, kind, before, after)
 				}
 				continue
@@ -905,7 +973,7 @@ func TestAStateEdgeIsWrittenOnlyWhenSomethingJustifiesIt(t *testing.T) {
 					t.Errorf("%s → %s: the refusal must name %q as allowed, got %q", typ, kind, k, msg)
 				}
 			}
-			if after := len(lines(t, r.log)); after != before {
+			if after := len(lines(t, r, r.log)); after != before {
 				t.Errorf("a refused link wrote to the log: %d lines became %d", before, after)
 			}
 		}
@@ -935,7 +1003,7 @@ func TestAWrittenStateEdgeIsStampedAndReachable(t *testing.T) {
 		t.Fatalf("link --type met: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
 
-	got := lines(t, r.log)
+	got := lines(t, r, r.log)
 	if len(got) != 3 {
 		t.Fatalf("expected two entries and one edge, got %d lines", len(got))
 	}
@@ -998,7 +1066,7 @@ func TestValidateToleratesAStateEdgeTheWritePathWouldRefuse(t *testing.T) {
 
 	// Hand-written, because the write path is exactly what will not produce it:
 	// this is what an edge from a binary that predates the rule looks like.
-	appendLine(t, r.log, `{"version":2,"kind":"edge","type":"met","from":"`+objective+`",`+
+	appendLine(t, r, r.log, `{"version":2,"kind":"edge","type":"met","from":"`+objective+`",`+
 		`"to":"`+other+`","at":"2026-08-03T10:00:00Z"}`)
 
 	out, code := validateOne(t, r)
@@ -1031,18 +1099,18 @@ func TestAddWritesWithoutAPlanAndStillTakesItFromTheEnvironment(t *testing.T) {
 	}
 	// Absent, not empty: `origin.plan` is omitempty, so a record belonging to the
 	// repository carries no plan key at all rather than one holding "".
-	if line := lines(t, r.log)[0]; strings.Contains(line, `"plan"`) {
+	if line := lines(t, r, r.log)[0]; strings.Contains(line, `"plan"`) {
 		t.Errorf("a plan-less record must carry no plan key: %s", line)
 	}
 
 	// AI_KIT_PLAN is the other way to say it, and it has to be enough on its own.
-	cmd := exec.Command(memoryBin, "add", "--kind", "decision", "--title", "From the environment",
+	cmd := exec.Command(memoryBin, "add", "--store", r.store, "--kind", "decision", "--title", "From the environment",
 		"--about", "auth", "--dir", r.root)
 	cmd.Env = append(os.Environ(), "HOME="+r.home, "AI_KIT_AUTHOR=test-suite", "AI_KIT_PLAN=from-env")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("AI_KIT_PLAN should be enough: %v\n%s", err, out)
 	}
-	if got := lines(t, r.log)[1]; !strings.Contains(got, `"plan":"from-env"`) {
+	if got := lines(t, r, r.log)[1]; !strings.Contains(got, `"plan":"from-env"`) {
 		t.Errorf("the record should carry the plan from the environment: %s", got)
 	}
 
@@ -1123,7 +1191,7 @@ func TestAPreferenceIsWrittenWithoutAnAnchorWhereAGotchaIsRefused(t *testing.T) 
 	if code, _ := errorCode(t, res); code != "invalid_record" {
 		t.Errorf("expected invalid_record, got %q", code)
 	}
-	if got := lines(t, r.log); len(got) != 1 {
+	if got := lines(t, r, r.log); len(got) != 1 {
 		t.Fatalf("the refused gotcha must have written nothing, log has %d lines", len(got))
 	}
 }
@@ -1148,7 +1216,7 @@ func TestAddWithNoPlanStillRefusesEverythingElseItRefused(t *testing.T) {
 			t.Errorf("%s: expected invalid_record, got %q", name, code)
 		}
 	}
-	if got := readFile(t, r.log); got != "" {
+	if got := logText(t, r, r.log); got != "" {
 		t.Errorf("a refused add must write nothing, got %q", got)
 	}
 }
@@ -1313,7 +1381,7 @@ func TestRecordsFromDifferentPlansCanBeLinked(t *testing.T) {
 	if res.code != 0 {
 		t.Fatalf("linking across plans must work: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
-	got := lines(t, r.log)
+	got := lines(t, r, r.log)
 	if len(got) != 3 {
 		t.Fatalf("expected the edge to be appended, got %d lines", len(got))
 	}
@@ -1387,7 +1455,7 @@ func TestPromoteToRepoIsGoneAndToUserStillCarriesTheGraph(t *testing.T) {
 	if len(out.Promoted) != 2 || out.EdgesCopied != 1 {
 		t.Fatalf("both records and the edge between them should move: %+v", out)
 	}
-	promoted := lines(t, r.user)
+	promoted := lines(t, r, r.user)
 	if len(promoted) != 3 {
 		t.Fatalf("expected two entries and one edge at the user level, got %d lines", len(promoted))
 	}
@@ -1410,7 +1478,7 @@ func TestPromoteToRepoIsGoneAndToUserStillCarriesTheGraph(t *testing.T) {
 func TestPromotingAV1RecordKeepsItsVersion(t *testing.T) {
 	r := throwawayRepo(t)
 	add(t, r, "Something current") // so the log exists
-	appendLine(t, r.log, `{"version":1,"id":"01KZ34725V37YX845RTVPC7N0E","kind":"adr","slug":"old",`+
+	appendLine(t, r, r.log, `{"version":1,"id":"01KZ34725V37YX845RTVPC7N0E","kind":"adr","slug":"old",`+
 		`"scope":"plan","at":"2026-08-01T10:05:00Z","about":["auth"],"title":"Written under version 1",`+
 		`"origin":{"plan":"demo"}}`)
 
@@ -1418,7 +1486,7 @@ func TestPromotingAV1RecordKeepsItsVersion(t *testing.T) {
 	if res.code != 0 {
 		t.Fatalf("promote: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
-	line := lines(t, r.user)[0]
+	line := lines(t, r, r.user)[0]
 	if !strings.HasPrefix(line, `{"version":1,`) {
 		t.Errorf("the promoted copy must still declare version 1: %s", line)
 	}
@@ -1503,7 +1571,7 @@ func gitBackedRepo(t *testing.T) repo {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git is not installed: %v", err)
 	}
-	r := repo{root: t.TempDir(), home: t.TempDir()}
+	r := repo{root: t.TempDir(), home: t.TempDir(), store: throwawayStore(t)}
 	git(t, r.root, "init", "-q")
 	r.log = filepath.Join(r.root, ".ai-kit", "memory.jsonl")
 	r.user = filepath.Join(r.home, ".ai-kit", "memory.jsonl")
@@ -1523,21 +1591,21 @@ func readFile(t *testing.T, path string) string {
 // `count: 0` against a path that did not exist and leave nothing behind, which
 // meant the directory — and the .gitignore that keeps it out of git — only
 // arrived with the first record somebody wrote.
-func TestAReadAgainstAFreshRepoCreatesTheLog(t *testing.T) {
+func TestAReadAgainstAFreshRepoCreatesTheDirectoryAndItsSentinel(t *testing.T) {
 	r := throwawayRepo(t)
-	if _, err := os.Stat(r.log); !os.IsNotExist(err) {
-		t.Fatalf("the repo must start with no log: %v", err)
+	if _, err := os.Stat(filepath.Dir(r.log)); !os.IsNotExist(err) {
+		t.Fatalf("the repo must start with no .ai-kit: %v", err)
 	}
 
 	res := run(t, r, "query", "--kind", "hypothesis")
 	if res.code != 0 {
 		t.Fatalf("query: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
-	if _, err := os.Stat(r.log); err != nil {
-		t.Fatalf("a read must leave the log behind: %v", err)
-	}
 	if got := readFile(t, filepath.Join(r.root, ".ai-kit", ".gitignore")); got != "*\n" {
 		t.Errorf("the sentinel must be exactly `*`, got %q", got)
+	}
+	if _, err := os.Stat(r.log); !os.IsNotExist(err) {
+		t.Fatalf("the records live in the store, so nothing may be left at %s: %v", r.log, err)
 	}
 }
 
@@ -1591,7 +1659,7 @@ func TestInitializationIsIdempotentAndClobbersNothing(t *testing.T) {
 	}
 
 	sentinel := filepath.Join(r.root, ".ai-kit", ".gitignore")
-	appendLine(t, sentinel, "!keep-me")
+	appendToFile(t, sentinel, "!keep-me")
 	id := add(t, r, "RS256 over HS256")
 
 	if res := run(t, r, "query"); res.code != 0 {
@@ -1600,7 +1668,7 @@ func TestInitializationIsIdempotentAndClobbersNothing(t *testing.T) {
 	if got := readFile(t, sentinel); !strings.Contains(got, "!keep-me") {
 		t.Errorf("an edited sentinel must survive, got %q", got)
 	}
-	if got := readFile(t, r.log); !strings.Contains(got, id) {
+	if got := logText(t, r, r.log); !strings.Contains(got, id) {
 		t.Errorf("the record %s is gone from the log:\n%s", id, got)
 	}
 
@@ -1665,19 +1733,24 @@ func TestAReadAgainstAnUnwritableRepoStillAnswersAndAWriteRefuses(t *testing.T) 
 	}
 }
 
-// A location that could not be created is still validated, and the sweep still
-// says it fell short.
+// A location that could not be created is still validated, and the sweep that
+// tried to create it still says it fell short.
 //
 // Two claims that have to stay apart. The log may be sitting right there, records
 // and all — an .ai-kit/ nobody can write to reads fine — so `ok` keeps meaning what
 // it means everywhere else, whether the records are well-formed. But a sweep that
 // covered less than it was asked to has not passed, and a caller that reads only
 // the exit code has to hear that: a JSON key nobody parses is not a report.
-func TestValidateAllKeepsALocationItCouldNotCreateAndSaysItFellShort(t *testing.T) {
+//
+// Which sweep that is has moved. --all takes its set from the store and creates
+// nothing, so nothing there can fall short; the one-log sweep still resolves a
+// location on disk and still creates it, and that is where the second claim now
+// lives.
+func TestValidateKeepsALocationItCouldNotCreateAndSaysItFellShort(t *testing.T) {
 	r := throwawayRepo(t)
 	id := add(t, r, "RS256 over HS256")
-	// A log directory an older binary left behind: it has the log but not the
-	// sentinel, so initialization has something to write and cannot.
+	// A log directory an older binary left behind: it has the sentinel removed,
+	// so initialization has something to write and cannot.
 	if err := os.Remove(filepath.Join(r.root, ".ai-kit", ".gitignore")); err != nil {
 		t.Fatal(err)
 	}
@@ -1687,8 +1760,11 @@ func TestValidateAllKeepsALocationItCouldNotCreateAndSaysItFellShort(t *testing.
 	if !out.OK {
 		t.Errorf("a log that reads must still be judged on its records alone: %+v", out.Reports)
 	}
-	if code == 0 {
-		t.Error("a sweep that could not create a location it was asked about must not exit 0")
+	if code != 0 {
+		t.Errorf("--all creates nothing, so an unwritable location cannot make it fall short: exit %d", code)
+	}
+	if len(out.InitFailed) != 0 {
+		t.Errorf("--all reports nothing it could not create, because it creates nothing: %v", out.InitFailed)
 	}
 	var found bool
 	for _, rep := range out.Reports {
@@ -1700,9 +1776,17 @@ func TestValidateAllKeepsALocationItCouldNotCreateAndSaysItFellShort(t *testing.
 		}
 	}
 	if !found {
-		t.Fatalf("--all dropped the log it could not create: %+v", out.Reports)
+		t.Fatalf("--all dropped the log whose location it could not create: %+v", out.Reports)
 	}
-	if len(out.InitFailed) == 0 {
+
+	one, code := validateOne(t, r)
+	if !one.OK {
+		t.Errorf("a log that reads must still be judged on its records alone: %+v", one.Reports)
+	}
+	if code == 0 {
+		t.Error("a sweep that could not create the location it was asked about must not exit 0")
+	}
+	if len(one.InitFailed) == 0 {
 		t.Error("the failure to create must be reported rather than swallowed")
 	}
 }
@@ -1780,10 +1864,10 @@ func addBare(t *testing.T, r repo, kind, title string) string {
 // kindsIn is what a log holds, read back as JSON rather than matched as a
 // substring: a kind named inside somebody's body would otherwise pass for a
 // record of that kind.
-func kindsIn(t *testing.T, path string) []string {
+func kindsIn(t *testing.T, r repo, path string) []string {
 	t.Helper()
 	var out []string
-	for _, l := range lines(t, path) {
+	for _, l := range lines(t, r, path) {
 		var rec struct {
 			Kind string `json:"kind"`
 		}
@@ -1818,7 +1902,7 @@ func TestPromoteByKindTakesTheClassWithoutBeingGivenAnID(t *testing.T) {
 	if len(out.Promoted) != 2 {
 		t.Fatalf("both preferences should have travelled: %+v", out)
 	}
-	got := kindsIn(t, r.user)
+	got := kindsIn(t, r, r.user)
 	if len(got) != 2 {
 		t.Fatalf("the user log should hold exactly the two preferences, got %v", got)
 	}
@@ -1842,7 +1926,7 @@ func TestPromoteRefusesAKindItWillNotSweep(t *testing.T) {
 	// A destination with something in it, so "nothing was written" is a claim
 	// about bytes rather than about a file that never existed.
 	promote(t, r, "--ids", id, "--to", "user")
-	before := readFile(t, r.user)
+	before := logText(t, r, r.user)
 
 	for _, kind := range []string{"decision", "notakind"} {
 		res := run(t, r, "promote", "--kind", kind, "--to", "user")
@@ -1874,7 +1958,7 @@ func TestPromoteRefusesAKindItWillNotSweep(t *testing.T) {
 			}
 		}
 	}
-	if after := readFile(t, r.user); after != before {
+	if after := logText(t, r, r.user); after != before {
 		t.Errorf("a refused promotion must write nothing:\nbefore %q\nafter  %q", before, after)
 	}
 	sweepValidates(t, r)
@@ -1892,13 +1976,13 @@ func TestPromoteUnionsKindsAndIDsAndRefusesNeither(t *testing.T) {
 	if len(out.Promoted) != 2 {
 		t.Fatalf("the union of both selections should travel: %+v", out)
 	}
-	landed := strings.Join(lines(t, r.user), "\n")
+	landed := strings.Join(lines(t, r, r.user), "\n")
 	for _, id := range []string{pref, decision} {
 		if !strings.Contains(landed, id) {
 			t.Errorf("%s never reached the user log:\n%s", id, landed)
 		}
 	}
-	if got := kindsIn(t, r.user); len(got) != 2 {
+	if got := kindsIn(t, r, r.user); len(got) != 2 {
 		t.Errorf("the adr was in neither selection: %v", got)
 	}
 
@@ -1928,7 +2012,7 @@ func TestPromotingAnADRCarriesTheDecisionThatFedIt(t *testing.T) {
 	if len(out.Promoted) != 2 || out.EdgesCopied != 1 {
 		t.Fatalf("the reasoning should have come along with the record: %+v", out)
 	}
-	landed := lines(t, r.user)
+	landed := lines(t, r, r.user)
 	if len(landed) != 3 {
 		t.Fatalf("expected two entries and the edge between them, got %d lines:\n%s",
 			len(landed), strings.Join(landed, "\n"))
@@ -1968,7 +2052,7 @@ func TestPromoteNamesWhatSatAtTheBorder(t *testing.T) {
 	if out.EdgesCopied != 1 {
 		t.Errorf("only the edge with both ends at the target travels, got %d", out.EdgesCopied)
 	}
-	if strings.Contains(strings.Join(lines(t, r.user), "\n"), deviation) {
+	if strings.Contains(strings.Join(lines(t, r, r.user), "\n"), deviation) {
 		t.Error("the border is reported, not promoted: two hops is the closure this refused to be")
 	}
 	sweepValidates(t, r)
@@ -1993,7 +2077,7 @@ func TestOneHopWillNotCarryAnObjectiveAndSaysSo(t *testing.T) {
 	if len(out.Promoted) != 2 || out.EdgesCopied != 1 {
 		t.Fatalf("the adr and the decision travel, with the edge between them: %+v", out)
 	}
-	landed := strings.Join(lines(t, r.user), "\n")
+	landed := strings.Join(lines(t, r, r.user), "\n")
 	if !strings.Contains(landed, decision) {
 		t.Errorf("the reasoning must still come along:\n%s", landed)
 	}
@@ -2036,7 +2120,7 @@ func TestOneHopWillNotCarryAGotchaAndSaysSo(t *testing.T) {
 	if len(out.Promoted) != 2 || out.EdgesCopied != 1 {
 		t.Fatalf("the adr and the decision travel, with the edge between them: %+v", out)
 	}
-	landed := strings.Join(lines(t, r.user), "\n")
+	landed := strings.Join(lines(t, r, r.user), "\n")
 	if !strings.Contains(landed, decision) {
 		t.Errorf("the reasoning must still come along:\n%s", landed)
 	}
@@ -2078,9 +2162,9 @@ func TestDryRunPrintsTheSameReportAndWritesNothing(t *testing.T) {
 	// Now against a destination that exists, so "nothing was written" is a claim
 	// about bytes.
 	promote(t, r, "--ids", adr, "--to", "user")
-	before := readFile(t, r.user)
+	before := logText(t, r, r.user)
 	preview = promote(t, r, "--kind", "preference", "--to", "user", "--dry-run")
-	if after := readFile(t, r.user); after != before {
+	if after := logText(t, r, r.user); after != before {
 		t.Fatalf("--dry-run wrote to the destination:\nbefore %q\nafter  %q", before, after)
 	}
 
@@ -2092,7 +2176,7 @@ func TestDryRunPrintsTheSameReportAndWritesNothing(t *testing.T) {
 	if fmt.Sprintf("%+v", preview) != fmt.Sprintf("%+v", real) {
 		t.Errorf("the preview and the run it previewed must report the same thing:\n%+v\n%+v", preview, real)
 	}
-	if !strings.Contains(readFile(t, r.user), pref) {
+	if !strings.Contains(logText(t, r, r.user), pref) {
 		t.Error("dropping --dry-run must actually perform the promotion")
 	}
 	sweepValidates(t, r)
@@ -2112,10 +2196,10 @@ func TestPromotingTwiceAppendsNothingTheSecondTime(t *testing.T) {
 	if len(first.Promoted) != 3 || first.EdgesCopied != 1 {
 		t.Fatalf("the preference, the adr and the decision it reached should all travel: %+v", first)
 	}
-	before := readFile(t, r.user)
+	before := logText(t, r, r.user)
 
 	second := promote(t, r, "--kind", "preference,adr", "--to", "user")
-	if after := readFile(t, r.user); after != before {
+	if after := logText(t, r, r.user); after != before {
 		t.Fatalf("the second run appended something:\nbefore %q\nafter  %q", before, after)
 	}
 	if len(second.Promoted) != 0 || second.EdgesCopied != 0 {
@@ -2138,7 +2222,8 @@ func TestTwoReposWithOneNameStayApartInTheUserLog(t *testing.T) {
 	base := t.TempDir()
 
 	const remote = "https://example.invalid/somebody/api.git"
-	remoted := repo{root: filepath.Join(base, "with-a-remote", "api"), home: home}
+	store := throwawayStore(t)
+	remoted := repo{root: filepath.Join(base, "with-a-remote", "api"), home: home, store: store}
 	if err := os.MkdirAll(remoted.root, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2147,7 +2232,7 @@ func TestTwoReposWithOneNameStayApartInTheUserLog(t *testing.T) {
 
 	// No real repository here, only the .git entry the tool looks for — which is
 	// also the case `git remote get-url` has to fail on rather than answer.
-	bare := repo{root: filepath.Join(base, "without-one", "api"), home: home}
+	bare := repo{root: filepath.Join(base, "without-one", "api"), home: home, store: store}
 	if err := os.MkdirAll(filepath.Join(bare.root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2167,7 +2252,7 @@ func TestTwoReposWithOneNameStayApartInTheUserLog(t *testing.T) {
 
 	identities := map[string]string{}
 	labels := map[string]string{}
-	for _, l := range lines(t, remoted.user) {
+	for _, l := range lines(t, remoted, remoted.user) {
 		var rec struct {
 			ID     string `json:"id"`
 			Origin struct {

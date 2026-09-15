@@ -69,7 +69,7 @@ child is worth opening, which is the only thing the descent needs from you.
 ## The memory log
 
 State lives in an append-only log, read and written only through the `memory`
-CLI. Never edit the `.jsonl` by hand.
+CLI. Never edit the log by hand.
 
 `memory kinds` lists every valid record kind and edge type and reports the count
 at which `query` starts withholding; `memory --help` lists the flags each command

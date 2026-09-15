@@ -174,7 +174,7 @@ skill; a human invokes it, and it records what they settle and stops.
    the log. This skill launches no other subagent and defines none.
 12. **Read-only over the repository, with the log as the single exception.** No
     file is edited, no `docs/` is created, no scratch file is left behind. Never
-    edit the `.jsonl` by hand.
+    edit the log by hand.
 13. **Every preference read that reaches the user log — `--scope user` or
     `--scope both` — carries an explicit `--limit`, and the aggregate is computed
     from the records rather than from `count`.** Past the threshold `memory kinds`
@@ -198,7 +198,7 @@ skill; a human invokes it, and it records what they settle and stops.
 ## The memory log
 
 State lives in an append-only log, read and written only through the `memory`
-CLI. Never edit the `.jsonl` by hand.
+CLI. Never edit the log by hand.
 
 `memory kinds` lists every valid record kind and edge type and reports the count
 at which `query` starts withholding; `memory --help` lists the flags each command
@@ -383,12 +383,11 @@ Read five things out of it, per scope:
   `"at least one tag is required; without it the entry is unreachable by any
   filtered query"`, exit 1 — so under `--kind preference` no rows and no
   preferences are the same state, and any row at all means at least one preference
-  exists. **That is the signal, and nothing about the file on disk is.** Every
-  `memory` command creates the location it resolves, a read as much as a write, so
-  `.ai-kit/memory.jsonl` exists from the moment of the first query whether or not
-  anything was ever written into it, and its size is a proxy that lies the same
-  way. On a repository the loop has worked in without ever running this skill, the
-  empty branch is the ordinary answer rather than the exotic one.
+  exists. **That is the signal, and nothing on disk is.** Every `memory` command
+  creates the location it resolves, a read as much as a write, so `.ai-kit/` exists
+  from the moment of the first query whether or not anything was ever written for
+  this repository. On a repository the loop has worked in without ever running this
+  skill, the empty branch is the ordinary answer rather than the exotic one.
 - **`live`** — the record that currently answers for that area: its `id`, `title`
   and `at`. **`live: null` is not the same as an absent area**: it means every
   record carrying that tag has been settled by something that supersedes or answers

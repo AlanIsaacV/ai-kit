@@ -2,6 +2,76 @@
 
 ## Unreleased
 
+### `memory` reads and writes the store, and discovery is gone
+
+The store built beside the logs is the backend now. `Store.Read` and
+`Store.Append` keep their signatures and talk to SQLite, no `.jsonl` is written
+again, and the glob that used to find the logs is deleted. The rule the whole
+change holds to is that **"this log" becomes "the rows carrying this
+`source_path`"**, so every command answers what it answered the day before. One
+exception was chosen deliberately and is named below.
+
+```bash
+memory add --kind decision --title "RS256 over HS256" --about auth   # into /srv/projects/.ai-kit/memory.db
+memory query --store /tmp/throwaway.db --id <id>                     # into any other store
+memory state --all                                                   # every source_path the store holds
+```
+
+- **"This log" is the rows carrying this `source_path`.** That is what keeps
+  `link` and `validate` refusing an edge whose other end is in another
+  repository, exactly as separate files used to: each builds its known-id set
+  from one path's rows and nothing else. REJECTED: keying on `repo_id`, which
+  would have made a cross-repo edge valid as a side effect of changing where the
+  bytes live. Whether such an edge should be *allowed* — and what `--scope`,
+  `promote` and per-record anchor roots mean once it is — is a decision of its
+  own, and this change deliberately does not take it.
+- **There is no silent default store.** A `Read` or an `Append` against a store
+  nobody configured is a loud error naming `memory.UseStore`; the default path
+  lives on `--store`, which `parseFlags` binds for all 13 subcommands and no
+  subcommand has to remember. REJECTED: presetting the library to
+  `/srv/projects/.ai-kit/memory.db`, where a test that forgot to point somewhere
+  else would append to this host's memory — permanently, since the table is
+  insert-only and nothing ever deletes a row.
+- **A new row's `line_number` is `MAX(line_number) + 1` for its `source_path`,
+  computed inside the insert's own transaction.** There is no file to append to,
+  so there is no end of one to write at. REJECTED: a counter of its own, a second
+  source of truth for something the table already knows. The advisory `flock` that
+  serialized appends has nothing left to lock and goes with the two `lock_*.go`
+  files under `internal/memory`; the transaction takes SQLite's write lock as it
+  begins — `_txlock=immediate` — which is what two concurrent `add` runs wait on.
+- **A read spanning `source_path` deduplicates by `(id, scope)`, never by `id`
+  alone.** 53 ids appear more than once in the store today, from two unrelated
+  causes. 39 are promotion: one `scope=repo` row and one `scope=user` row whose
+  text genuinely differs, and `--scope` is what selects between them. The other 14
+  are the same id, the same scope and the same `repo_id` under a repository's log
+  and under one of its git worktrees, and those two rows are byte-identical, so
+  nothing has to be chosen. REJECTED: deduplicating by `id`, which would collapse
+  the 39 promoted pairs into one record each.
+- **`validate --all` validates every `source_path` in the store**, each as its own
+  log with its own known-id set — 34 of them today. This is the one place the
+  change alters behaviour rather than only the backend, and it was chosen knowing
+  it: `--all` resolved two fixed locations relative to the current directory, so
+  it validated at most 2 logs while its help text promised "every log reachable
+  from here". It creates nothing now either, so `init_failed` is the one-log
+  sweep's to report and `--all` cannot fall short of a location it never tried to
+  make.
+- **`DiscoverLogs`, `Roots`, `MEMORY_ROOTS`, `defaultRoot` and `maxRootDepth` are
+  gone, and `cmd/memory-import` with them.** After the cutover the importer has no
+  job, and it was discovery's only other caller; `state --all` and `validate
+  --all` take their set from `SELECT DISTINCT source_path`, which is why neither
+  touches the filesystem at all. **The final import therefore has to be run from a
+  binary built at the commit before this one.** There is no `memory-import` to
+  build from here, and a `memory` built from here reads the store rather than the
+  logs it would be importing.
+- **`<repo>/.ai-kit/` and its `.gitignore` are still created, by a read as much as
+  by a write; the empty `memory.jsonl` is not.** The directory is where the loop's
+  drafts live and the sentinel is what keeps them out of `git status`, so first
+  contact still leaves both behind and no repository's own `.gitignore` is
+  touched. REJECTED: writing an empty `memory.jsonl` beside them so that a
+  directory listing looks the way it used to — a file nothing reads and nothing
+  writes is not compatibility, it is a second answer to "where are the records"
+  for somebody to find later and believe.
+
 ### `memory-import`: every log on this host in one store, with its repository
 
 The move from one log per repository to one store holds a single detail that
@@ -15,7 +85,7 @@ changes here.
 ```bash
 go build -o bin/memory-import ./cmd/memory-import
 bin/memory-import                      # builds or brings up to date /srv/projects/.ai-kit/memory.db
-bin/memory-import --store /tmp/m.db    # anywhere else; MEMORY_ROOTS and HOME pick the logs
+bin/memory-import --store /tmp/m.db    # anywhere else; the same logs either way
 ```
 
 - **One row per log line, verbatim**, with the columns that address it:
@@ -72,8 +142,8 @@ bin/memory-import --store /tmp/m.db    # anywhere else; MEMORY_ROOTS and HOME pi
   mandatory environment variable.
 - **A binary of its own, not a subcommand.** REJECTED: `memory import`, a command
   with one use that every agent reading the usage text would pay for. Discovery is
-  `memory.DiscoverLogs` and `memory.Roots`, unchanged, so the importer reads
-  exactly the logs `state --all` reads.
+  the library's, unchanged, so the importer reads exactly the logs `state --all`
+  reads.
 - **`modernc.org/sqlite` v1.58.0**, the module's first dependency: pure Go, so no
   cgo and no C toolchain. REJECTED: `github.com/mattn/go-sqlite3`, which needs
   both.

@@ -1,12 +1,11 @@
-// Package gitcmd is the whole of the tool's shell-out to the git binary, shared by
-// every command under tools/memory/cmd.
+// Package gitcmd is the whole of the tool's shell-out to the git binary, and
+// cmd/memory is the whole of its caller.
 //
-// It sits under cmd/ on purpose: it is still the CLI layer, just the part of it
-// more than one binary needs. internal/memory resolves a repository root by
-// looking for a .git entry and never invokes the binary, which is what keeps the
-// library testable without one installed. One definition here, rather than a
-// copy per binary, is what makes the identity memory-import stores beside an old
-// line the same identity memory stamps into a new one.
+// It sits under cmd/ on purpose: shelling out is the CLI layer's business.
+// internal/memory resolves a repository root by looking for a .git entry and
+// never invokes the binary, which is what keeps the library testable without one
+// installed. A package with a single caller is what is left of a package with
+// two: memory-import was the other, and the cutover to the store deleted it.
 package gitcmd
 
 import (
