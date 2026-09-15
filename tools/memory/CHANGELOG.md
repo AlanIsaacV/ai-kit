@@ -2,6 +2,95 @@
 
 ## Unreleased
 
+### `memory-import`: every log on this host in one store, with its repository
+
+The move from one log per repository to one store holds a single detail that
+cannot be recovered later: 888 records were written before `origin.repo_id`
+existed, and the only thing that says which repository each came from is the path
+of the log it sits in. That stays true only while the logs stay where they are. So
+the store is built first, next to the logs, before anything reads from it —
+`memory` itself still reads and writes the JSONL logs, and nothing about it
+changes here.
+
+```bash
+go build -o bin/memory-import ./cmd/memory-import
+bin/memory-import                      # builds or brings up to date /srv/projects/.ai-kit/memory.db
+bin/memory-import --store /tmp/m.db    # anywhere else; MEMORY_ROOTS and HOME pick the logs
+```
+
+- **One row per log line, verbatim**, with the columns that address it:
+  `source_path` (the log's absolute path), `line_number` (as `Store.Read` counts
+  it, blank lines included), `scope` (the log's, so a promoted record is two
+  rows), `repo_id`, and `raw` (the line with surrounding whitespace trimmed, the
+  way `Store.Read` sees it). Lines that fail to parse are stored too: dropping
+  them would make them unreadable. REJECTED: a table per entity with typed
+  columns, which the next step would have to rewrite the query engine to read;
+  commands operate on lines today, and a store that gives lines back fits behind
+  the same seam.
+- **The identity lives beside the line, and no line changes.** The entry that
+  introduced `origin.repo_id` says "Nothing is backfilled — the log is
+  append-only", and that still holds for every log: the identity of the old
+  records is backfilled into the `repo_id` column and never into their JSON.
+  REJECTED: injecting `origin.repo_id` into old lines. The value is what `memory
+  add` would stamp for that repository today — the `origin` remote's URL, else
+  the absolute path — so an old row and a new record from the same repository
+  carry the same string. Whether each repository had that remote when its records
+  were written cannot be read, and is accepted. Edges carry no origin and take
+  the repository of their log; rows from the user log carry none.
+- **One definition of the identity, still in the CLI layer.** `repoIdentity`,
+  `gitOutput` and `gitUserName` moved out of `cmd/memory/main.go` into
+  `cmd/internal/gitcmd`, which both binaries import. A package under `cmd/` is
+  still the CLI layer, so the earlier REJECTED — putting the call in the library
+  — stands, and `internal/memory` is still free of `os/exec`. REJECTED: a second
+  copy of the function in the importer, which could drift from the one `memory`
+  stamps with. The package is `gitcmd` rather than `git` because `cmd/memory`'s
+  tests already declare a `git` helper.
+- **Insert-only and re-runnable.** A line already stored at its path and line
+  number is skipped, a line appended since is inserted, and a second run over
+  unchanged logs inserts nothing. A stored line whose text now differs, or which
+  its log no longer has, is an append-only log that was rewritten: the run refuses
+  with `log_rewritten`, names each line under the log's `conflicts`, and commits
+  nothing. REJECTED: updating the row, which would make the store the one place
+  the rewrite is hidden. A log that is no longer found at all — a repository
+  moved or deleted — is not a conflict; its rows stay, and a moved log's lines
+  come back as new rows under the new path.
+- **All of it or nothing.** Every log is read before the store is opened, so an
+  unreadable log fails the run with `unreadable_log`, naming it, while the store
+  is untouched; everything after that is one transaction, which takes the write
+  lock when it begins so that two runs at once wait for each other.
+- **Each log is read under a shared lock**, the counterpart of the exclusive one
+  `Store.Append` writes under. A line read half-written would be stored cut short,
+  the store never updates a row, and every later run would refuse that log.
+- **The store is shared by the group.** The logs are written by more than one OS
+  user, so the store sits at `/srv/projects/.ai-kit/memory.db` rather than in a
+  home directory: the directory is made setgid and group-writable, and the file is
+  created `0664` before SQLite opens it. SQLite gives the `-journal`, `-wal` and
+  `-shm` files the database file's mode — measured under `umask 077` in both
+  journal modes — so that one mode is the one that has to be right. The journal
+  mode is SQLite's default rollback journal, which leaves no file beside the
+  database once a run ends. REJECTED: `~/.ai-kit/memory.db` per OS user, and a
+  mandatory environment variable.
+- **A binary of its own, not a subcommand.** REJECTED: `memory import`, a command
+  with one use that every agent reading the usage text would pay for. Discovery is
+  `memory.DiscoverLogs` and `memory.Roots`, unchanged, so the importer reads
+  exactly the logs `state --all` reads.
+- **`modernc.org/sqlite` v1.58.0**, the module's first dependency: pure Go, so no
+  cgo and no C toolchain. REJECTED: `github.com/mattn/go-sqlite3`, which needs
+  both.
+- **One JSON object on success and on failure**: per log, `lines_read`,
+  `rows_inserted`, `rows_skipped`, `lines_not_committed`, the `identity` used and
+  `origin_repo_id_differs` — how many of its lines carry an `origin.repo_id` other
+  than that identity — plus `totals`, `rows_in_store` after a commit, and
+  `committed`. Every line read is exactly one of inserted, skipped or not
+  committed, on a refusal as on success. On a refusal `rows_inserted` is 0
+  everywhere, because nothing was, and `rows_skipped` is null for a log whose
+  stored rows the run never reached, because which of its lines are stored is then
+  unknown; a null in any log makes the total null. The user log has no identity,
+  so its `identity` and `origin_repo_id_differs` are both null, and the total of
+  `origin_repo_id_differs` counts repo logs only. REJECTED: counting every
+  `origin.repo_id` in the user log as a difference, which reads as disagreements
+  where there is nothing to disagree with.
+
 ### `render` is gone, and a batch names the key whose shape is wrong
 
 `memory render --as KIND` printed markdown for every record of a kind, numbering
