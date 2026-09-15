@@ -13,13 +13,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/alanv/ai-kit/tools/memory/cmd/internal/gitcmd"
 	"github.com/alanv/ai-kit/tools/memory/internal/memory"
 )
 
@@ -590,7 +590,7 @@ func (s stamp) origin(loc memory.Location, plan string) *memory.Origin {
 //
 // **Neither is skipped by a value already in hand.** firstNonEmpty evaluates every
 // argument it is given, so `--author` or AI_KIT_AUTHOR set does not stop
-// gitUserName from running — the call happens while the arguments are being
+// gitcmd.UserName from running — the call happens while the arguments are being
 // assembled, before anything chooses between them. Measured with a counting wrapper
 // on PATH before this was hoisted out of the per-line path: 2 spawns for a 1-line
 // batch, 20 for 10 lines, 400 for 200 lines, at which point a batch spent 2.3s
@@ -610,8 +610,8 @@ func (s stamp) originBase(loc memory.Location) memory.Origin {
 		// different questions, so --repo overrides the first and not the second: a
 		// caller may rename what a record calls its repository, and nothing it can
 		// type makes two repositories the same one.
-		RepoID: repoIdentity(firstNonEmpty(loc.Repo, anchorRepo)),
-		Author: firstNonEmpty(s.author, os.Getenv("AI_KIT_AUTHOR"), gitUserName(loc.Repo)),
+		RepoID: gitcmd.RepoIdentity(firstNonEmpty(loc.Repo, anchorRepo)),
+		Author: firstNonEmpty(s.author, os.Getenv("AI_KIT_AUTHOR"), gitcmd.UserName(loc.Repo)),
 		Unit:   s.unit,
 	}
 }
@@ -1948,57 +1948,4 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
-}
-
-func gitUserName(dir string) string {
-	return gitOutput(dir, "config", "user.name")
-}
-
-// repoIdentity is what tells two repositories apart in one log where repoLabel
-// cannot: it is a directory name, and `api` in two places is one label.
-//
-// The remote comes first because it survives the repository being moved, cloned
-// or checked out twice on one machine — the absolute path survives none of
-// those, and is the fallback rather than the answer for exactly that reason. A
-// repository with no remote and no resolvable path gets nothing, and Origin.RepoID
-// is omitted; see there for why that is a claim rather than a hole.
-//
-// Which remote is `origin` and only `origin`. That covers a repository having
-// none; it does not cover one having several under other names, which nothing
-// here decides between.
-func repoIdentity(root string) string {
-	if strings.TrimSpace(root) == "" {
-		return ""
-	}
-	if url := gitOutput(root, "remote", "get-url", "origin"); url != "" {
-		return url
-	}
-	abs, err := filepath.Abs(root)
-	if err != nil {
-		return ""
-	}
-	return filepath.Clean(abs)
-}
-
-// gitOutput runs one git command in dir and returns its trimmed stdout, empty
-// for anything that went wrong. Every caller is filling in a field that is
-// allowed to be absent, so there is nothing here for a failure to be reported
-// to: a machine without git, a directory that is not a repository and a
-// repository that has no answer are the same outcome — the tool does not know.
-//
-// This is the whole of the shell-out, and it lives in the CLI layer on purpose.
-// internal/memory resolves a repository root by looking for a .git entry and
-// never invokes the binary, which is what keeps the library testable without one
-// installed.
-func gitOutput(dir string, args ...string) string {
-	if dir == "" {
-		return ""
-	}
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }
