@@ -1335,3 +1335,163 @@ func repoLabels(out crossStateOutput) []string {
 	}
 	return labels
 }
+
+func TestLinkJoinsRecordsWrittenIntoTwoRepositories(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	parent := addObjective(t, alpha, "The objective the service next door derives from")
+	kid := addObjective(t, beta, "The objective in the service next door")
+
+	if res := link(t, beta, "derives_from", kid, parent); res.code != 0 {
+		t.Fatalf("both endpoints are in the store, one log apart: exit %d\n%s%s",
+			res.code, res.stdout, res.stderr)
+	}
+
+	landed := logText(t, beta, beta.log)
+	if !strings.Contains(landed, `"from":"`+kid+`","to":"`+parent+`"`) {
+		t.Fatalf("the edge belongs to the log link resolved:\n%s", landed)
+	}
+	if other := logText(t, alpha, alpha.log); strings.Contains(other, `"kind":"edge"`) {
+		t.Errorf("the other repository's log was written to:\n%s", other)
+	}
+}
+
+func TestLinkStillRefusesAnEndpointNoLogOfTheStoreHolds(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	here := addObjective(t, alpha, "The objective that was actually written")
+	addObjective(t, beta, "The objective in the other repository")
+
+	const ghost = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	res := link(t, alpha, "relates_to", here, ghost)
+	if res.code == 0 {
+		t.Fatalf("an id no log holds is still a dangling edge: %s", res.stdout)
+	}
+	code, msg := errorCode(t, res)
+	if code != "dangling_edge" {
+		t.Fatalf("the refusal keeps the code it has always had, got %q: %s", code, msg)
+	}
+	if !strings.Contains(msg, ghost) {
+		t.Errorf("the refusal has to name the id it could not find: %s", msg)
+	}
+}
+
+func TestStateReadsATreeSpanningTwoRepositoriesFromEitherEnd(t *testing.T) {
+	s, alpha, beta := twoDepths(t)
+	parent := addObjective(t, alpha, "The objective the whole plan hangs from")
+	kid := addObjective(t, beta, "The objective in the service next door")
+	mustLink(t, beta, "derives_from", kid, parent)
+
+	fromParent := one(t, readState(t, alpha, "--id", parent))
+	if got := fromParent.Objectives[0].Children; len(got) != 1 || got[0] != kid {
+		t.Errorf("read from the parent, the child in the other repository is a child, got %v", got)
+	}
+	fromChild := one(t, readState(t, beta, "--id", kid))
+	if got := fromChild.Objectives[0].Parent; got != parent {
+		t.Errorf("read from the child, the parent in the other repository is the parent, got %q", got)
+	}
+	if got := fromChild.Objectives[0].Depth; got != 1 {
+		t.Errorf("the child stands one below a parent in another repository, got depth %d", got)
+	}
+
+	cross := readCrossState(t, s, alpha, "--all")
+	for _, o := range cross.Objectives {
+		switch o.ID {
+		case parent:
+			if len(o.Children) != 1 || o.Children[0] != kid {
+				t.Errorf("the merged report reads the same tree, got children %v for the parent", o.Children)
+			}
+		case kid:
+			if o.Parent != parent {
+				t.Errorf("the merged report reads the same tree, got parent %q for the child", o.Parent)
+			}
+		}
+	}
+}
+
+func TestStateAcrossLogsDeduplicatesAllFourOfItsLists(t *testing.T) {
+	s, alpha, _ := twoDepths(t)
+	root := addObjective(t, alpha, "The root of the tree")
+	second := addObjective(t, alpha, "Another root, and a second parent")
+	kid := child(t, alpha, root, "The objective with two parents")
+	appendLine(t, alpha, alpha.log, `{"version":2,"kind":"edge","type":"derives_from","from":"`+kid+
+		`","to":"`+second+`","at":"2026-08-03T10:00:00Z"}`)
+	gone := addObjective(t, alpha, "The first statement of it")
+	fresh := addObjective(t, alpha, "A better statement of it")
+	mustLink(t, alpha, "supersedes", fresh, gone)
+
+	twin := repoIn(t, s, "alpha-worktree")
+	for _, raw := range lines(t, alpha, alpha.log) {
+		appendLine(t, alpha, twin.log, raw)
+	}
+
+	cross := readCrossState(t, s, alpha, "--all")
+	if len(cross.Logs) != 2 {
+		t.Fatalf("the fixture is one repository's rows under two source paths: %v", cross.Logs)
+	}
+	times := map[string]int{}
+	for _, o := range cross.Objectives {
+		times[o.ID]++
+	}
+	for _, e := range cross.Excluded {
+		times[e.ID]++
+	}
+	for _, id := range []string{root, second, kid, gone, fresh} {
+		if times[id] != 1 {
+			t.Errorf("%s is one objective under two source paths and is reported %d times", id, times[id])
+		}
+	}
+	if len(cross.Anomalies) != 1 || cross.Anomalies[0].ID != kid {
+		t.Fatalf("the two-parent anomaly is %s's and is reported once: %+v", kid, cross.Anomalies)
+	}
+	if len(cross.Current) != 1 {
+		t.Fatalf("both logs resolve the same current objective, so the report names it once: %+v", cross.Current)
+	}
+	if times[cross.Current[0].ID] != 1 {
+		t.Errorf("the current objective is one of the objectives the report already lists once: %+v",
+			cross.Current[0])
+	}
+}
+
+func TestEveryAnomalyIsReportedByTheLogHoldingTheRecordItIsAbout(t *testing.T) {
+	s, alpha, beta := twoDepths(t)
+	addObjective(t, alpha, "The root of the first repository")
+	first := addObjective(t, beta, "The parent the file names first")
+	second := addObjective(t, beta, "The parent of the second edge")
+	third := addObjective(t, beta, "The parent of the third edge")
+	kid := child(t, beta, first, "The objective with three parents")
+	for _, parent := range []string{second, third} {
+		appendLine(t, beta, beta.log, `{"version":2,"kind":"edge","type":"derives_from","from":"`+kid+
+			`","to":"`+parent+`","at":"2026-08-03T10:00:00Z"}`)
+	}
+
+	if got := readState(t, alpha).Anomalies; len(got) != 0 {
+		t.Errorf("alpha holds neither the record nor either edge, so it reports no anomaly: %+v", got)
+	}
+
+	inBeta := readState(t, beta).Anomalies
+	if len(inBeta) != 2 {
+		t.Fatalf("three parents are two ignored edges and two anomalies, got %d: %+v", len(inBeta), inBeta)
+	}
+
+	cross := readCrossState(t, s, alpha, "--all")
+	if len(cross.Anomalies) != 2 {
+		t.Fatalf("two anomalies about one objective are two anomalies under --all, got %d: %+v",
+			len(cross.Anomalies), cross.Anomalies)
+	}
+	ignored := map[string]bool{}
+	for _, a := range cross.Anomalies {
+		if a.Repo != "beta" {
+			t.Errorf("the anomaly belongs to the log holding the record, reported under %q: %+v", a.Repo, a)
+		}
+		if a.ID != kid {
+			t.Errorf("both anomalies are about %s, got %s", kid, a.ID)
+		}
+		for _, parent := range []string{second, third} {
+			if strings.Contains(a.Message, parent) {
+				ignored[parent] = true
+			}
+		}
+	}
+	if !ignored[second] || !ignored[third] {
+		t.Errorf("each ignored edge is named by an anomaly of its own: %+v", cross.Anomalies)
+	}
+}

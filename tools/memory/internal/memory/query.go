@@ -34,6 +34,10 @@ type Filter struct {
 	Threshold   int // override DefaultThreshold; negative disables the guard
 }
 
+func (f Filter) AdmitsObjectives() bool {
+	return len(f.Kinds) == 0 || slices.Contains(f.Kinds, KindObjective)
+}
+
 // Result is what every read command returns. Count is always the true number
 // of matches; Records may be empty even when Count is large, and Truncated
 // says which of those two situations you are in — unless the filter asked for
@@ -99,28 +103,31 @@ func targetsOf(edges []*Edge, t EdgeType) map[string]bool {
 // internally cannot say which of one's members came before one of the other's,
 // and the current-objective tie-break is stated in terms of exactly that. See
 // Tree.recordActivity.
-func Query(lines []Line, f Filter) Result {
-	matched, cur := match(lines, f)
+func Query(lines []Line, f Filter) Result { return QueryIn(lines, lines, f) }
+
+func QueryIn(lines, store []Line, f Filter) Result {
+	matched, cur := match(lines, store, f)
 	return bound(matched, cur, f)
 }
 
-// QueryEach answers one filter over several logs as a single result: each log is
+// QueryEachIn answers one filter over several logs as a single result: each log is
 // matched on its own and the count, the limit, the guard and NotFound are applied
 // once over the union.
 //
-// The logs' lines are never concatenated into one Query. Each log's objective tree
-// is derived from that log alone, and one Tree over two logs would join two
-// unrelated hierarchies and let either one change which objective the other calls
-// current. CurrentObjective is therefore the first log's, exactly as Query over
-// that log alone reports it.
+// The logs' lines are never concatenated into one Query. The objectives a tree
+// holds are one log's, and one Tree over two logs would join two unrelated
+// hierarchies and let either one change which objective the other calls current.
+// The edges are the store's in every pass, so what they say about a log's own
+// objectives is the same wherever it is read from. CurrentObjective is therefore
+// the first log's, exactly as QueryIn over that log alone reports it.
 //
 // Nothing is deduplicated: promotion copies a record with its id untouched, so the
 // same id in two logs is two matches, and the first log's copy sorts ahead.
-func QueryEach(logs [][]Line, f Filter) Result {
+func QueryEachIn(logs [][]Line, store []Line, f Filter) Result {
 	var matched []*Entry
 	var cur *CurrentObjective
 	for i, lines := range logs {
-		m, c := match(lines, f)
+		m, c := match(lines, store, f)
 		matched = append(matched, m...)
 		if i == 0 {
 			cur = c
@@ -138,7 +145,7 @@ func sortMostRecentFirst(entries []*Entry) {
 
 // match is the filtering half of Query: every entry the filter admits, most recent
 // first, and the current objective when the filter admits objectives.
-func match(lines []Line, f Filter) ([]*Entry, *CurrentObjective) {
+func match(lines, store []Line, f Filter) ([]*Entry, *CurrentObjective) {
 	entries, edges := Entries(lines), Edges(lines)
 
 	settled := map[string]bool{}
@@ -157,18 +164,18 @@ func match(lines []Line, f Filter) ([]*Entry, *CurrentObjective) {
 	text := strings.ToLower(strings.TrimSpace(f.Text))
 
 	// The tree, the states and the resolved current objective are derived from
-	// every entry and every edge that reached here, and the filter applies
-	// afterwards. Deriving from the filtered subset would let --plan silently
-	// change which objective is current, and "what am I working on" must not
-	// depend on what you happened to ask about.
+	// every entry that reached here and every edge in the store, and the filter
+	// applies afterwards. Deriving from the filtered subset would let --plan
+	// silently change which objective is current, and "what am I working on"
+	// must not depend on what you happened to ask about.
 	//
 	// Built only when the query admits objectives at all, since it answers
 	// nothing otherwise — which is also what keeps every other kind's --current
 	// exactly where it was.
 	var tree *Tree
-	wantsObjectives := len(kinds) == 0 || kinds[KindObjective]
+	wantsObjectives := f.AdmitsObjectives()
 	if wantsObjectives {
-		tree = NewTree(lines)
+		tree = NewTreeIn(lines, store)
 	}
 
 	var matched []*Entry

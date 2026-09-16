@@ -622,6 +622,15 @@ Both refusals carry the code `not_a_tree`.
 
 Several roots are normal — nothing requires an objective to have a parent.
 
+**An objective's parent may be in another repository.** Both endpoints still have
+to exist; the store is where they are looked for, not one `source_path`. So an
+objective written into one repository's log derives from an objective written into
+another's, and `memory state` reads that as one tree from either end — the child
+reports its parent, the parent reports its child, and the parent's completion
+counts it. An id no log of the store holds is still refused `dangling_edge`. The
+two rules above reach just as far: an objective cannot pick up a second parent by
+being linked from another repository.
+
 **A self-edge is refused earlier, and differently.** `derives_from X → X` is a
 cycle of length one, but it never reaches the tree rule: an edge pointing at its
 own source is refused by the current version's rule set first, so it comes back
@@ -787,13 +796,25 @@ loop is absent rather than empty, and one whose checkout has since been moved or
 deleted still reports its history. The user log joins them when the store holds
 one, labelled `user`, since it has no repository to be named after.
 
-**One tree per log, never one tree over all of them.** Concatenating the logs
-would be cheaper and would produce a single "current objective" across every
-repository, which answers nothing. So each log is read on its own and every item
-names where it came from — and in the `--all` JSON every objective, exclusion,
-anomaly and current objective carries a `repo`. That field is `omitempty` and no
-single-log report ever sets it: `memory state` with no flags emits exactly the
-keys it emitted before any of this existed.
+**One report per log, and one tree across them.** Reading the logs as a single
+report would produce a single "current objective" across every repository, which
+answers nothing — so each log is reported on its own and every item names where it
+came from. The *derivation* is store-wide: the edges come from every log, so an
+objective's parent, children and completion reach across repositories, while the
+objectives listed under a log are the ones that log holds and an anomaly is
+reported by the log holding the record it is about. In the `--all` JSON every
+objective, exclusion, anomaly and current objective carries a `repo`. That field
+is `omitempty` and no single-log report ever sets it: `memory state` with no
+flags emits exactly the keys it emitted before any of this existed.
+
+**Each of the four lists names a record once.** Two `source_path`s can hold the
+same id — a promotion, or a worktree of the same repository — so `objectives`,
+`excluded` and `current` are each deduplicated by `(id, scope)`. By scope and
+never by id alone: a promoted record's two rows genuinely differ in text, and
+collapsing them would answer with whichever sorted first. `anomalies` keys on the
+message as well: an objective with three parents produces two anomalies carrying
+its id, and by id alone the second one — naming the second edge that was ignored —
+would be dropped as a duplicate.
 
 **The grouping is read off the state and nothing else** — no body is parsed and
 no prose is matched. `planned` is waiting for your approval, `approved_for_execution`
@@ -1075,10 +1096,10 @@ Every command prints JSON on stdout on success and on failure alike — except
 summary. A failure is JSON in every mode, `--text` included. Exit 0 means the
 command ran; exit 1 means it refused, and the JSON says why.
 
-`validate --all` validates every log the store holds, each on its own, with its
-own set of known ids — so an edge pointing at a record that exists only under
-another `source_path` is still reported dangling, exactly as it was when the logs
-were separate files.
+`validate --all` validates every log the store holds, each on its own, but the
+known-id set is the whole store's — so an edge pointing at a record that exists
+only under another `source_path` is not dangling. An id no log holds still is, and
+so does the single-log `validate`, which asks the same question of the same set.
 
 `validate` is the one command where exit 1 is a verdict rather than a refusal. It
 exits 1 when a log fails validation (`ok: false`) and when a location it was asked
@@ -1211,11 +1232,16 @@ out `scope` leaves out which log a record came from. The envelope says
 place of `path`.
 
 - **Each log is filtered on its own and the matches are merged.** Their lines are
-  never read as one log: each log's objective tree is its own, and joining two
-  would let either one move which objective the other calls current. So
-  `current_objective` is the one the repository log resolves, exactly as
-  `--scope repo` names it. `--current` is safe per log for the same reason
-  promotion makes it safe — no edge points across logs.
+  never read as one log: the objectives a tree holds are that log's own, and
+  joining two would let either one move which objective the other calls current.
+  So `current_objective` is the one the repository log resolves, exactly as
+  `--scope repo` names it. What the resolution reads off those objectives is the
+  store's edges rather than one log's rows — an approval or a state edge written
+  in another repository counts, and both passes read the same ones, which is why
+  neither log moves the other's answer. What `--current` drops as superseded or
+  answered is still each log's own rows. An edge *may* point across logs — see
+  [the objective tree](#the-objective-tree) — and what `--scope both` should make
+  of one is a decision of its own, not taken here.
 - **Everything about the size of the answer is computed over the union.** `count`
   is the matches across both logs, `--count` returns that number, `--limit N`
   takes the N most recent of them, and the count-before-dump guard trips on the

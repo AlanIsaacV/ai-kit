@@ -122,13 +122,17 @@ above the threshold they return no edges and no nodes at all, say so with
 is a smaller '--depth', or '--threshold -1' for the whole walk however big.
 
 'state' reads one log or every log, and its default follows the output mode:
-'state' reports this repository as JSON, 'state --text' prints what is waiting on
-you across every log in the store. '--here' narrows the text to this repository
-and '--all' widens the JSON to every log the store holds. No mode of 'state'
-creates anything and none walks the filesystem: the logs are the ones the store
-already carries, so one whose repository has since been moved or deleted is
-reported like any other. An objective two logs both carry at one scope is
-reported once, from the first of them.
+'state' lists this repository's objectives as JSON, 'state --text' prints what is
+waiting on you across every log in the store. Which objectives are listed is one
+log's answer; what is read off them — parentage, state, the current objective —
+comes from every edge in the store, so a parent or a child in another repository
+is named as one, and an anomaly is reported by the log holding the record it is
+about. '--here' narrows the text to this repository and '--all' widens the JSON
+to every log the store holds. No mode of 'state' creates anything and none walks
+the filesystem: the logs are the ones the store already carries, so one whose
+repository has since been moved or deleted is reported like any other. An
+objective two logs both carry at one scope is reported once, from the first of
+them.
 
 Every command prints JSON on stdout, on success and on failure alike, except
 'state --text' which prints the summary. A failure is JSON in every mode,
@@ -414,17 +418,6 @@ func (c *common) load() (memory.Location, []memory.Line, error) {
 
 func (c *common) loadExisting() (memory.Location, []memory.Line, error) {
 	loc, err := c.locate()
-	if err != nil {
-		return loc, nil, err
-	}
-	lines, err := readLog(loc)
-	return loc, lines, err
-}
-
-// loadForWrite is load for `link`, which reads the whole log only so that it can
-// append to it. The difference is which resolve it goes through.
-func (c *common) loadForWrite() (memory.Location, []memory.Line, error) {
-	loc, err := c.resolveForWrite()
 	if err != nil {
 		return loc, nil, err
 	}
@@ -932,9 +925,13 @@ func cmdLink(args []string) error {
 		return err
 	}
 
-	loc, lines, err := c.loadForWrite()
+	loc, err := c.resolveForWrite()
 	if err != nil {
 		return err
+	}
+	lines, err := memory.ReadStore("")
+	if err != nil {
+		return fail("read_failed", "%s", err.Error())
 	}
 
 	edge := &memory.Edge{
@@ -969,7 +966,8 @@ func cmdLink(args []string) error {
 		missing = append(missing, "to="+edge.To)
 	}
 	if len(missing) > 0 {
-		return fail("dangling_edge", "no entry in %s for %s", loc.Path, strings.Join(missing, ", "))
+		return fail("dangling_edge", "no entry in any log of %s for %s",
+			memory.CurrentStore(), strings.Join(missing, ", "))
 	}
 
 	// A state edge has to point at the record that justifies the transition.
@@ -1263,7 +1261,13 @@ func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
 	if err != nil {
 		return err
 	}
-	out := queryAnswer(memory.Query(lines, f), f, proj...)
+	var stored []memory.Line
+	if f.AdmitsObjectives() {
+		if stored, err = memory.ReadStore(""); err != nil {
+			return fail("read_failed", "%s", err.Error())
+		}
+	}
+	out := queryAnswer(memory.QueryIn(lines, stored, f), f, proj...)
 	out["path"], out["scope"] = loc.Path, loc.Scope
 	emit(out)
 	return nil
@@ -1285,7 +1289,14 @@ func runQueryBoth(c *common, f memory.Filter, proj memory.Projection) error {
 		logs = append(logs, lines)
 		paths = append(paths, loc.Path)
 	}
-	out := queryAnswer(memory.QueryEach(logs, f), f, proj)
+	var stored []memory.Line
+	if f.AdmitsObjectives() {
+		var err error
+		if stored, err = memory.ReadStore(""); err != nil {
+			return fail("read_failed", "%s", err.Error())
+		}
+	}
+	out := queryAnswer(memory.QueryEachIn(logs, stored, f), f, proj)
 	out["scope"], out["paths"] = scopeBoth, paths
 	emit(out)
 	return nil
@@ -1335,9 +1346,9 @@ func cmdState(args []string) error {
 	var c common
 	c.bind(fs)
 	id := fs.String("id", "", "report one objective instead of every one")
-	text := fs.Bool("text", false, "print what is waiting as text, over every root instead of this repo")
+	text := fs.Bool("text", false, "print what is waiting as text, over every log in the store instead of this repository")
 	here := fs.Bool("here", false, "narrow --text to this repository")
-	all := fs.Bool("all", false, "widen the JSON report to every root")
+	all := fs.Bool("all", false, "widen the JSON report to every log in the store")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -1359,8 +1370,12 @@ func cmdState(args []string) error {
 	if err != nil {
 		return err
 	}
+	stored, err := memory.ReadStore("")
+	if err != nil {
+		return fail("read_failed", "%s", err.Error())
+	}
 
-	tree := memory.NewTree(lines)
+	tree := memory.NewTreeIn(lines, stored)
 	rep := tree.Report()
 
 	if *id != "" {
@@ -1392,20 +1407,29 @@ func stateAcrossLogs(id string, text bool) error {
 	if err != nil {
 		return fail("read_failed", "%s", err.Error())
 	}
+	locs := make([]memory.Location, 0, len(sources))
+	held := make([][]memory.Line, 0, len(sources))
 	var paths []string
+	var stored []memory.Line
+	for _, src := range sources {
+		loc := logAt(src)
+		lines, err := readLog(loc)
+		if err != nil {
+			return err
+		}
+		locs = append(locs, loc)
+		held = append(held, lines)
+		paths = append(paths, src.Path)
+		stored = append(stored, lines...)
+	}
+
 	logs := make([]memory.LogState, 0, len(sources))
 	reports := make([]memory.RepoReport, 0, len(sources))
 	seen := map[string]bool{}
 	matched := 0
 
-	for _, src := range sources {
-		loc := logAt(src)
-		paths = append(paths, src.Path)
-		lines, err := readLog(loc)
-		if err != nil {
-			return err
-		}
-		tree := memory.NewTree(lines)
+	for i, loc := range locs {
+		tree := memory.NewTreeIn(held[i], stored)
 		rep := dropSeen(tree.Report(), loc.Scope, seen)
 		if id != "" {
 			var n int
@@ -1428,7 +1452,7 @@ func stateAcrossLogs(id string, text bool) error {
 
 	merged := memory.MergeReports(reports)
 	emit(map[string]any{
-		"logs":       paths,
+		"logs":       nonNil(paths),
 		"count":      len(merged.Objectives),
 		"objectives": merged.Objectives,
 		"excluded":   merged.Excluded,
@@ -1439,8 +1463,8 @@ func stateAcrossLogs(id string, text bool) error {
 }
 
 func dropSeen(rep memory.StateReport, scope memory.Scope, seen map[string]bool) memory.StateReport {
-	first := func(id string) bool {
-		key := id + "\x00" + string(scope)
+	first := func(list, id string) bool {
+		key := list + "\x00" + id + "\x00" + string(scope)
 		if seen[key] {
 			return false
 		}
@@ -1449,17 +1473,26 @@ func dropSeen(rep memory.StateReport, scope memory.Scope, seen map[string]bool) 
 	}
 	objectives := []memory.ObjectiveState{}
 	for _, o := range rep.Objectives {
-		if first(o.ID) {
+		if first("objective", o.ID) {
 			objectives = append(objectives, o)
 		}
 	}
 	excluded := []memory.ExcludedObjective{}
 	for _, e := range rep.Excluded {
-		if first(e.ID) {
+		if first("objective", e.ID) {
 			excluded = append(excluded, e)
 		}
 	}
-	rep.Objectives, rep.Excluded = objectives, excluded
+	anomalies := []memory.Anomaly{}
+	for _, a := range rep.Anomalies {
+		if first("anomaly", a.ID+"\x00"+a.Message) {
+			anomalies = append(anomalies, a)
+		}
+	}
+	if rep.Current.ID != "" && !first("current", rep.Current.ID) {
+		rep.Current = memory.CurrentObjective{}
+	}
+	rep.Objectives, rep.Excluded, rep.Anomalies = objectives, excluded, anomalies
 	return rep
 }
 
@@ -1747,6 +1780,15 @@ func cmdValidate(args []string) error {
 		}
 	}
 
+	stored, err := memory.ReadStore("")
+	if err != nil {
+		return fail("read_failed", "%s", err.Error())
+	}
+	known := map[string]bool{}
+	for _, e := range memory.Entries(stored) {
+		known[e.ID] = true
+	}
+
 	reports := make([]memory.Report, 0, len(locs))
 	ok := true
 	unjudged := 0
@@ -1755,7 +1797,7 @@ func cmdValidate(args []string) error {
 		if err != nil {
 			return fail("read_failed", "%s", err.Error())
 		}
-		r := memory.ValidateLog(l.Path, lines)
+		r := memory.ValidateLogIn(l.Path, lines, known)
 		reports = append(reports, r)
 		ok = ok && r.OK
 		unjudged += len(r.Unjudged)

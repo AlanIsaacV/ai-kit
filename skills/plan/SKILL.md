@@ -626,10 +626,13 @@ rather than coining a slug out of the new objective's name. For a root, coin one
 for the tree — unless `debug` ran, in which case it already resolved or coined
 that slug and wrote its hypotheses under it, and using a second one would put the
 investigation and the objective it produced behind two different queries. And
-never run `memory init` for a child: one log holds one
-objective tree, `init` is for a repo that has no log at all, and `link` refuses
-an endpoint it cannot see in the same log, so a child written into a log of its
-own could not be attached to its parent at all.
+never run `memory init` for a child: one log holds one objective tree, `init` is
+for a repo that has no log at all, and an edge in a batch still names an endpoint
+already in the log it is written into — so the batch below, which is what
+attaches the child to its parent, is refused outright when the child goes into a
+log of its own. `link` would take that edge, since an edge may now cross logs,
+but `graph` and `edges` still read one log and neither would see the tree it
+joined.
 
 What this step writes is the objective, one record per surviving assumption, one
 per open question, one per decision the conversation settled, and the edges that

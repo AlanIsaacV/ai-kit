@@ -2,6 +2,84 @@
 
 ## Unreleased
 
+### An edge crosses repositories, and the tree reads as one tree
+
+`link` accepts an edge whose two endpoints were written into two different
+repositories' logs, and `validate` — alone and under `--all` — stops reporting it
+as dangling. An objective recorded in one repository can be the child of an
+objective recorded in another, and `memory state` reads the result as one tree
+from either end.
+
+```bash
+memory add --dir ~/src/api --kind objective --title "Ship the token service"
+memory add --dir ~/src/web --kind objective --title "Move the login page onto it"
+memory link --dir ~/src/web --type derives_from --from <web-objective> --to <api-objective>
+memory state --dir ~/src/api --id <api-objective>   # the web objective is among its children
+```
+
+- **An edge is valid when both endpoints exist anywhere in the store.** The
+  existence check reads every row rather than the rows of one `source_path`.
+  REJECTED: keying on `repo_id`, which would have made the rule about where a row
+  was filed rather than about whether the record exists, and an opt-in flag, which
+  would have left the default answering wrongly. The cost was stated and accepted:
+  a mistyped id that happens to exist in another repository now passes where it
+  used to be caught. An id no log holds is still refused, with the
+  `dangling_edge` code it has always had.
+- **No schema change, and a whole-store read on every invocation that could
+  return an objective.** No `id` column, no index, no migration on an insert-only
+  table. Measured against an exact byte copy of this host's store — 14,478 rows
+  across 34 `source_path`s, the real thing rather than a synthetic seed — with the
+  baseline built from the commit this entry sits on, 5-7 runs each, wall clock,
+  over a process startup floor of 2 ms. Medians, before → after: `query --kind
+  objective --current` 32 → 157 ms, `query --about TAG --limit 5` with no `--kind`
+  23 → 156 ms, `search --limit 5 TEXT` 25 → 157 ms, `state` 23 → 158 ms,
+  `validate` 24 → 160 ms, `state --all` 160 → 202 ms, `validate --all` ~180 →
+  ~322 ms; one `link` is 132-181 ms. A read whose filter admits no objective never
+  opens the store and is unchanged: `query --kind decision --limit 1` 22 → 23 ms,
+  `query --kind gotcha --limit 5` 23 → 23 ms. The time is not the SQL —
+  `ReadStore` parses every row's JSON through `ParseLine` on each invocation — so
+  what a read costs scales with the whole host's store rather than with the
+  repository being read, and it is the shape of that store, not of this
+  repository, that decides whether it matters. REJECTED: an indexed `id` column,
+  which makes a lookup cheaper where none of this time is spent, and is a
+  migration on a table that never rewrites a row.
+- **The derivation spans the store; the report stays one per log.** `state` builds
+  the parent relation out of every log's edges and lists the objectives its own log
+  holds, so the current objective is still one answer per repository. An anomaly
+  goes to the report of the log holding the record it is about, so a reading of one
+  repository never carries another's. A `derives_from` naming the parent an
+  objective already has — which promotion and worktree copies both produce — is one
+  parentage written twice, and is no longer reported as a second parent.
+- **`current_objective` on `query` and `search` is resolved the way `state`
+  resolves it**, from every edge in the store rather than one log's rows, so the
+  three commands stop answering differently about the same repository: an approval
+  or a `supersedes` written next door counts, and an objective settled from another
+  repository is no longer named as the current one. **What `--current` drops is
+  still one log's own rows**, and that half is deliberately not reached here. So
+  `query --kind objective --current` still returns an objective superseded from
+  next door under `records` while `current_objective` says there is none — one
+  answer whose two halves disagree — and for a kind that gets no
+  `current_objective` beside it, a `decision` superseded from another repository
+  comes back with nothing at all to signal it. REJECTED: building the settled set
+  from the store's edges too, which changes which records every existing
+  `--current` read in every repository returns; that is a decision of its own and
+  this change does not take it. Which records come back is still one log's, and
+  `--scope both` still matches each log in its own pass.
+- **`state --all` deduplicates all four of its lists**, rather than `objectives`
+  and `excluded` alone, so the four describe the same set. `objectives`, `excluded`
+  and `current` key on `(id, scope)`; `anomalies` keys on the message too, because
+  an objective with three parents is two anomalies sharing one id and by id alone
+  the second would be dropped as a duplicate. It answers `"logs": []` instead of
+  `null` for a store with no rows, and neither its flag help nor its output claims
+  to work "over every root" any more.
+- **`add --batch` is unchanged and still checks its edges against the log they are
+  written into.** A batch is one atomic write into one log, and widening its rule
+  is a decision of its own; `link` is the way to draw an edge across two.
+- **The branch in `Store.repoID` that took the identity from the record rather
+  than from the log is gone.** Every write goes through `writeLog`, which sets the
+  repository's identity first, so nothing could reach it. Which `repo_id` a
+  written row carries is unchanged.
+
 ### `memory` reads and writes the store, and discovery is gone
 
 The store built beside the logs is the backend now. `Store.Read` and
@@ -17,14 +95,15 @@ memory query --store /tmp/throwaway.db --id <id>                     # into any 
 memory state --all                                                   # every source_path the store holds
 ```
 
-- **"This log" is the rows carrying this `source_path`.** That is what keeps
+- **"This log" is the rows carrying this `source_path`.** That is what kept
   `link` and `validate` refusing an edge whose other end is in another
-  repository, exactly as separate files used to: each builds its known-id set
+  repository, exactly as separate files used to: each built its known-id set
   from one path's rows and nothing else. REJECTED: keying on `repo_id`, which
   would have made a cross-repo edge valid as a side effect of changing where the
   bytes live. Whether such an edge should be *allowed* — and what `--scope`,
   `promote` and per-record anchor roots mean once it is — is a decision of its
-  own, and this change deliberately does not take it.
+  own, and this change deliberately did not take it. The entry above takes the
+  first half of it; `--scope`, `promote` and the anchor roots are still open.
 - **There is no silent default store.** A `Read` or an `Append` against a store
   nobody configured is a loud error naming `memory.UseStore`; the default path
   lives on `--store`, which `parseFlags` binds for all 13 subcommands and no

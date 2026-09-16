@@ -129,8 +129,9 @@ func (s *Store) Append(records ...any) error {
 	defer insert.Close()
 
 	scope := s.scope()
+	repo := s.repoID(scope)
 	for i, line := range raw {
-		if _, err := insert.Exec(source, next+i, string(scope), s.repoID(records[i], scope), line); err != nil {
+		if _, err := insert.Exec(source, next+i, string(scope), repo, line); err != nil {
 			return fmt.Errorf("append to %s:%d: %w", s.Path, next+i, err)
 		}
 	}
@@ -220,17 +221,11 @@ func (s *Store) scope() Scope {
 	return ScopeUser
 }
 
-func (s *Store) repoID(record any, scope Scope) any {
-	if scope == ScopeUser {
+func (s *Store) repoID(scope Scope) any {
+	if scope == ScopeUser || s.RepoID == "" {
 		return nil
 	}
-	if s.RepoID != "" {
-		return s.RepoID
-	}
-	if e, ok := record.(*Entry); ok && e.Origin != nil && e.Origin.RepoID != "" {
-		return e.Origin.RepoID
-	}
-	return nil
+	return s.RepoID
 }
 
 // Entries returns only the well-formed entries, in write order.

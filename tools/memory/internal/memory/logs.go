@@ -52,3 +52,42 @@ func SourcePaths(store string) ([]Log, error) {
 	}
 	return logs, nil
 }
+
+func ReadStore(store string) ([]Line, error) {
+	path, err := (&Store{StorePath: store}).store()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	db, err := openStore(path)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT line_number, raw FROM lines ORDER BY source_path ASC, line_number ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	defer rows.Close()
+
+	var lines []Line
+	for rows.Next() {
+		var num int
+		var raw string
+		if err := rows.Scan(&num, &raw); err != nil {
+			return lines, fmt.Errorf("read %s: %w", path, err)
+		}
+		lines = append(lines, ParseLine(num, raw))
+	}
+	if err := rows.Err(); err != nil {
+		return lines, fmt.Errorf("read %s: %w", path, err)
+	}
+	return lines, nil
+}

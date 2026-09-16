@@ -206,7 +206,7 @@ type Anomaly struct {
 type Tree struct {
 	objectives []*Entry          // objectives in file order
 	byID       map[string]*Entry // objectives only
-	edges      []*Edge           // every edge in the log, in file order
+	edges      []*Edge           // every edge the tree was derived from, in file order
 	allEntries map[string]*Entry
 	parent     map[string]string
 	children   map[string][]string
@@ -229,8 +229,10 @@ type Tree struct {
 // the split: two slices each ordered internally cannot say which of one's
 // members came before one of the other's. See recordActivity. Everything else
 // reads the two views, which is why they are taken here once and kept.
-func NewTree(lines []Line) *Tree {
-	edges := Edges(lines)
+func NewTree(lines []Line) *Tree { return NewTreeIn(lines, lines) }
+
+func NewTreeIn(lines, store []Line) *Tree {
+	edges := Edges(store)
 	t := &Tree{
 		byID:       map[string]*Entry{},
 		allEntries: map[string]*Entry{},
@@ -240,9 +242,9 @@ func NewTree(lines []Line) *Tree {
 		settled:    SettledIDs(edges),
 		touched:    map[string]activity{},
 	}
-	entries := Entries(lines)
-	kinds := make(map[string]Kind, len(entries))
-	for _, e := range entries {
+	reachable := Entries(store)
+	kinds := make(map[string]Kind, len(reachable))
+	for _, e := range reachable {
 		if _, dup := kinds[e.ID]; dup {
 			// A duplicate id is a problem `validate` reports with both line
 			// numbers. Here the first one wins, so the reading is at least
@@ -251,6 +253,13 @@ func NewTree(lines []Line) *Tree {
 		}
 		kinds[e.ID] = e.Kind
 		t.allEntries[e.ID] = e
+	}
+	held := map[string]bool{}
+	for _, e := range Entries(lines) {
+		if held[e.ID] {
+			continue
+		}
+		held[e.ID] = true
 		if e.Kind != KindObjective {
 			continue
 		}
@@ -258,8 +267,15 @@ func NewTree(lines []Line) *Tree {
 		t.objectives = append(t.objectives, e)
 	}
 
-	t.parent, t.children, t.anomalies = parentRelation(edges, kinds)
-	t.anomalies = append(t.anomalies, findCycles(t.objectives, t.parent)...)
+	var met []Anomaly
+	t.parent, t.children, met = parentRelation(edges, kinds)
+	met = append(met, findCycles(t.objectives, t.parent)...)
+	for _, a := range met {
+		if t.byID[a.ID] == nil {
+			continue
+		}
+		t.anomalies = append(t.anomalies, a)
+	}
 	t.recordActivity(lines)
 	return t
 }
@@ -267,10 +283,11 @@ func NewTree(lines []Line) *Tree {
 // parentRelation reads the parent relation out of a log's edges: child id →
 // parent id, plus the reverse.
 //
-// Where a child carries more than one parent edge — which `link` refuses, and
-// which a hand-edited or promoted log can still hold — the first edge in the file
-// wins and the rest are reported. Picking silently would make the reading depend
-// on an accident; refusing to answer would make one bad line hide a whole tree.
+// Where a child carries parent edges naming more than one objective — which
+// `link` refuses, and which a hand-edited or promoted log can still hold — the
+// first edge in the file wins and the rest are reported. Picking silently would
+// make the reading depend on an accident; refusing to answer would make one bad
+// line hide a whole tree.
 func parentRelation(edges []*Edge, kinds map[string]Kind) (parent map[string]string, children map[string][]string, anomalies []Anomaly) {
 	parent = map[string]string{}
 	children = map[string][]string{}
@@ -279,12 +296,15 @@ func parentRelation(edges []*Edge, kinds map[string]Kind) (parent map[string]str
 			continue
 		}
 		// The positional rule. A dangling endpoint has no kind here either, so
-		// an edge pointing at a record this log does not hold is not parentage
-		// — `validate` is what reports it.
+		// an edge pointing at a record the derivation does not hold is not
+		// parentage — `validate` is what reports it.
 		if kinds[e.From] != KindObjective || kinds[e.To] != KindObjective {
 			continue
 		}
 		if have, taken := parent[e.From]; taken {
+			if have == e.To {
+				continue
+			}
 			anomalies = append(anomalies, Anomaly{ID: e.From, Message: fmt.Sprintf(
 				"an objective has one parent, and this one has two: %s is the first in the file and is the one used; the edge to %s is ignored",
 				have, e.To)})
@@ -800,9 +820,10 @@ func MergeReports(reports []RepoReport) CrossRepoReport {
 			e.Repo = r.Repo
 			out.Excluded = append(out.Excluded, e)
 		}
-		current := r.Report.Current
-		current.Repo = r.Repo
-		out.Current = append(out.Current, current)
+		if current := r.Report.Current; current.Rule != "" {
+			current.Repo = r.Repo
+			out.Current = append(out.Current, current)
+		}
 		for _, a := range r.Report.Anomalies {
 			a.Repo = r.Repo
 			out.Anomalies = append(out.Anomalies, a)

@@ -897,13 +897,13 @@ of reasoning means *nobody asked* and one whose absence of reasoning means *aske
 and there was none* — and only the second one stops the next run from re-opening it.
 
 **No edge to the user-scope preference.** The temptation is real and the reason is
-mechanical: edges live in one log, and nothing stops you from writing one anyway.
-Measured — an edge from a repository record to an id that exists only in the user
-log is accepted at exit 0, printed back in full, and `memory validate` on that
-repository answers `ok: true` with `problems: []`. So it neither refuses nor
-reports; it just sits there, joining nothing, indistinguishable from structure. The
-join between an adoption and the opinion it adopts is the area tag, which both
-carry and which every read in this file is already bounded by.
+mechanical: an edge may cross logs but `graph` still walks one, and nothing stops
+you from writing one anyway. Measured — an edge from a repository record to an id
+that exists only in the user log is accepted at exit 0, printed back in full, and
+`memory validate` on that repository answers `ok: true` with `problems: []`. So it
+neither refuses nor reports; it just sits there, joining nothing, indistinguishable
+from structure. The join between an adoption and the opinion it adopts is the area
+tag, which both carry and which every read in this file is already bounded by.
 
 #### When it replaces one that is already there
 

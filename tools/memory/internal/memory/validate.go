@@ -525,6 +525,10 @@ func ValidateLog(path string, lines []Line) Report {
 	return CurrentSchema().ValidateLog(path, lines)
 }
 
+func ValidateLogIn(path string, lines []Line, store map[string]bool) Report {
+	return CurrentSchema().ValidateLogIn(path, lines, store)
+}
+
 // ValidateLog checks every line against the rules of the version that line
 // declares, plus the graph-wide invariants: unique ids and no dangling edges.
 // A dangling edge is worth catching because it is silent — a graph walk simply
@@ -539,6 +543,10 @@ func ValidateLog(path string, lines []Line) Report {
 // pointing at it look dangling, so an unknown version elsewhere in the file
 // would manufacture problems on lines that are perfectly fine.
 func (s Schema) ValidateLog(path string, lines []Line) Report {
+	return s.ValidateLogIn(path, lines, nil)
+}
+
+func (s Schema) ValidateLogIn(path string, lines []Line, store map[string]bool) Report {
 	rep := Report{Path: path, Problems: []Problem{}, Unjudged: []Unjudged{}}
 
 	ids := map[string]int{} // id -> first line it appeared on
@@ -584,6 +592,10 @@ func (s Schema) ValidateLog(path string, lines []Line) Report {
 	// legitimately be written before... nothing, actually: both endpoints must
 	// already exist when the edge is written. But checking here rather than
 	// per-line keeps the rule in one place and tolerates any write order.
+	where := "this log"
+	if store != nil {
+		where = "any log of the store"
+	}
 	for _, l := range lines {
 		if l.Edge == nil {
 			continue
@@ -592,12 +604,13 @@ func (s Schema) ValidateLog(path string, lines []Line) Report {
 			if id == "" {
 				continue
 			}
-			if _, ok := ids[id]; !ok {
-				rep.Problems = append(rep.Problems, Problem{
-					Line: l.Num, Field: field,
-					Message: fmt.Sprintf("dangling edge: no entry with id %s in this log", id),
-				})
+			if _, ok := ids[id]; ok || store[id] {
+				continue
 			}
+			rep.Problems = append(rep.Problems, Problem{
+				Line: l.Num, Field: field,
+				Message: fmt.Sprintf("dangling edge: no entry with id %s in %s", id, where),
+			})
 		}
 	}
 
