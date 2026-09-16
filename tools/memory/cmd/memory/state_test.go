@@ -56,6 +56,7 @@ func child(t *testing.T, r repo, parent, title string) string {
 type stateOutput struct {
 	Count      int `json:"count"`
 	Objectives []struct {
+		Root               string   `json:"root"`
 		ID                 string   `json:"id"`
 		Title              string   `json:"title"`
 		Plan               string   `json:"plan"`
@@ -81,6 +82,7 @@ type stateOutput struct {
 		Reason string `json:"reason"`
 	} `json:"excluded"`
 	Current struct {
+		Root          string `json:"root"`
 		ID            string `json:"id"`
 		Rule          string `json:"rule"`
 		Why           string `json:"why"`
@@ -798,6 +800,7 @@ type crossStateOutput struct {
 	Count      int      `json:"count"`
 	Objectives []struct {
 		Repo     string   `json:"repo"`
+		Root     string   `json:"root"`
 		ID       string   `json:"id"`
 		Title    string   `json:"title"`
 		State    string   `json:"state"`
@@ -810,6 +813,7 @@ type crossStateOutput struct {
 	} `json:"excluded"`
 	Current []struct {
 		Repo string `json:"repo"`
+		Root string `json:"root"`
 		ID   string `json:"id"`
 		Rule string `json:"rule"`
 	} `json:"current"`
@@ -1493,5 +1497,39 @@ func TestEveryAnomalyIsReportedByTheLogHoldingTheRecordItIsAbout(t *testing.T) {
 	}
 	if !ignored[second] || !ignored[third] {
 		t.Errorf("each ignored edge is named by an anomaly of its own: %+v", cross.Anomalies)
+	}
+}
+
+func TestStateNamesTheWorkingTreeAnObjectiveIsRecordedInFromAnyRepository(t *testing.T) {
+	s, alpha, beta := twoDepths(t)
+	there := addObjective(t, alpha, "The objective recorded in the first repository")
+	addObjective(t, beta, "The objective recorded in the second repository")
+	roots := map[string]string{"alpha": alpha.root, "beta": beta.root}
+
+	cross := readCrossState(t, s, beta, "--all", "--id", there)
+	if len(cross.Objectives) != 1 || cross.Objectives[0].ID != there {
+		t.Fatalf("state --all --id finds the objective in the other repository: %+v", cross.Objectives)
+	}
+	if got := cross.Objectives[0].Root; got != alpha.root {
+		t.Errorf("read from beta, the objective names alpha's working tree: got %q, want %q", got, alpha.root)
+	}
+	if len(cross.Current) != 2 {
+		t.Fatalf("each log keeps its own current objective: %+v", cross.Current)
+	}
+	for _, c := range cross.Current {
+		if c.Root != roots[c.Repo] {
+			t.Errorf("the current objective of %s names %q, want %q", c.Repo, c.Root, roots[c.Repo])
+		}
+	}
+
+	for name, r := range map[string]repo{"alpha": alpha, "beta": beta} {
+		single := one(t, readState(t, r))
+		if got := single.Objectives[0].Root; got != r.root {
+			t.Errorf("state over %s's log names its working tree on the objective: got %q, want %q", name, got, r.root)
+		}
+		if got := single.Current.Root; got != r.root {
+			t.Errorf("state over %s's log names its working tree on the current objective: got %q, want %q",
+				name, got, r.root)
+		}
 	}
 }

@@ -428,15 +428,46 @@ log is append-only and this is the only place a typo can still be caught; left t
 the check it would surface months later as a `could_not_check` indistinguishable
 from a file somebody deleted. The flag repeats for more than one anchor.
 
-**A path says where in a repository, never which repository.** The only thing on
-the record that says which one is `origin.repo`, stamped by `add`. That is enough
-at repo scope, where the log and the code live together — and it is *not* enough
-at user scope, where the log is `~/.ai-kit/memory.jsonl` and the promoted records
-in it came from anywhere. So `memory anchors --scope user` checks those paths
-against whatever repository the caller happens to be standing in, which is a
-different question from the one the record was written to answer. Read the
-verdicts there against `origin.repo` yourself; checking a log's anchors in a
-repository other than its own is not something this command does for you.
+**A path says where in a repository, never which repository.** So `memory anchors`
+finds the repository each record came from and reads its anchors there, rather
+than in whatever directory the command happens to run in:
+
+- **A record in a repository's log is checked against the repository that log
+  lives in** — the directory holding the log's `.ai-kit/`. Never against the
+  record's own `origin.repo_id`: a line keeps the identity it was written under,
+  and a checkout that has since moved or been cloned under another name is still
+  the directory its log sits in now.
+- **A record in the user log is checked against the checkout its
+  `origin.repo_id` names.** An identity that is itself an absolute path to an
+  existing directory is that directory. Otherwise it is looked up among the
+  repository logs the store holds, by the identity each one was stored under: one
+  match is that log's repository, and where several share the identity — a
+  checkout and its git worktrees — it is the one whose `.git` is a directory
+  rather than a file.
+
+A record whose repository cannot be located is `could_not_check`, and every one of
+its anchors carries a `note` naming which case it is:
+
+| Case | The note names |
+|---|---|
+| the record carries no `origin.repo_id` | that nothing says which repository its anchors were read out of |
+| the identity matches no repository log in the store and is not an existing directory | the identity and the store |
+| several repository logs share the identity, and not exactly one of their roots has a `.git` directory | the identity, how many roots qualify, and every candidate |
+
+**It is never checked against the directory the command runs in instead**, not
+even when that directory holds a file at the cited path. A verdict read off the
+wrong checkout is a false `still_holds` or a false `changed`, and both read as a
+fact about the code. A repository that was located but is no longer on disk is a
+file that could not be read, and says so the same way.
+
+The answer says where it looked. When one root serves every record — a
+repository's log, or any run naming `--repo-root` — it is `repo_root` at the top
+of the answer, as it has always been. Under `--scope user` without the flag each
+record carries its own `repo_root`, and a record that could not be located carries
+none. **`--repo-root`, when named, decides the root for every record** whatever
+scope it came from, so a promoted record can still be read against a checkout of
+your choosing. Which records are checked does not move: this repository's log, or
+the user log under `--scope user`.
 
 At user scope `add` also has no repo to read the cited lines out of, so
 `--repo-root` supplies one. The requirement does not bend for the scope: a
@@ -456,7 +487,7 @@ the same three `agents/explore.md` states for a revalidated finding:
 |---|---|
 | `still_holds` | the cited text is in the file; `found_at` says where, and `moved` says whether that is still the line the record wrote |
 | `changed` | the file was read and the cited text is not in it anywhere |
-| `could_not_check` | the file could not be read, or the anchor is not one this binary can resolve |
+| `could_not_check` | the file could not be read, the anchor is not one this binary can resolve, or the repository the record came from could not be located |
 
 A record's verdict is its worst anchor's — `changed` over `could_not_check` over
 `still_holds` — because a record with one rewritten anchor is one to look at
@@ -484,7 +515,7 @@ Three consequences worth stating, because each looks like an omission:
   meant, and guessing is the one thing a mechanical check must not do.
 - **The check never rewrites the record.** No `--fix`, no auto-updated line. The
   log is append-only and this reports only. `--repo-root` says which working tree
-  to read and defaults to the repo the log lives in; a value that is not a
+  to read and defaults to the repository each record came from; a value that is not a
   directory is one refusal rather than `could_not_check` on every record, since a
   typo in the flag is a fact about the command and that verdict reads as a fact
   about the code.
@@ -805,7 +836,19 @@ objectives listed under a log are the ones that log holds and an anomaly is
 reported by the log holding the record it is about. In the `--all` JSON every
 objective, exclusion, anomaly and current objective carries a `repo`. That field
 is `omitempty` and no single-log report ever sets it: `memory state` with no
-flags emits exactly the keys it emitted before any of this existed.
+flags emits exactly the top-level keys it emitted before any of this existed, and
+no `repo` anywhere.
+
+**Every objective names the working tree it was recorded in.** Each objective,
+each exclusion and each current objective carries `root`: the absolute path of the
+working tree holding the log it is listed from, in the single-log report and under
+`--all` alike. So `memory state --all --id <id>`, run from any repository, says
+where an objective recorded in another one lives on this host. That is all it
+says — what a workflow keeps under that directory is the workflow's business, and
+nothing here names a file inside it. It is read off the log's path with no look at
+the filesystem, so a repository that has since been moved still reports the root
+its log was written under. The user log has no working tree, and nothing it lists
+carries a `root`.
 
 **Each of the four lists names a record once.** Two `source_path`s can hold the
 same id — a promotion, or a worktree of the same repository — so `objectives`,
@@ -1075,6 +1118,7 @@ memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
 memory anchors --kind gotcha --verdict changed   # only the ones that drifted
 memory anchors --path pkg/auth/token.go          # only the ones citing that file
 memory anchors --id <id>,<id>    # only those records, and what it could not check
+memory anchors --scope user      # each promoted record against the checkout it came from
 memory edges --type supersedes   # every edge of one relation, no starting id
 memory edges --from <id> --since 2026-09-01   # what that record linked this month
 memory graph --from <id> --depth 2
@@ -1085,6 +1129,7 @@ memory state --id <objective-id> # just that one
 memory state --text              # what is waiting on you, every log, as text
 memory state --text --here       # the same, for this repository only
 memory state --all               # every log, as JSON
+memory state --all --id <objective-id>   # that objective from any repository, with its root
 
 memory promote --kind preference --to user --dry-run   # see Promotion
 memory promote --ids <id>,<id> --to user
@@ -1508,6 +1553,20 @@ under different tags is invisible to whoever finds the mistake.
 - `anchors` checks every match rather than withholding above the threshold, over
   a log well past it, in under a second; `--repo-root` moves which working tree
   is read without moving the log.
+- A `gotcha` written in one repository and promoted to the user log, checked with
+  `anchors --scope user` from a second repository, is `still_holds` while the
+  first repository's cited lines are untouched and `changed` once they are
+  rewritten there — while the second repository holds the opposite version of the
+  file at the same path each time. Named as `--repo-root`, the second repository is
+  the one read.
+- A user-log record carrying no `origin.repo_id`, one whose identity matches no
+  repository log and names no existing directory, and one whose identity two
+  checkouts with `.git` directories share are each `could_not_check`, with a note
+  naming its own case and no `repo_root` — run from a repository whose file at the
+  cited path would have made all three `still_holds`.
+- A record promoted out of a checkout whose identity a `git worktree` of it shares
+  is checked against the checkout, whose `.git` is a directory, and reports
+  `still_holds` read from inside a worktree whose cited lines were rewritten.
 - Whitespace, case and indentation all move an anchor's hash — the check
   normalizes nothing, on purpose — and checking writes nothing to the file it
   read.
@@ -1566,6 +1625,10 @@ under different tags is invisible to whoever finds the mistake.
   swapping their two entries swaps the answer while the edge points the same way.
 - A parent's tally counts `met` and superseded children as done, leaves
   `cancelled` and `separated` out, and reports the rest outstanding.
+- `state --all --id`, run from one repository for an objective recorded in
+  another, reports it with `root` set to the other repository's working tree; each
+  current objective under `--all` names the root of its own log, and `state` over
+  either log alone carries the same `root` on its objective and its current one.
 - `areas` reports both scopes on every run, each carrying the path it resolved
   to. A user log that was never created is a user scope with zero areas and exit
   0, printing an empty list rather than null — never a section left out, which

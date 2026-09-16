@@ -131,12 +131,13 @@ type AnchorCheck struct {
 
 // RecordCheck is one record's anchors and the single verdict they add up to.
 type RecordCheck struct {
-	ID      string        `json:"id"`
-	Kind    Kind          `json:"kind"`
-	Slug    string        `json:"slug"`
-	Title   string        `json:"title"`
-	Verdict Verdict       `json:"verdict"`
-	Anchors []AnchorCheck `json:"anchors"`
+	ID       string        `json:"id"`
+	Kind     Kind          `json:"kind"`
+	Slug     string        `json:"slug"`
+	Title    string        `json:"title"`
+	RepoRoot string        `json:"repo_root,omitempty"`
+	Verdict  Verdict       `json:"verdict"`
+	Anchors  []AnchorCheck `json:"anchors"`
 }
 
 // CheckAnchor says whether the cited text is still in the file, and where.
@@ -221,6 +222,36 @@ func CheckEntries(repoRoot string, entries []*Entry) []RecordCheck {
 			continue
 		}
 		out = append(out, CheckEntry(repoRoot, e))
+	}
+	return out
+}
+
+func CheckEntriesAt(locate func(*Entry) (root, reason string), entries []*Entry) []RecordCheck {
+	out := make([]RecordCheck, 0, len(entries))
+	for _, e := range entries {
+		if len(e.Anchors) == 0 {
+			continue
+		}
+		root, reason := locate(e)
+		if root == "" {
+			out = append(out, unlocatedEntry(e, reason))
+			continue
+		}
+		c := CheckEntry(root, e)
+		c.RepoRoot = root
+		out = append(out, c)
+	}
+	return out
+}
+
+func unlocatedEntry(e *Entry, reason string) RecordCheck {
+	out := RecordCheck{
+		ID: e.ID, Kind: e.Kind, Slug: e.Slug, Title: e.Title,
+		Verdict: VerdictCouldNotCheck,
+		Anchors: make([]AnchorCheck, 0, len(e.Anchors)),
+	}
+	for _, a := range e.Anchors {
+		out.Anchors = append(out.Anchors, AnchorCheck{Anchor: a, Verdict: VerdictCouldNotCheck, Note: reason})
 	}
 	return out
 }

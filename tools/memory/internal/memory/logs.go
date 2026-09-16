@@ -1,13 +1,15 @@
 package memory
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 )
 
 type Log struct {
-	Path  string
-	Scope Scope
+	Path   string
+	Scope  Scope
+	RepoID string
 }
 
 func SourcePaths(store string) ([]Log, error) {
@@ -28,7 +30,7 @@ func SourcePaths(store string) ([]Log, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT source_path, scope FROM lines
+	rows, err := db.Query(`SELECT source_path, scope, repo_id FROM lines
 		WHERE line_number = (SELECT min(line_number) FROM lines AS earliest
 			WHERE earliest.source_path = lines.source_path)
 		ORDER BY source_path ASC`)
@@ -41,10 +43,12 @@ func SourcePaths(store string) ([]Log, error) {
 	for rows.Next() {
 		var l Log
 		var scope string
-		if err := rows.Scan(&l.Path, &scope); err != nil {
+		var repoID sql.NullString
+		if err := rows.Scan(&l.Path, &scope, &repoID); err != nil {
 			return logs, fmt.Errorf("read %s: %w", path, err)
 		}
 		l.Scope = Scope(scope)
+		l.RepoID = repoID.String
 		logs = append(logs, l)
 	}
 	if err := rows.Err(); err != nil {

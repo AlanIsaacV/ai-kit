@@ -531,6 +531,7 @@ const (
 // having to ask every session including when it is obvious.
 type CurrentObjective struct {
 	Repo  string `json:"repo,omitempty"`
+	Root  string `json:"root,omitempty"`
 	ID    string `json:"id,omitempty"`
 	Slug  string `json:"slug,omitempty"`
 	Title string `json:"title,omitempty"`
@@ -708,6 +709,7 @@ func (t *Tree) recordActivity(lines []Line) {
 // ObjectiveState is one objective as the tree sees it.
 type ObjectiveState struct {
 	Repo               string       `json:"repo,omitempty"`
+	Root               string       `json:"root,omitempty"`
 	ID                 string       `json:"id"`
 	Slug               string       `json:"slug"`
 	Title              string       `json:"title"`
@@ -730,6 +732,7 @@ type ObjectiveState struct {
 // with the reason it was set aside is an answer.
 type ExcludedObjective struct {
 	Repo   string `json:"repo,omitempty"`
+	Root   string `json:"root,omitempty"`
 	ID     string `json:"id"`
 	Slug   string `json:"slug"`
 	Title  string `json:"title"`
@@ -790,6 +793,27 @@ func (t *Tree) Report() StateReport {
 		})
 	}
 	return rep
+}
+
+func (r StateReport) WithRoot(root string) StateReport {
+	if root == "" {
+		return r
+	}
+	objectives := make([]ObjectiveState, 0, len(r.Objectives))
+	for _, o := range r.Objectives {
+		o.Root = root
+		objectives = append(objectives, o)
+	}
+	excluded := make([]ExcludedObjective, 0, len(r.Excluded))
+	for _, e := range r.Excluded {
+		e.Root = root
+		excluded = append(excluded, e)
+	}
+	if r.Current.Rule != "" {
+		r.Current.Root = root
+	}
+	r.Objectives, r.Excluded = objectives, excluded
+	return r
 }
 
 type RepoReport struct {

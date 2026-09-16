@@ -2,6 +2,72 @@
 
 ## Unreleased
 
+### `anchors` and `state` find the repository a record came from
+
+`memory anchors --scope user` refused without `--repo-root`, since the user log
+lives outside any repository, and with it read every record against the one
+directory named, whichever repository each record had come from. `memory state`
+named the repository an objective was recorded in by its directory name and never
+said where on this host that directory is. Both now answer from where each
+record's log lives.
+
+```bash
+memory anchors --scope user --kind gotcha   # each record against the checkout it came from
+memory state --all --id <objective-id>      # "root": the working tree its log lives in
+```
+
+- **A record in a repository's log is checked against the repository that log
+  lives in**, the directory holding its `.ai-kit/`, and never against its in-line
+  `origin.repo_id`. That is what the command already did, stated now as the rule:
+  run from this repository over a byte copy of this host's store, `anchors --kind
+  gotcha --current` answers byte-for-byte what the previous binary answers over the
+  same copy — 83 records, 60 `still_holds`, 22 `changed`, 1 `could_not_check` —
+  though 508 lines of this repository's log carry an in-line identity naming a
+  checkout on another machine. REJECTED: `origin.repo_id` for every record, which
+  disagrees with the identity its log was stored under on 3,787 repository-log
+  lines on this host; and a root stored at write time, which is a new field in an
+  append-only log.
+- **A record in the user log is checked against the checkout its
+  `origin.repo_id` names.** An identity that is an absolute path to an existing
+  directory is that directory, even when the store holds that repository's log
+  under its remote — which is the one user-log record on this host whose identity
+  matches no log. Otherwise the identity is matched against the identity each
+  repository log was stored under, and one match is that log's repository. Where
+  several logs share it — a checkout and its git worktrees — the root whose `.git`
+  is a directory rather than a file is the one read. REJECTED: always answering
+  `could_not_check` for a shared identity while the checkout is right there.
+- **A record whose repository cannot be located is `could_not_check`**, and every
+  anchor on it carries a note naming the case: it has no `origin.repo_id`; its
+  identity matches no repository log and names no existing directory; or several
+  logs share its identity and not exactly one of their roots has a `.git`
+  directory, with the candidates listed. It is never read against the directory
+  the command runs in. REJECTED: falling back to that directory, where a file at
+  the same path turns the verdict into a guess that reads as a fact about the code.
+  These are the first real subjects `--verdict could_not_check` has had.
+- **`--repo-root`, when named, still decides the root for every record**, whatever
+  scope it came from; an empty value is not naming it. Where one root serves the
+  whole answer it is still `repo_root` at the top. Under `--scope user` without the
+  flag each record carries its own `repo_root` instead, and a record that could not
+  be located carries none — so every invocation that answered before answers the
+  same, and the one that gains the per-record key is the one that used to refuse.
+- **`anchors` reads the records it always read**: this repository's log, or the
+  user log under `--scope user`. Only where their anchors are read moved. The
+  identity lookup is one query over the store, made only under `--scope user`
+  without `--repo-root`.
+- **`state` reports `root` on every objective, exclusion and current objective**,
+  in the single-log report and under `--all`: the absolute path of the working tree
+  holding the log it is listed from. It is read off the log's path with no look at
+  the filesystem, so a repository that has since moved reports the root its log
+  was written under, and the user log, which has no working tree, sets none. Over a
+  byte copy of this host's store `state --all` lists 285 objectives and 37
+  exclusions, and every one carries a `root` that is an existing directory.
+  `memory` says where the repository is and nothing about what a workflow keeps
+  inside it. REJECTED: `root` on `query` and `search` records, which stay the
+  stored JSON.
+- **No schema change.** `SourcePaths` also reads the `repo_id` a log was stored
+  under, off the same earliest row its scope already comes from. No column, index,
+  migration or record field was added, and nothing new is written.
+
 ### An edge crosses repositories, and the tree reads as one tree
 
 `link` accepts an edge whose two endpoints were written into two different

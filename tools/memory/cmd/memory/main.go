@@ -1180,7 +1180,7 @@ func cmdAnchors(args []string) error {
 	path := fs.String("path", "", "return only the records carrying an anchor whose path contains this, case-insensitively")
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "check at most N, most recent first")
-	repoRoot := fs.String("repo-root", "", "repository to check against (default: the repo the log lives in)")
+	repoRoot := fs.String("repo-root", "", "repository to check every record against (default: the repo the log lives in; under --scope user, the repository each record's origin.repo_id names)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -1207,8 +1207,13 @@ func cmdAnchors(args []string) error {
 		return err
 	}
 
-	abs, err := resolveRepoRoot(firstNonEmpty(*repoRoot, loc.Repo))
-	if err != nil {
+	var abs string
+	var repos repoLocator
+	if strings.TrimSpace(*repoRoot) != "" || loc.Scope == memory.ScopeRepo {
+		if abs, err = resolveRepoRoot(firstNonEmpty(*repoRoot, loc.Repo)); err != nil {
+			return err
+		}
+	} else if repos, err = locateRepos(); err != nil {
 		return err
 	}
 
@@ -1228,7 +1233,12 @@ func cmdAnchors(args []string) error {
 		Threshold:   -1,
 	})
 
-	checks := memory.CheckEntries(abs, res.Records)
+	var checks []memory.RecordCheck
+	if abs != "" {
+		checks = memory.CheckEntries(abs, res.Records)
+	} else {
+		checks = memory.CheckEntriesAt(repos.locate, res.Records)
+	}
 	counts := map[memory.Verdict]int{}
 	for _, v := range memory.Verdicts() {
 		counts[v] = 0
@@ -1240,11 +1250,13 @@ func cmdAnchors(args []string) error {
 
 	out := map[string]any{
 		"path": loc.Path, "scope": loc.Scope, "plan": plan,
-		"repo_root": abs,
-		"matched":   res.Count,
-		"checked":   len(checks),
-		"counts":    counts,
-		"records":   records,
+		"matched": res.Count,
+		"checked": len(checks),
+		"counts":  counts,
+		"records": records,
+	}
+	if abs != "" {
+		out["repo_root"] = abs
 	}
 	if len(namedFlags(fs, "verdict", "path")) > 0 {
 		out["returned"] = len(records)
@@ -1254,6 +1266,57 @@ func cmdAnchors(args []string) error {
 	}
 	emit(out)
 	return nil
+}
+
+type repoLocator map[string][]string
+
+func locateRepos() (repoLocator, error) {
+	sources, err := memory.SourcePaths("")
+	if err != nil {
+		return nil, fail("read_failed", "%s", err.Error())
+	}
+	repos := repoLocator{}
+	for _, src := range sources {
+		if src.Scope != memory.ScopeRepo || src.RepoID == "" {
+			continue
+		}
+		repos[src.RepoID] = append(repos[src.RepoID], logAt(src).Repo)
+	}
+	return repos, nil
+}
+
+func (r repoLocator) locate(e *memory.Entry) (string, string) {
+	if e.Origin == nil || strings.TrimSpace(e.Origin.RepoID) == "" {
+		return "", "the record carries no origin.repo_id, so nothing says which repository its anchors were read out of"
+	}
+	id := e.Origin.RepoID
+	if filepath.IsAbs(id) && isDir(id) {
+		return filepath.Clean(id), ""
+	}
+	roots := r[id]
+	switch len(roots) {
+	case 0:
+		return "", fmt.Sprintf("origin.repo_id %s matches no repository log in %s and is not an existing directory",
+			id, memory.CurrentStore())
+	case 1:
+		return roots[0], ""
+	}
+	var checkouts []string
+	for _, root := range roots {
+		if isDir(filepath.Join(root, ".git")) {
+			checkouts = append(checkouts, root)
+		}
+	}
+	if len(checkouts) == 1 {
+		return checkouts[0], ""
+	}
+	return "", fmt.Sprintf("origin.repo_id %s is shared by %d repository logs and %d of their roots have a .git "+
+		"directory rather than a .git file, where exactly one must: %s", id, len(roots), len(checkouts), strings.Join(roots, ", "))
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
@@ -1376,7 +1439,7 @@ func cmdState(args []string) error {
 	}
 
 	tree := memory.NewTreeIn(lines, stored)
-	rep := tree.Report()
+	rep := tree.Report().WithRoot(loc.Repo)
 
 	if *id != "" {
 		filtered, n := filterByID(rep, *id)
@@ -1430,7 +1493,7 @@ func stateAcrossLogs(id string, text bool) error {
 
 	for i, loc := range locs {
 		tree := memory.NewTreeIn(held[i], stored)
-		rep := dropSeen(tree.Report(), loc.Scope, seen)
+		rep := dropSeen(tree.Report().WithRoot(loc.Repo), loc.Scope, seen)
 		if id != "" {
 			var n int
 			rep, n = filterByID(rep, id)

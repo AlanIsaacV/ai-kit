@@ -496,8 +496,9 @@ type Origin struct {
 // differently.
 type Anchor struct {
 	// Path is repo-relative and slash-separated, so the record still resolves in
-	// a clone checked out somewhere else. *Which* repo it is relative to is
-	// `origin.repo` and nothing else — the path itself does not carry it.
+	// a clone checked out somewhere else. *Which* repo it is relative to is the
+	// one the record's log lives in, or in the user log the one `origin.repo_id`
+	// names — the path itself does not carry it.
 	Path string `json:"path"`
 	// Line is 1-based, and it is where the cited text was when the record was
 	// written. The check never rewrites it: text that moved is reported at the

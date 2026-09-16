@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,10 +74,11 @@ type anchorsOutput struct {
 	NotFound []string       `json:"not_found"`
 	Counts   map[string]int `json:"counts"`
 	Records  []struct {
-		ID      string `json:"id"`
-		Kind    string `json:"kind"`
-		Verdict string `json:"verdict"`
-		Anchors []struct {
+		ID       string `json:"id"`
+		Kind     string `json:"kind"`
+		RepoRoot string `json:"repo_root"`
+		Verdict  string `json:"verdict"`
+		Anchors  []struct {
 			Path    string `json:"path"`
 			Line    int    `json:"line"`
 			Lines   int    `json:"lines"`
@@ -654,5 +656,142 @@ func TestAnIdTheLogDoesNotCarryIsReportedNotFound(t *testing.T) {
 	}
 	if strings.Join(out.NotFound, ",") != missing {
 		t.Fatalf("the id the log does not carry has to come back named, got %v", out.NotFound)
+	}
+}
+
+func gitRepoIn(t *testing.T, s spread, rel, remote string) repo {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git is not installed: %v", err)
+	}
+	root := filepath.Join(s.root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, root, "init", "-q")
+	git(t, root, "remote", "add", "origin", remote)
+	return repoIn(t, s, rel)
+}
+
+func rewrittenToken(t *testing.T, r repo) (original, rewritten []string) {
+	t.Helper()
+	original = srcLines(t, r, anchorPath)
+	rewritten = append([]string{}, original...)
+	rewritten[3] = "\tk.mu.RLock()"
+	return original, rewritten
+}
+
+func TestAPromotedGotchaIsCheckedAgainstTheRepositoryItCameFrom(t *testing.T) {
+	s := throwawaySpread(t)
+	alpha := gitRepoIn(t, s, "alpha", "https://example.invalid/somebody/alpha.git")
+	beta := repoIn(t, s, "beta")
+	tokenSource(t, alpha)
+	id := addGotcha(t, alpha, "The lock is taken before the write, not after", anchorPath+":4-5")
+	promote(t, alpha, "--ids", id, "--to", "user")
+	original, rewritten := rewrittenToken(t, alpha)
+
+	srcFile(t, beta, anchorPath, rewritten...)
+	held := onlyRecord(t, checkAnchors(t, beta, "--scope", "user")).Records[0]
+	if held.ID != id || held.Verdict != "still_holds" {
+		t.Fatalf("alpha still has the cited lines, and beta's rewritten copy is not what gets read: %+v", held)
+	}
+	if held.RepoRoot != alpha.root {
+		t.Errorf("the record names the working tree it was checked against: got %q, want %q", held.RepoRoot, alpha.root)
+	}
+
+	srcFile(t, alpha, anchorPath, rewritten...)
+	srcFile(t, beta, anchorPath, original...)
+	drifted := onlyRecord(t, checkAnchors(t, beta, "--scope", "user")).Records[0]
+	if drifted.Verdict != "changed" {
+		t.Fatalf("the lines were rewritten in alpha, and beta still holding them changes nothing: %+v", drifted)
+	}
+
+	named := onlyRecord(t, checkAnchors(t, beta, "--scope", "user", "--repo-root", beta.root))
+	if named.Records[0].Verdict != "still_holds" || named.RepoRoot != beta.root {
+		t.Fatalf("--repo-root, when named, decides the root for a promoted record too: %+v at %q",
+			named.Records[0], named.RepoRoot)
+	}
+}
+
+func TestARecordWhoseRepositoryCannotBeLocatedIsNeverCheckedAgainstTheOneTheCommandRunsIn(t *testing.T) {
+	s := throwawaySpread(t)
+	here := repoIn(t, s, "here")
+	tokenSource(t, here)
+	hash := memory.HashLines(srcLines(t, here, anchorPath)[3:5])
+
+	const shared = "https://example.invalid/somebody/api.git"
+	addBare(t, gitRepoIn(t, s, "api", shared), "preference", "Migrations go through Atlas")
+	addBare(t, gitRepoIn(t, s, "api-clone", shared), "preference", "Errors wrap rather than replace")
+
+	cases := map[string]struct{ repoID, reason string }{
+		"01JXKQ7M4T8YZPABCDEFGHJKM1": {"", "carries no origin.repo_id"},
+		"01JXKQ7M4T8YZPABCDEFGHJKM2": {filepath.Join(s.root, "moved-away"), "matches no repository log"},
+		"01JXKQ7M4T8YZPABCDEFGHJKM3": {shared, "is shared by 2 repository logs and 2 of their roots"},
+	}
+	for id, c := range cases {
+		raw, err := memory.MarshalLine(&memory.Entry{
+			Version: memory.CurrentSchemaVersion, ID: id, Kind: memory.KindGotcha, Slug: "unlocated",
+			Scope: memory.ScopeUser, At: "2026-09-16T10:00:00Z", About: []string{"auth"},
+			Title:   "The lock is taken before the write, not after",
+			Anchors: []memory.Anchor{{Path: anchorPath, Line: 4, Lines: 2, Hash: hash}},
+			Origin:  &memory.Origin{Repo: "here", RepoID: c.repoID, Plan: "demo"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		appendLine(t, here, here.user, string(raw))
+	}
+
+	out := checkAnchors(t, here, "--scope", "user")
+	if out.Checked != len(cases) || out.Counts["could_not_check"] != len(cases) {
+		t.Fatalf("every record is could_not_check, though the directory the command runs in holds the cited lines: %+v",
+			out.Counts)
+	}
+	for _, rec := range out.Records {
+		c := cases[rec.ID]
+		if rec.Verdict != "could_not_check" || rec.RepoRoot != "" {
+			t.Errorf("%s was checked against %q: %+v", rec.ID, rec.RepoRoot, rec)
+		}
+		for _, a := range rec.Anchors {
+			if a.Verdict != "could_not_check" || !strings.Contains(a.Note, c.reason) {
+				t.Errorf("%s: the note has to say which case applies (%q), got %q", rec.ID, c.reason, a.Note)
+			}
+		}
+	}
+}
+
+func TestAnIdentitySharedByAWorktreeIsCheckedAgainstTheCheckoutWhoseGitIsADirectory(t *testing.T) {
+	s := throwawaySpread(t)
+	const remote = "https://example.invalid/somebody/api.git"
+	checkout := gitRepoIn(t, s, "api", remote)
+	tokenSource(t, checkout)
+	git(t, checkout.root, "add", anchorPath)
+	git(t, checkout.root, "commit", "-q", "-m", "token rotation")
+
+	wt := filepath.Join(s.root, "api-worktree")
+	git(t, checkout.root, "worktree", "add", "-q", "--detach", wt)
+	worktree := repo{root: wt, home: s.home, store: s.store,
+		log: filepath.Join(wt, ".ai-kit", "memory.jsonl"), user: checkout.user}
+
+	id := addGotcha(t, checkout, "The lock is taken before the write, not after", anchorPath+":4-5")
+	addKind(t, worktree, "decision", "Rotation stays single-writer")
+	_, rewritten := rewrittenToken(t, worktree)
+	srcFile(t, worktree, anchorPath, rewritten...)
+	promote(t, checkout, "--ids", id, "--to", "user")
+
+	db := openStore(t, checkout)
+	var logs int
+	if err := db.QueryRow(`SELECT count(DISTINCT source_path) FROM lines WHERE repo_id = ?`, remote).Scan(&logs); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if logs != 2 {
+		t.Fatalf("the fixture is two repository logs under one identity, got %d", logs)
+	}
+
+	rec := onlyRecord(t, checkAnchors(t, worktree, "--scope", "user")).Records[0]
+	if rec.RepoRoot != checkout.root || rec.Verdict != "still_holds" {
+		t.Fatalf("the checkout is the root whose .git is a directory, and the worktree's rewritten lines are not read: "+
+			"checked against %q, want %q: %+v", rec.RepoRoot, checkout.root, rec)
 	}
 }
