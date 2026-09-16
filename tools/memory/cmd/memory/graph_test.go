@@ -91,3 +91,65 @@ func TestGraphAtDepthZeroIsTheRecordAlone(t *testing.T) {
 		t.Fatalf("one hop out reaches the linked record, so --depth 0 withheld something: got %d", deeper.Count)
 	}
 }
+
+type graphWalk struct {
+	Count int `json:"count"`
+	Nodes []struct {
+		Entry struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"entry"`
+		Depth int `json:"depth"`
+	} `json:"nodes"`
+}
+
+func TestGraphWalksATreeThatSpansTwoLogsFromEitherEnd(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	parent := addObjective(t, alpha, "The objective the whole plan hangs from")
+	kid := addObjective(t, beta, "The objective in the service next door")
+	mustLink(t, beta, "derives_from", kid, parent)
+
+	titles := map[string]string{
+		parent: "The objective the whole plan hangs from",
+		kid:    "The objective in the service next door",
+	}
+	for _, from := range []string{parent, kid} {
+		for _, r := range []repo{alpha, beta} {
+			var out graphWalk
+			walk(t, r, &out, "graph", "--from", from, "--depth", "2")
+			if out.Count != 2 || len(out.Nodes) != 2 {
+				t.Fatalf("from %s read in %s: the walk crosses the log the edge did not land in, got %d nodes",
+					from, r.root, out.Count)
+			}
+			got := map[string]string{}
+			for _, n := range out.Nodes {
+				got[n.Entry.ID] = n.Entry.Title
+			}
+			for id, want := range titles {
+				if title, reached := got[id]; !reached || title != want {
+					t.Errorf("from %s read in %s: every node carries its own record rather than being "+
+						"skipped as dangling; %s came back %q", from, r.root, id, title)
+				}
+			}
+		}
+	}
+}
+
+func TestGraphRefusesAnIDNoLogOfTheStoreHolds(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	addObjective(t, alpha, "The objective that was actually written")
+	addObjective(t, beta, "The objective in the other repository")
+
+	const ghost = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	res := runBare(t, alpha, "graph", "--from", ghost)
+	if res.code != 1 {
+		t.Fatalf("an id no log holds is still unknown, got exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	code, msg := errorCode(t, res)
+	if code != "unknown_id" {
+		t.Fatalf("the refusal keeps the code it has always had, got %q: %s", code, msg)
+	}
+	if !strings.Contains(msg, "in any log of "+alpha.store) {
+		t.Errorf("the refusal names the store it searched rather than a file nobody can open: %q", msg)
+	}
+}

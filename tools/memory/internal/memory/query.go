@@ -146,11 +146,11 @@ func sortMostRecentFirst(entries []*Entry) {
 // match is the filtering half of Query: every entry the filter admits, most recent
 // first, and the current objective when the filter admits objectives.
 func match(lines, store []Line, f Filter) ([]*Entry, *CurrentObjective) {
-	entries, edges := Entries(lines), Edges(lines)
+	entries := Entries(lines)
 
 	settled := map[string]bool{}
 	if f.CurrentOnly {
-		settled = SettledIDs(edges)
+		settled = SettledIDs(Edges(store))
 	}
 
 	kinds := map[Kind]bool{}
@@ -170,8 +170,8 @@ func match(lines, store []Line, f Filter) ([]*Entry, *CurrentObjective) {
 	// must not depend on what you happened to ask about.
 	//
 	// Built only when the query admits objectives at all, since it answers
-	// nothing otherwise — which is also what keeps every other kind's --current
-	// exactly where it was.
+	// nothing otherwise. What every other kind's --current drops is the settled
+	// set above, which reads the store's edges rather than this log's.
 	var tree *Tree
 	wantsObjectives := f.AdmitsObjectives()
 	if wantsObjectives {

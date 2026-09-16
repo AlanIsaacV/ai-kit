@@ -67,6 +67,8 @@ func anchorSpec(t *testing.T, r repo) string {
 }
 
 type anchorsOutput struct {
+	Path     string         `json:"path"`
+	Logs     []string       `json:"logs"`
 	RepoRoot string         `json:"repo_root"`
 	Matched  int            `json:"matched"`
 	Checked  int            `json:"checked"`
@@ -793,5 +795,99 @@ func TestAnIdentitySharedByAWorktreeIsCheckedAgainstTheCheckoutWhoseGitIsADirect
 	if rec.RepoRoot != checkout.root || rec.Verdict != "still_holds" {
 		t.Fatalf("the checkout is the root whose .git is a directory, and the worktree's rewritten lines are not read: "+
 			"checked against %q, want %q: %+v", rec.RepoRoot, checkout.root, rec)
+	}
+}
+
+func TestAnchorsCurrentDropsARecordSettledByAnEdgeInAnotherLog(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	tokenSource(t, alpha)
+	settled := addGotcha(t, alpha, "The lock is taken before the write, not after", anchorPath+":4-5")
+	standing := addGotcha(t, alpha, "The rotation is single-writer", anchorPath+":3")
+	by := addKind(t, beta, "decision", "The service next door replaced it")
+	mustLink(t, beta, "supersedes", by, settled)
+
+	live := checkAnchors(t, alpha, "--kind", "gotcha", "--current")
+	if got := recordIDs(live); len(got) != 1 || got[0] != standing {
+		t.Fatalf("a supersedes edge written next door settles a gotcha held here, got %v", got)
+	}
+	if live.Matched != 1 || live.Checked != 1 {
+		t.Errorf("matched and checked describe the same one record, got %d and %d", live.Matched, live.Checked)
+	}
+
+	whole := checkAnchors(t, alpha, "--kind", "gotcha")
+	if got := recordIDs(whole); len(got) != 2 {
+		t.Errorf("without --current both are still checked, got %v", got)
+	}
+}
+
+func TestAnchorsAllChecksEveryRecordAgainstTheRepositoryItsOwnLogLivesIn(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	tokenSource(t, alpha)
+	tokenSource(t, beta)
+	here := addGotcha(t, alpha, "The lock is taken before the write, not after", anchorPath+":4-5")
+	next := addGotcha(t, beta, "The rotation is single-writer", anchorPath+":4-5")
+	_, rewritten := rewrittenToken(t, beta)
+	srcFile(t, beta, anchorPath, rewritten...)
+
+	mine := checkAnchors(t, alpha, "--kind", "gotcha")
+	if got := recordIDs(mine); len(got) != 1 || got[0] != here {
+		t.Fatalf("without --all anchors reads the log it always read, got %v", got)
+	}
+	if mine.RepoRoot != alpha.root {
+		t.Errorf("one root served every record, so it sits at the top, got %q", mine.RepoRoot)
+	}
+
+	out := checkAnchors(t, alpha, "--kind", "gotcha", "--all")
+	if out.Checked != 2 || len(out.Records) != 2 {
+		t.Fatalf("--all checks every record the store holds, got %d of %d", len(out.Records), out.Checked)
+	}
+	if out.RepoRoot != "" {
+		t.Errorf("no one root served every record, so none sits at the top, got %q", out.RepoRoot)
+	}
+	if out.Path != "" {
+		t.Errorf("--all reads no single log, so it names none, got %q", out.Path)
+	}
+	if got, want := sorted(out.Logs...), sorted(alpha.log, beta.log); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("--all names the logs it read, got %v want %v", got, want)
+	}
+	want := map[string]struct{ root, verdict string }{
+		here: {alpha.root, "still_holds"},
+		next: {beta.root, "changed"},
+	}
+	for _, rec := range out.Records {
+		w, known := want[rec.ID]
+		if !known {
+			t.Fatalf("a record no log holds came back: %+v", rec)
+		}
+		if rec.RepoRoot != w.root {
+			t.Errorf("%s is checked against the repository its own log lives in, got %q want %q",
+				rec.ID, rec.RepoRoot, w.root)
+		}
+		if rec.Verdict != w.verdict {
+			t.Errorf("%s: want %s, got %s", rec.ID, w.verdict, rec.Verdict)
+		}
+	}
+}
+
+func TestAnchorsAllNamedARepoRootChecksEveryRecordAgainstIt(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	tokenSource(t, alpha)
+	tokenSource(t, beta)
+	addGotcha(t, alpha, "The lock is taken before the write, not after", anchorPath+":4-5")
+	addGotcha(t, beta, "The rotation is single-writer", anchorPath+":4-5")
+	_, rewritten := rewrittenToken(t, beta)
+	srcFile(t, beta, anchorPath, rewritten...)
+
+	out := checkAnchors(t, alpha, "--kind", "gotcha", "--all", "--repo-root", alpha.root)
+	if out.RepoRoot != alpha.root {
+		t.Fatalf("--repo-root, when named, still decides the root for every record, got %q", out.RepoRoot)
+	}
+	if out.Counts["still_holds"] != 2 {
+		t.Errorf("both records are read against the one root named, got %v", out.Counts)
+	}
+	for _, rec := range out.Records {
+		if rec.RepoRoot != "" {
+			t.Errorf("one root served every record, so no record carries its own, got %q", rec.RepoRoot)
+		}
 	}
 }

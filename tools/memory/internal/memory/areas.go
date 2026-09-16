@@ -48,11 +48,13 @@ type AreaLive struct {
 //
 // The filtering is Query's, called twice rather than reimplemented once: the
 // plan-less rule ("a record with no plan is the repository's rather than
-// nobody's") and what `--current` means for an objective are both stated there,
-// and a second reading of either would be a second thing to keep in step. The
-// first pass counts, the second decides what is live — the two differ only in
-// CurrentOnly, and they are separate passes because the count is deliberately
-// over the settled records too.
+// nobody's") is stated there, and a second reading of it would be a second thing
+// to keep in step. What `--current` means is no longer one of those things.
+// Query is QueryIn(lines, lines), so what settles a record here is this log's
+// edges, where query, search and anchors now read the store's. The first pass
+// counts, the second decides what is live — the two differ only in CurrentOnly,
+// and they are separate passes because the count is deliberately over the
+// settled records too.
 //
 // The caller's Limit, Threshold and CurrentOnly are overridden. A partial
 // enumeration is not an enumeration, and the count-before-dump threshold guards

@@ -2,6 +2,93 @@
 
 ## Unreleased
 
+### Reads cross repositories, and so does a settling edge
+
+The five read commands answer from the store `link`, `validate` and `state`
+already answer from. `graph --from` and `edges --from`/`--to` walk and list across
+every log; `anchors` gains `--all`; `query`, `search` and `anchors` build
+`--current`'s settled set from every edge in the store rather than from one log's;
+and `add --batch` accepts exactly the edges `link` accepts.
+
+```bash
+memory graph  --from <objective-in-another-repo> --depth 2   # both ends of the tree
+memory edges  --to <parent>                                  # the same answer from either log
+memory anchors --all --kind gotcha --current                 # every log, each against its own repo
+```
+
+- **A `supersedes` or an `answers` edge settles its target wherever the edge was
+  written.** The settled set `--current` subtracts is built from the store's edges
+  rather than from the log being read, for every kind and on `query`, `search` and
+  `anchors` alike. **This reverses a decision this file recorded as REJECTED, for
+  now**, under *An edge crosses repositories* below: the reason it was rejected was
+  that widening it changes what every existing `--current` read in every repository
+  returns and nobody had taken that decision. The user has now taken it, and the
+  paragraph that recorded the rejection says so. Measured before taking it: over a
+  byte copy of this host's store — 15,854 rows, 36 logs, 1,435 settling edges —
+  **no record is settled today by an edge in another log**, so 305 invocations of
+  the `skills/work` step 1 command set, run across 35 repositories under the
+  previous binary and this one, differ in nothing at all. What changes is what the
+  next cross-log edge will do, not what any read answers today.
+- **A read addressed by an id reads the store; a read addressed by a filter reads
+  its log.** `graph --from` and `edges --from`/`--to` name a record, and a record
+  is where it is, so both now answer the same from either end of an edge that
+  spans two logs. `edges` naming no endpoint is still this log's edges, because
+  "every edge here" is a question about a log rather than about a record — and
+  that is what keeps every invocation that answered before answering the same.
+  REJECTED: a flag on each of the five, which leaves the default answering wrongly;
+  and widening `query` and `search`'s records too, which is what `--scope both` is
+  for.
+- **`graph` widens its entries and its edges together.** `memory.Graph` skips an
+  edge whose endpoint is not among the entries it was given, as dangling, so
+  widening the edges alone would have degraded into silent under-reporting rather
+  than into an error. The node reached across a log carries its own record.
+- **`anchors --all` checks every record the store holds, each against the
+  repository its own log lives in.** Each log is filtered on its own and the
+  matches merged, as `query --scope both` does, so a record's root is its own
+  log's; `--limit N` takes the N most recent across the union rather than N per
+  log. It names the logs it read under `logs` in place of `path` and `scope`, as
+  `state --all` does, and every record carries its own `repo_root` because no one
+  root served the answer. `--repo-root` alongside it still decides the root for
+  every record. Over a byte copy of this host's store, `anchors --all --kind gotcha
+  --current` checks 1,168 of 1,171 matched records across 36 logs in 1.0 s — 874
+  `still_holds`, 220 `changed`, 74 `could_not_check` — and no record is read
+  against a root that is not one of its own logs'. A repository no longer on disk
+  makes its own records `could_not_check` rather than refusing the run. REJECTED:
+  deduplicating an id two logs hold, which would hide that a promoted record is
+  checked in both places; and making the store-wide read the default, which would
+  move what `anchors` has always answered.
+- **`add --batch` judges its edges against the store**, with `link`'s lookup and
+  `link`'s message: `no entry in any log of <store> for to=<id>` rather than a
+  refusal naming one log's path. A batch line attaching a child objective to a
+  parent in another repository is appended at exit 0, which is where the gap bit —
+  `skills/plan` attaches a child through a batch. The cost `link` accepted in the
+  entry below is extended here: a mistyped id that happens to exist in another
+  repository now passes.
+- **No invocation reads the store more times than it did, and the ones that need
+  both views now read it once.** A command that needs the whole store *and* its own
+  log takes both out of a single read: `ReadStoreEach` returns every row and, out
+  of those same rows, the subset each named `source_path` holds — which is what
+  `Store.Read`'s `WHERE source_path = ?` would have answered, at the cost of a
+  second read. So `runQuery` goes from 2 to 1, `runQueryBoth` from 3 to 1, and
+  `anchors --current`, which reads the store for the first time, still reads once.
+  `graph`, `edges --from`/`--to` and `add --batch` each replaced their single log
+  read rather than adding beside it; `cmdState` single-log is still 2 and `cmdLink`
+  1. `anchors --all` reads every log, as `state --all` does. What a widened
+  `--current` costs is the whole-store read where a filtered one used to serve:
+  against a byte copy of this host's store, `query --kind decision --current` goes
+  from ~28 ms to ~150 ms. A read with no `--current` whose filter admits no
+  objective still never opens more than its own log — `query --kind decision`
+  is ~25 ms, where it always was.
+- **Three messages that read as references to a file now name a log or the
+  store.** `graph`'s `unknown_id` and `add --batch`'s `dangling_edge` name the
+  store they searched; `state`'s `unknown_objective` says *log `<path>` of
+  `<store>`*. No `memory.jsonl` exists at any of those paths — the path is the
+  log's name in the store, which is stated in the README and now carried by a
+  `gotcha` anchored at `memory.Resolve`. REJECTED: renaming the `path` key across
+  the twelve sites that emit it, which is an envelope change and a decision of its
+  own.
+- **No schema change**, no new column, no migration, and nothing new is written.
+
 ### `anchors` and `state` find the repository a record came from
 
 `memory anchors --scope user` refused without `--repo-root`, since the user log
@@ -120,16 +207,16 @@ memory state --dir ~/src/api --id <api-objective>   # the web objective is among
   resolves it**, from every edge in the store rather than one log's rows, so the
   three commands stop answering differently about the same repository: an approval
   or a `supersedes` written next door counts, and an objective settled from another
-  repository is no longer named as the current one. **What `--current` drops is
-  still one log's own rows**, and that half is deliberately not reached here. So
-  `query --kind objective --current` still returns an objective superseded from
-  next door under `records` while `current_objective` says there is none — one
-  answer whose two halves disagree — and for a kind that gets no
-  `current_objective` beside it, a `decision` superseded from another repository
-  comes back with nothing at all to signal it. REJECTED: building the settled set
-  from the store's edges too, which changes which records every existing
-  `--current` read in every repository returns; that is a decision of its own and
-  this change does not take it. Which records come back is still one log's, and
+  repository is no longer named as the current one. **What `--current` dropped was
+  still one log's own rows**, and that half was deliberately not reached here: it
+  left `query --kind objective --current` returning an objective superseded from
+  next door under `records` while `current_objective` said there was none, and a
+  `decision` superseded from another repository coming back with nothing at all to
+  signal it. Building the settled set from the store's edges too was recorded here
+  as REJECTED, for now, on the grounds that it changes which records every existing
+  `--current` read in every repository returns and nobody had taken that decision.
+  **The user has since taken it, and the entry above closes the gap** — that
+  REJECTED no longer stands. Which records come back is still one log's, and
   `--scope both` still matches each log in its own pass.
 - **`state --all` deduplicates all four of its lists**, rather than `objectives`
   and `excluded` alone, so the four describe the same set. `objectives`, `excluded`
@@ -138,9 +225,10 @@ memory state --dir ~/src/api --id <api-objective>   # the web objective is among
   the second would be dropped as a duplicate. It answers `"logs": []` instead of
   `null` for a store with no rows, and neither its flag help nor its output claims
   to work "over every root" any more.
-- **`add --batch` is unchanged and still checks its edges against the log they are
-  written into.** A batch is one atomic write into one log, and widening its rule
-  is a decision of its own; `link` is the way to draw an edge across two.
+- **`add --batch` was left unchanged here and still checked its edges against the
+  log they are written into.** A batch is one atomic write into one log, and
+  widening its rule was a decision of its own; the entry above takes it, and
+  `add --batch` now accepts exactly the edges `link` accepts.
 - **The branch in `Store.repoID` that took the identity from the record rather
   than from the log is gone.** Every write goes through `writeLog`, which sets the
   repository's identity first, so nothing could reach it. Which `repo_id` a

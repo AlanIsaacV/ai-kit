@@ -33,7 +33,7 @@ Usage:
   memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--id IDS] [--since TS] [--until TS] [--current] [--count] [--fields KEYS] [--body-lines N] [--limit N]
   memory search    TEXT [--plan SLUG] [--current] [--limit N]
   memory areas     [--kind KINDS] [--plan SLUG]
-  memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--id IDS] [--verdict V] [--path S] [--current] [--repo-root PATH]
+  memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--id IDS] [--verdict V] [--path S] [--current] [--all] [--repo-root PATH]
   memory edges     [--type TYPES] [--from ID] [--to ID] [--since TS] [--until TS] [--count] [--limit N]
   memory graph     --from ID [--depth N] [--threshold N]
   memory state     [--id ID] [--text] [--here] [--all]
@@ -70,8 +70,9 @@ create it answers anyway; a write refuses with code 'init_failed'.
 'add --batch' takes one JSON object per line — '-' reads stdin — carrying the
 fields the flags carry (kind, title, body, slug, about, anchor, plan) and never
 the ones the tool stamps. A line may declare an 'edges' array, each edge naming
-exactly one endpoint by an id already in the log: the entry on that line is the
-other end, on the side the line left out. Every entry in the file is appended in
+exactly one endpoint by an id already in the store: the entry on that line is the
+other end, on the side the line left out, and the id may belong to another
+repository's log exactly as 'link' allows. Every entry in the file is appended in
 one write, or nothing is — one bad line refuses all of it.
 
 An argument in flag position that begins with '-' and contains a space is refused
@@ -115,11 +116,14 @@ to start from: every edge in the log, or the ones narrowed by '--type', by eithe
 endpoint, or by time. It filters on what an edge carries and on nothing else — an
 edge has no plan, so '--plan' is refused here rather than accepted and ignored,
 and the kind or the areas of the records at either end are not bounds it takes.
-'graph --from ID' is still the walk outward from one record, and '--depth 0' is
-that record alone. Both carry the same count-before-dump guard 'query' carries:
-above the threshold they return no edges and no nodes at all, say so with
-'truncated', and name in the hint the flags that get past it — for 'graph' that
-is a smaller '--depth', or '--threshold -1' for the whole walk however big.
+Naming '--from' or '--to' reads every log of the store, since a record is where
+it is and an edge drawn next door still names it; naming neither reads this log.
+'graph --from ID' is still the walk outward from one record, over every log for
+the same reason, and '--depth 0' is that record alone. Both carry the same
+count-before-dump guard 'query' carries: above the threshold they return no
+edges and no nodes at all, say so with 'truncated', and name in the hint the
+flags that get past it — for 'graph' that is a smaller '--depth', or
+'--threshold -1' for the whole walk however big.
 
 'state' reads one log or every log, and its default follows the output mode:
 'state' lists this repository's objectives as JSON, 'state --text' prints what is
@@ -659,7 +663,7 @@ func namedFlags(fs *flag.FlagSet, names ...string) []string {
 // reported the rest would leave a caller holding an append-only log and no way to
 // tell which half landed.
 //
-// The edges are judged here too, against the same three log-wide checks `link`
+// The edges are judged here too, against the same three store-wide checks `link`
 // applies — dangling endpoints, state-edge justification, and the objective tree.
 // A second write path for edges that skipped them would be a hole in all three.
 func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error {
@@ -668,14 +672,14 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 		return err
 	}
 
-	lines, err := readLog(loc)
+	lines, err := memory.ReadStore("")
 	if err != nil {
-		return err
+		return fail("read_failed", "%s", err.Error())
 	}
-	// Both views of the log, taken once: the kinds every edge check needs, and the
+	// Both views of the store, taken once: the kinds every edge check needs, and the
 	// edges the tree check walks. Each batch entry joins the first as it is built
 	// and each batch edge joins the second, so a batch that gives one objective two
-	// parents is refused on its own second edge rather than only against the log.
+	// parents is refused on its own second edge rather than only against the store.
 	known := map[string]memory.Kind{}
 	for _, e := range memory.Entries(lines) {
 		known[e.ID] = e.Kind
@@ -687,7 +691,7 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 	records := []any{}
 	written := []*memory.Entry{}
 	newEdges := []*memory.Edge{}
-	// Where each edge came from, so a log-wide refusal can name the line to fix.
+	// Where each edge came from, so a store-wide refusal can name the line to fix.
 	edgeLine := map[*memory.Edge]int{}
 	// And which line each stamped id belongs to, so a refusal that would otherwise
 	// quote one can name the line instead. See lineNames.
@@ -744,11 +748,11 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 			"lines went somewhere else", batchName(path))
 	}
 
-	// The three log-wide checks, in `link`'s order and with `link`'s codes, one
+	// The three store-wide checks, in `link`'s order and with `link`'s codes, one
 	// refusal at a time: each of them is a single sentence about one edge, and the
 	// line number is what turns it back into the line to fix.
 	//
-	// Each edge is judged against the log plus the batch edges *before* it and
+	// Each edge is judged against the store plus the batch edges *before* it and
 	// never against itself: the tree check reads the parent relation out of the
 	// edges it is given, so an edge included in its own input would report that its
 	// source already has the parent this edge is about to give it.
@@ -763,8 +767,9 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 			missing = append(missing, "to="+edge.To)
 		}
 		if len(missing) > 0 {
-			return fail("dangling_edge", "line %d: no entry in %s for %s — an edge in a batch names one "+
-				"endpoint by an id already in the log", edgeLine[edge], loc.Path, strings.Join(missing, ", "))
+			return fail("dangling_edge", "line %d: no entry in any log of %s for %s — an edge in a batch "+
+				"names one endpoint by an id already in the store",
+				edgeLine[edge], memory.CurrentStore(), strings.Join(missing, ", "))
 		}
 		if err := memory.CheckJustification(edge.Type, known[edge.To]); err != nil {
 			return fail("unjustified_state", "line %d: %s", edgeLine[edge], err.Error())
@@ -1180,7 +1185,8 @@ func cmdAnchors(args []string) error {
 	path := fs.String("path", "", "return only the records carrying an anchor whose path contains this, case-insensitively")
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "check at most N, most recent first")
-	repoRoot := fs.String("repo-root", "", "repository to check every record against (default: the repo the log lives in; under --scope user, the repository each record's origin.repo_id names)")
+	all := fs.Bool("all", false, "check every record the store holds, each against the repository its own log lives in")
+	repoRoot := fs.String("repo-root", "", "repository to check every record against (default: the repo the log lives in; under --scope user and under --all, the repository each record's own log lives in)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -1202,15 +1208,39 @@ func cmdAnchors(args []string) error {
 	if err != nil {
 		return err
 	}
-	loc, lines, err := c.load()
-	if err != nil {
-		return err
+	var loc memory.Location
+	var locs []memory.Location
+	var held [][]memory.Line
+	var stored []memory.Line
+	if *all {
+		if err := c.checkScopeFlags(); err != nil {
+			return err
+		}
+		if locs, held, stored, err = everyLog(); err != nil {
+			return err
+		}
+	} else {
+		if loc, err = c.resolve(); err != nil {
+			return err
+		}
+		locs = []memory.Location{loc}
+		if *current {
+			if held, stored, err = memory.ReadStoreEach("", loc.Path); err != nil {
+				return fail("read_failed", "%s", err.Error())
+			}
+		} else {
+			lines, err := readLog(loc)
+			if err != nil {
+				return err
+			}
+			held, stored = [][]memory.Line{lines}, lines
+		}
 	}
 
 	var abs string
 	var repos repoLocator
-	if strings.TrimSpace(*repoRoot) != "" || loc.Scope == memory.ScopeRepo {
-		if abs, err = resolveRepoRoot(firstNonEmpty(*repoRoot, loc.Repo)); err != nil {
+	if named := strings.TrimSpace(*repoRoot); named != "" || (!*all && loc.Scope == memory.ScopeRepo) {
+		if abs, err = resolveRepoRoot(firstNonEmpty(named, loc.Repo)); err != nil {
 			return err
 		}
 	} else if repos, err = locateRepos(); err != nil {
@@ -1221,7 +1251,7 @@ func cmdAnchors(args []string) error {
 	// a broad query from spending the caller's context on record bodies, and this
 	// command returns no bodies — withholding the verdicts would leave the check
 	// unrunnable over a whole log, which is the one way anybody wants to run it.
-	res := memory.Query(lines, memory.Filter{
+	filter := memory.Filter{
 		Plan:        plan,
 		ID:          idList,
 		About:       splitList(*about),
@@ -1231,13 +1261,31 @@ func cmdAnchors(args []string) error {
 		CurrentOnly: *current,
 		Limit:       *limit,
 		Threshold:   -1,
-	})
+	}
+	res := memory.QueryEachIn(held, stored, filter)
+
+	rooted := map[*memory.Entry]string{}
+	if abs == "" {
+		for i, lines := range held {
+			if locs[i].Repo == "" {
+				continue
+			}
+			for _, e := range memory.Entries(lines) {
+				rooted[e] = locs[i].Repo
+			}
+		}
+	}
 
 	var checks []memory.RecordCheck
 	if abs != "" {
 		checks = memory.CheckEntries(abs, res.Records)
 	} else {
-		checks = memory.CheckEntriesAt(repos.locate, res.Records)
+		checks = memory.CheckEntriesAt(func(e *memory.Entry) (string, string) {
+			if root, ok := rooted[e]; ok {
+				return root, ""
+			}
+			return repos.locate(e)
+		}, res.Records)
 	}
 	counts := map[memory.Verdict]int{}
 	for _, v := range memory.Verdicts() {
@@ -1249,11 +1297,16 @@ func cmdAnchors(args []string) error {
 	records := memory.FilterChecks(checks, memory.CheckFilter{Verdict: wantVerdict, Path: *path})
 
 	out := map[string]any{
-		"path": loc.Path, "scope": loc.Scope, "plan": plan,
+		"plan":    plan,
 		"matched": res.Count,
 		"checked": len(checks),
 		"counts":  counts,
 		"records": records,
+	}
+	if *all {
+		out["logs"] = nonNil(pathsOf(locs))
+	} else {
+		out["path"], out["scope"] = loc.Path, loc.Scope
 	}
 	if abs != "" {
 		out["repo_root"] = abs
@@ -1319,16 +1372,23 @@ func isDir(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+func needsStore(f memory.Filter) bool { return f.AdmitsObjectives() || f.CurrentOnly }
+
 func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
-	loc, lines, err := c.load()
-	if err != nil {
-		return err
-	}
-	var stored []memory.Line
-	if f.AdmitsObjectives() {
-		if stored, err = memory.ReadStore(""); err != nil {
+	var loc memory.Location
+	var lines, stored []memory.Line
+	var err error
+	if needsStore(f) {
+		if loc, err = c.resolve(); err != nil {
+			return err
+		}
+		var held [][]memory.Line
+		if held, stored, err = memory.ReadStoreEach("", loc.Path); err != nil {
 			return fail("read_failed", "%s", err.Error())
 		}
+		lines = held[0]
+	} else if loc, lines, err = c.load(); err != nil {
+		return err
 	}
 	out := queryAnswer(memory.QueryIn(lines, stored, f), f, proj...)
 	out["path"], out["scope"] = loc.Path, loc.Scope
@@ -1338,25 +1398,34 @@ func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
 
 // runQueryBoth is `query --scope both`. The repository log is resolved first, so
 // that outside a git repository the refusal `--scope repo` gives comes before the
-// user location is created. Both go through load, as `areas` reads them: two known
-// locations, where a missing user log is an empty one rather than a refusal.
+// user location is created. Both are resolved the way `areas` loads them: two
+// known locations, where a missing user log is an empty one rather than a refusal.
 func runQueryBoth(c *common, f memory.Filter, proj memory.Projection) error {
-	logs := make([][]memory.Line, 0, 2)
+	locs := make([]memory.Location, 0, 2)
 	paths := make([]string, 0, 2)
 	for _, s := range []memory.Scope{memory.ScopeRepo, memory.ScopeUser} {
 		sc := common{scope: string(s), plan: c.plan, dir: c.dir}
-		loc, lines, err := sc.load()
+		loc, err := sc.resolve()
 		if err != nil {
 			return err
 		}
-		logs = append(logs, lines)
+		locs = append(locs, loc)
 		paths = append(paths, loc.Path)
 	}
+	var logs [][]memory.Line
 	var stored []memory.Line
-	if f.AdmitsObjectives() {
+	if needsStore(f) {
 		var err error
-		if stored, err = memory.ReadStore(""); err != nil {
+		if logs, stored, err = memory.ReadStoreEach("", paths...); err != nil {
 			return fail("read_failed", "%s", err.Error())
+		}
+	} else {
+		for _, loc := range locs {
+			lines, err := readLog(loc)
+			if err != nil {
+				return err
+			}
+			logs = append(logs, lines)
 		}
 	}
 	out := queryAnswer(memory.QueryEachIn(logs, stored, f), f, proj)
@@ -1444,7 +1513,8 @@ func cmdState(args []string) error {
 	if *id != "" {
 		filtered, n := filterByID(rep, *id)
 		if n == 0 {
-			return fail("unknown_objective", "no objective with id %s in %s", *id, loc.Path)
+			return fail("unknown_objective", "no objective with id %s in log %s of %s",
+				*id, loc.Path, memory.CurrentStore())
 		}
 		rep = filtered
 	}
@@ -1465,29 +1535,44 @@ func cmdState(args []string) error {
 	return nil
 }
 
-func stateAcrossLogs(id string, text bool) error {
+func everyLog() ([]memory.Location, [][]memory.Line, []memory.Line, error) {
 	sources, err := memory.SourcePaths("")
 	if err != nil {
-		return fail("read_failed", "%s", err.Error())
+		return nil, nil, nil, fail("read_failed", "%s", err.Error())
 	}
 	locs := make([]memory.Location, 0, len(sources))
 	held := make([][]memory.Line, 0, len(sources))
-	var paths []string
 	var stored []memory.Line
 	for _, src := range sources {
 		loc := logAt(src)
 		lines, err := readLog(loc)
 		if err != nil {
-			return err
+			return nil, nil, nil, err
 		}
 		locs = append(locs, loc)
 		held = append(held, lines)
-		paths = append(paths, src.Path)
 		stored = append(stored, lines...)
 	}
+	return locs, held, stored, nil
+}
 
-	logs := make([]memory.LogState, 0, len(sources))
-	reports := make([]memory.RepoReport, 0, len(sources))
+func pathsOf(locs []memory.Location) []string {
+	var paths []string
+	for _, loc := range locs {
+		paths = append(paths, loc.Path)
+	}
+	return paths
+}
+
+func stateAcrossLogs(id string, text bool) error {
+	locs, held, stored, err := everyLog()
+	if err != nil {
+		return err
+	}
+	paths := pathsOf(locs)
+
+	logs := make([]memory.LogState, 0, len(locs))
+	reports := make([]memory.RepoReport, 0, len(locs))
 	seen := map[string]bool{}
 	matched := 0
 
@@ -1590,8 +1675,8 @@ func cmdEdges(args []string) error {
 	var c common
 	c.bind(fs)
 	types := fs.String("type", "", "comma-separated edge types (see `memory kinds`); a type outside the closed set is refused")
-	from := fs.String("from", "", "exact id the edge points from")
-	to := fs.String("to", "", "exact id the edge points to")
+	from := fs.String("from", "", "exact id the edge points from; naming an endpoint lists every log of the store rather than this one")
+	to := fs.String("to", "", "exact id the edge points to; naming an endpoint lists every log of the store rather than this one")
 	since := fs.String("since", "", "edges stamped at this RFC3339 timestamp or later; the bound itself is included, and compared as written, so a bare date starts that day")
 	until := fs.String("until", "", "edges stamped at this RFC3339 timestamp or earlier; the bound itself is included, and compared as written, so a bare date stops just before that day")
 	count := fs.Bool("count", false, "report how many match and return no edges")
@@ -1609,8 +1694,16 @@ func cmdEdges(args []string) error {
 	if err != nil {
 		return err
 	}
-	loc, lines, err := c.load()
+	loc, err := c.resolve()
 	if err != nil {
+		return err
+	}
+	var lines []memory.Line
+	if *from != "" || *to != "" {
+		if lines, err = memory.ReadStore(""); err != nil {
+			return fail("read_failed", "%s", err.Error())
+		}
+	} else if lines, err = readLog(loc); err != nil {
 		return err
 	}
 
@@ -1656,13 +1749,17 @@ func cmdGraph(args []string) error {
 	if *from == "" {
 		return fail("missing_from", "graph needs --from <id>")
 	}
-	loc, lines, err := c.load()
+	loc, err := c.resolve()
 	if err != nil {
 		return err
 	}
+	lines, err := memory.ReadStore("")
+	if err != nil {
+		return fail("read_failed", "%s", err.Error())
+	}
 	nodes := memory.Graph(memory.Entries(lines), memory.Edges(lines), *from, *depth)
 	if nodes == nil {
-		return fail("unknown_id", "no entry with id %s in %s", *from, loc.Path)
+		return fail("unknown_id", "no entry with id %s in any log of %s", *from, memory.CurrentStore())
 	}
 	res := memory.GuardGraph(nodes, *threshold, graphHintAdvice)
 	out := map[string]any{"path": loc.Path, "from": *from, "depth": *depth, "count": res.Count, "nodes": res.Nodes}

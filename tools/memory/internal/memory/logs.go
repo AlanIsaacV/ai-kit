@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 type Log struct {
@@ -58,40 +59,59 @@ func SourcePaths(store string) ([]Log, error) {
 }
 
 func ReadStore(store string) ([]Line, error) {
+	_, lines, err := ReadStoreEach(store)
+	return lines, err
+}
+
+func ReadStoreEach(store string, sources ...string) ([][]Line, []Line, error) {
+	held := make([][]Line, len(sources))
+	want := make(map[string][]int, len(sources))
+	for i, src := range sources {
+		abs, err := filepath.Abs(src)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve %s: %w", src, err)
+		}
+		want[abs] = append(want[abs], i)
+	}
+
 	path, err := (&Store{StorePath: store}).store()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return held, nil, nil
 		}
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, nil, fmt.Errorf("read %s: %w", path, err)
 	}
 
 	db, err := openStore(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT line_number, raw FROM lines ORDER BY source_path ASC, line_number ASC`)
+	rows, err := db.Query(`SELECT source_path, line_number, raw FROM lines ORDER BY source_path ASC, line_number ASC`)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	defer rows.Close()
 
 	var lines []Line
 	for rows.Next() {
+		var source, raw string
 		var num int
-		var raw string
-		if err := rows.Scan(&num, &raw); err != nil {
-			return lines, fmt.Errorf("read %s: %w", path, err)
+		if err := rows.Scan(&source, &num, &raw); err != nil {
+			return held, lines, fmt.Errorf("read %s: %w", path, err)
 		}
-		lines = append(lines, ParseLine(num, raw))
+		line := ParseLine(num, raw)
+		lines = append(lines, line)
+		for _, i := range want[source] {
+			held[i] = append(held[i], line)
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return lines, fmt.Errorf("read %s: %w", path, err)
+		return held, lines, fmt.Errorf("read %s: %w", path, err)
 	}
-	return lines, nil
+	return held, lines, nil
 }

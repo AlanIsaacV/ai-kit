@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -244,6 +245,59 @@ func TestQueryAnswersAZeroMatchWithAnEmptyListAndNeverNull(t *testing.T) {
 			}
 			if strings.Join(out.NotFound, ",") != strings.Join(tc.notFound, ",") {
 				t.Errorf("not_found must stay what it was, want %v got %v", tc.notFound, out.NotFound)
+			}
+		})
+	}
+}
+
+func returnedIDs(t *testing.T, res result) []string {
+	t.Helper()
+	if res.code != 0 {
+		t.Fatalf("exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+	ids := make([]string, 0, 4)
+	for _, rec := range queryRecords(t, res) {
+		var id string
+		if err := json.Unmarshal(rec["id"], &id); err != nil {
+			t.Fatalf("a record came back without a readable id: %v\n%s", err, res.stdout)
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func TestARecordSettledByAnEdgeInAnotherLogIsDroppedFromCurrent(t *testing.T) {
+	cases := []struct{ name, edge, kind string }{
+		{"a supersedes edge", "supersedes", "decision"},
+		{"an answers edge", "answers", "open-question"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, alpha, beta := twoDepths(t)
+			settled := addKind(t, alpha, tc.kind, "RS256 over HS256")
+			standing := addKind(t, alpha, tc.kind, "Asymmetric signing")
+			by := addKind(t, beta, "decision", "The service next door settled it")
+			mustLink(t, beta, tc.edge, by, settled)
+
+			live := returnedIDs(t, runBare(t, alpha, "query", "--kind", tc.kind, "--current"))
+			if slices.Contains(live, settled) {
+				t.Errorf("%s written next door settles a record held here, got %v", tc.name, live)
+			}
+			if !slices.Contains(live, standing) {
+				t.Errorf("nothing settles the other record, so it stays, got %v", live)
+			}
+
+			history := returnedIDs(t, runBare(t, alpha, "query", "--kind", tc.kind))
+			if !slices.Contains(history, settled) {
+				t.Errorf("without --current the history is intact, got %v", history)
+			}
+
+			found := returnedIDs(t, runBare(t, alpha, "search", "--current", "RS256"))
+			if len(found) != 0 {
+				t.Errorf("search --current drops what query --current drops, got %v", found)
+			}
+			if kept := returnedIDs(t, runBare(t, alpha, "search", "RS256")); len(kept) != 1 {
+				t.Errorf("without --current search still finds it, got %v", kept)
 			}
 		})
 	}

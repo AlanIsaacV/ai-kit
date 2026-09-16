@@ -777,3 +777,44 @@ func objectiveState(t *testing.T, r repo, id string) string {
 	}
 	return out.Objectives[0].State
 }
+
+func TestABatchEdgeReachesAnEndpointInAnotherLogAndRefusesWhatLinkRefuses(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	parent := addObjective(t, alpha, "The objective the whole plan hangs from")
+
+	out := batchResult(t, runStdin(t, beta, entryLine(t, map[string]any{
+		"kind": "objective", "title": "The objective in the service next door", "about": []string{"auth"},
+		"edges": []map[string]any{{"type": "derives_from", "to": parent}},
+	})+"\n", "add", "--plan", "demo", "--batch", "-"))
+	if out.Count != 1 || out.Edges != 1 {
+		t.Fatalf("both endpoints are in the store, one log apart: %d entries and %d edges", out.Count, out.Edges)
+	}
+	kid := out.Records[0].ID
+	if from, to := edgeEnds(t, beta, "derives_from"); from != kid || to != parent {
+		t.Fatalf("the edge belongs to the log the batch was written into: got %s -> %s", from, to)
+	}
+	if other := logText(t, alpha, alpha.log); strings.Contains(other, `"kind":"edge"`) {
+		t.Errorf("the other repository's log was written to:\n%s", other)
+	}
+
+	const ghost = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	res := runStdin(t, beta, entryLine(t, map[string]any{
+		"kind": "decision", "title": "Points at nothing", "about": []string{"auth"},
+		"edges": []map[string]any{{"type": "relates_to", "to": ghost}},
+	})+"\n", "add", "--plan", "demo", "--batch", "-")
+	if res.code != 1 {
+		t.Fatalf("an id no log of the store holds is still dangling, got exit %d\n%s", res.code, res.stdout)
+	}
+	code, msg := errorCode(t, res)
+	if code != "dangling_edge" {
+		t.Fatalf("the refusal keeps the code it has always had, got %q: %s", code, msg)
+	}
+	names := "no entry in any log of " + beta.store + " for to=" + ghost
+	if !strings.Contains(msg, names) {
+		t.Errorf("the refusal names the store rather than one log's path, want %q in %q", names, msg)
+	}
+	_, linked := errorCode(t, link(t, beta, "relates_to", parent, ghost))
+	if !strings.Contains(linked, names) {
+		t.Errorf("`link` refuses the same edge naming the same thing, want %q in %q", names, linked)
+	}
+}

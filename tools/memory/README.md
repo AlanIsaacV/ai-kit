@@ -27,6 +27,16 @@ drops whatever the graph says is settled: a record something `supersedes`, and
 a question or assumption something `answers`. Both are equally irrelevant to
 "what do I still have to hold in mind", which is the only question `--current`
 is for. Without the flag the history is intact, answered questions included.
+**The graph it asks is the store's and not one log's**, so an edge written in
+another repository settles a record here — a claim about a record is a claim
+about that record wherever the line saying so happened to land.
+
+**That last sentence is a reversion.** The settled set was one log's edges until
+the `CHANGELOG.md` entry *Reads cross repositories, and so does a settling edge*;
+widening it had been recorded there as REJECTED, for now, on the grounds that it
+moves what every existing `--current` read in every repository returns and nobody
+had taken that decision. The user has since taken it, and that entry is what
+reversed it.
 
 **Every record says which schema it was written against.** A record is judged
 by the rules of the version it declares, not by the rules in force today. That
@@ -466,8 +476,25 @@ of the answer, as it has always been. Under `--scope user` without the flag each
 record carries its own `repo_root`, and a record that could not be located carries
 none. **`--repo-root`, when named, decides the root for every record** whatever
 scope it came from, so a promoted record can still be read against a checkout of
-your choosing. Which records are checked does not move: this repository's log, or
-the user log under `--scope user`.
+your choosing.
+
+**Which records are checked is this repository's log**, or the user log under
+`--scope user` — unless `--all` is named, which checks every record the store
+holds, each against the repository its own log lives in:
+
+```bash
+memory anchors --all --kind gotcha --current   # every repository on this host, at once
+```
+
+`--all` reads each log on its own and merges the matches, the way
+[`query --scope both`](#asking-both-logs-at-once) reads its two, so a record's
+root is its own log's and never the reader's. It names the logs it read under
+`logs` in place of `path` and `scope`, as `state --all` does; every record carries
+its own `repo_root`, since no one root served the answer; and `--limit N` takes
+the N most recent across every log rather than N from each. Naming `--repo-root`
+alongside it still decides the root for every record. A repository whose
+directory is no longer on disk makes its own records `could_not_check` rather
+than refusing the run.
 
 At user scope `add` also has no repo to read the cited lines out of, so
 `--repo-root` supplies one. The requirement does not bend for the scope: a
@@ -1119,6 +1146,7 @@ memory anchors --kind gotcha --verdict changed   # only the ones that drifted
 memory anchors --path pkg/auth/token.go          # only the ones citing that file
 memory anchors --id <id>,<id>    # only those records, and what it could not check
 memory anchors --scope user      # each promoted record against the checkout it came from
+memory anchors --all --kind gotcha --current   # every log in the store, each against its own repo
 memory edges --type supersedes   # every edge of one relation, no starting id
 memory edges --from <id> --since 2026-09-01   # what that record linked this month
 memory graph --from <id> --depth 2
@@ -1284,9 +1312,9 @@ place of `path`.
   store's edges rather than one log's rows — an approval or a state edge written
   in another repository counts, and both passes read the same ones, which is why
   neither log moves the other's answer. What `--current` drops as superseded or
-  answered is still each log's own rows. An edge *may* point across logs — see
-  [the objective tree](#the-objective-tree) — and what `--scope both` should make
-  of one is a decision of its own, not taken here.
+  answered is read off those same store-wide edges, so a record either log holds
+  is settled by the edge that settles it wherever it was written. Which records
+  come back is still each log's own.
 - **Everything about the size of the answer is computed over the union.** `count`
   is the matches across both logs, `--count` returns that number, `--limit N`
   takes the N most recent of them, and the count-before-dump guard trips on the
@@ -1314,11 +1342,22 @@ id the caller was trying to find. `edges` is the read that needs none.
 memory edges                                 # every edge in the log
 memory edges --type supersedes               # one relation, across the whole log
 memory edges --type met,cancelled            # or several
-memory edges --from <id>                     # what that record points at
-memory edges --to <id>                       # what points at it
+memory edges --from <id>                     # what that record points at, in every log
+memory edges --to <id>                       # what points at it, in every log
 memory edges --since 2026-09-01 --until 2026-09-08    # what got linked that week
 memory edges --count                         # how many, and no edges
 ```
+
+**A read addressed by an id reads the store; a read addressed by a filter reads
+this log.** `edges --from`/`--to` and `graph --from` name a record, and a record
+is where it is: an edge drawn in another repository is still an edge that names
+it, so both answer the same from either end of it. `edges` with neither — bare,
+or bounded by `--type` and the time bounds alone — is this log's edges, as it has
+always been, because "every edge here" is a question about a log and not about a
+record. `graph` always names one, so it always walks the store: its entries and
+its edges are widened together, and a node reached across a log carries its own
+record rather than being skipped as dangling. An id no log of the store holds is
+still `unknown_id`, and the refusal names the store it searched.
 
 It filters on what an edge carries and on nothing else: its type, its two
 endpoints, its `at` stamp. That is the whole of an edge — no body, no `about` and
@@ -1383,13 +1422,18 @@ A line carries the fields the flags carry and never the ones the tool stamps:
   one string, and never splits on a comma, because a path may contain one.
 - `--plan` stamps the batch and a line's own `plan` wins for that line. A batch that
   names no plan writes records the [repository owns](#records-the-repository-owns).
-- **An edge on a line names exactly one endpoint, by an id already in the log.** The
-  entry on that line is the other end: `"to"` puts it at the edge's source, `"from"`
-  puts it at the target. There is no way to draw an edge between two entries of the
-  same batch, because neither of them has an id until the write happens.
-- Each edge passes the same three log-wide checks `link` applies — dangling
+- **An edge on a line names exactly one endpoint, by an id already in the store.**
+  The entry on that line is the other end: `"to"` puts it at the edge's source,
+  `"from"` puts it at the target. There is no way to draw an edge between two
+  entries of the same batch, because neither of them has an id until the write
+  happens. The endpoint may live in another repository's log, exactly as
+  [`link`](#the-objective-tree) allows, and the edge still lands in the log the
+  batch is written into.
+- Each edge passes the same three store-wide checks `link` applies — dangling
   endpoints, [state-edge justification](#edge-types) and the
   [objective tree](#the-objective-tree) — and any of them refuses the whole batch.
+  A dangling endpoint is refused with `link`'s message, naming the store rather
+  than one log's path.
 
 ### An argument in flag position may not contain a space
 
@@ -1611,8 +1655,23 @@ under different tags is invisible to whoever finds the mistake.
   terminates within a deadline the test enforces, reports both anomalies, uses
   the first parent edge in the file, and `validate` still reports `ok`.
 - `--current` over objectives returns every open one, a chain of three included,
-  and drops one the moment it is `met`; every other kind's `--current` returns
-  what it returned before, and gets no `current_objective` field at all.
+  and drops one the moment it is `met`; every other kind's `--current` drops what
+  a `supersedes` or an `answers` edge settles and nothing else, and gets no
+  `current_objective` field at all.
+- A `decision` in one repository's log and an `open-question` in another are each
+  dropped by `query --current`, `search --current` and `anchors --current` the
+  moment a `supersedes` or an `answers` edge naming them is written into a third
+  log; without `--current` both come back.
+- `graph --from` returns the same two nodes read from either of the two logs a
+  `derives_from` spans, each carrying its own record; `edges --from <child>` and
+  `edges --to <parent>` each return that one edge from either log, while `edges`
+  naming no endpoint still answers with the log it was asked from.
+- `anchors --all` checks a record in each of two repositories against its own
+  repository's working tree, reporting `changed` for the one whose cited lines
+  were rewritten there and `still_holds` for the other, names both logs under
+  `logs`, and puts no `repo_root` at the top; `--repo-root` alongside it reads
+  both records against the one root named. `anchors` without the flag returns the
+  records it has always returned.
 - The current objective is the most recently approved open one, or the most
   recently touched when none is approved, and the reported rule changes with it.
   It is derived from the whole log and says `outside_filter` when `--plan` puts
@@ -1646,7 +1705,11 @@ under different tags is invisible to whoever finds the mistake.
 - A batch line's edge is written with its entry in both directions: `to` an existing
   parent objective writes a `derives_from` out of the new record, `from` an existing
   objective writes a `met` into it, and the tree then reports that objective `met`.
-- A batch edge naming an id absent from the log is refused `dangling_edge`; two
+- A batch line whose edge names an endpoint held by another repository's log is
+  appended at exit 0, and the edge lands in the log the batch was written into
+  while the other log's bytes are untouched.
+- A batch edge naming an id no log of the store holds is refused `dangling_edge`
+  with the message `link` gives for the same edge, naming the store; two
   `derives_from` on one objective's line are refused `not_a_tree` on the second;
   a `met` whose justification cannot carry it is refused `unjustified_state`. Every
   refusal names the line and leaves the log byte-identical.

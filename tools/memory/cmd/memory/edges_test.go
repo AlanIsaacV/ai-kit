@@ -71,3 +71,52 @@ func TestEdgesAnswersAZeroMatchWithAnEmptyListAndNeverNull(t *testing.T) {
 		})
 	}
 }
+
+type edgeAnswer struct {
+	Count int `json:"count"`
+	Edges []struct {
+		Type string `json:"type"`
+		From string `json:"from"`
+		To   string `json:"to"`
+	} `json:"edges"`
+}
+
+func listEdges(t *testing.T, r repo, args ...string) edgeAnswer {
+	t.Helper()
+	res := runBare(t, r, append([]string{"edges"}, args...)...)
+	if res.code != 0 {
+		t.Fatalf("edges %v: exit %d\n%s%s", args, res.code, res.stdout, res.stderr)
+	}
+	var out edgeAnswer
+	if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+		t.Fatalf("edges printed something that is not JSON: %v\n%s", err, res.stdout)
+	}
+	return out
+}
+
+func TestEdgesNamingAnEndpointAnswerTheSameFromEitherLog(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	parent := addObjective(t, alpha, "The objective the whole plan hangs from")
+	kid := addObjective(t, beta, "The objective in the service next door")
+	mustLink(t, beta, "derives_from", kid, parent)
+
+	for _, r := range []repo{alpha, beta} {
+		for _, args := range [][]string{{"--from", kid}, {"--to", parent}} {
+			out := listEdges(t, r, args...)
+			if out.Count != 1 || len(out.Edges) != 1 {
+				t.Fatalf("edges %v read in %s: one edge names that endpoint wherever it was written, got %d",
+					args, r.root, out.Count)
+			}
+			if got := out.Edges[0]; got.From != kid || got.To != parent {
+				t.Errorf("edges %v read in %s returned %s -> %s", args, r.root, got.From, got.To)
+			}
+		}
+	}
+
+	if out := listEdges(t, alpha); out.Count != 0 {
+		t.Errorf("a read that names no endpoint keeps the log it was asked from, got %d edges", out.Count)
+	}
+	if out := listEdges(t, beta); out.Count != 1 {
+		t.Errorf("the log the edge was written into still lists it unasked, got %d edges", out.Count)
+	}
+}
