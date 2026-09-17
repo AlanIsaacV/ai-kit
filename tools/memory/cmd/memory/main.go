@@ -35,7 +35,6 @@ Usage:
   memory areas     [--kind KINDS] [--plan SLUG]
   memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--id IDS] [--verdict V] [--path S] [--current] [--all] [--repo-root PATH]
   memory edges     [--type TYPES] [--from ID] [--to ID] [--since TS] [--until TS] [--count] [--limit N]
-  memory graph     --from ID [--depth N] [--threshold N]
   memory state     [--id ID] [--text] [--here] [--all]
   memory promote   [--ids ID[,ID...]] [--kind KIND[,KIND...]] --to user [--dry-run]
   memory validate  [--all]
@@ -118,12 +117,10 @@ edge has no plan, so '--plan' is refused here rather than accepted and ignored,
 and the kind or the areas of the records at either end are not bounds it takes.
 Naming '--from' or '--to' reads every log of the store, since a record is where
 it is and an edge drawn next door still names it; naming neither reads this log.
-'graph --from ID' is still the walk outward from one record, over every log for
-the same reason, and '--depth 0' is that record alone. Both carry the same
-count-before-dump guard 'query' carries: above the threshold they return no
-edges and no nodes at all, say so with 'truncated', and name in the hint the
-flags that get past it — for 'graph' that is a smaller '--depth', or
-'--threshold -1' for the whole walk however big.
+It carries the same count-before-dump guard 'query' carries: above the threshold
+it returns no edges at all, says so with 'truncated', and names in the hint the
+flags that get past it — a narrower '--type', endpoint or time bound, '--limit N'
+for the most recent, '--count' for the number alone.
 
 'state' reads one log or every log, and its default follows the output mode:
 'state' lists this repository's objectives as JSON, 'state --text' prints what is
@@ -172,8 +169,6 @@ func main() {
 		err = cmdAnchors(os.Args[2:])
 	case "edges":
 		err = cmdEdges(os.Args[2:])
-	case "graph":
-		err = cmdGraph(os.Args[2:])
 	case "state":
 		err = cmdState(os.Args[2:])
 	case "promote":
@@ -1782,52 +1777,6 @@ func cmdEdges(args []string) error {
 		out["path"], out["scope"] = loc.Path, loc.Scope
 	}
 	if res.Hint != "" {
-		out["hint"] = res.Hint
-	}
-	emit(out)
-	return nil
-}
-
-var graphHintAdvice = []string{
-	"walk fewer hops with --depth N",
-	"pass --threshold -1 to take the whole walk",
-}
-
-func cmdGraph(args []string) error {
-	fs := flag.NewFlagSet("graph", flag.ExitOnError)
-	var c common
-	c.bind(fs)
-	from := fs.String("from", "", "entry id to walk from")
-	depth := fs.Int("depth", 1, "how many hops; 0 answers with the record at --from and nothing else")
-	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
-	if err := parseFlags(fs, args); err != nil {
-		return err
-	}
-	if *from == "" {
-		return fail("missing_from", "graph needs --from <id>")
-	}
-	if _, err := c.resolve(); err != nil {
-		return err
-	}
-	if err := refuseNamedScope(fs, &c, "the walk out from --from", ""); err != nil {
-		return err
-	}
-	lines, err := memory.ReadStore("")
-	if err != nil {
-		return fail("read_failed", "%s", err.Error())
-	}
-	nodes := memory.Graph(memory.Entries(lines), memory.Edges(lines), *from, *depth)
-	if nodes == nil {
-		return fail("unknown_id", "no entry with id %s in any log of %s", *from, memory.CurrentStore())
-	}
-	logs, err := storeLogs()
-	if err != nil {
-		return err
-	}
-	res := memory.GuardGraph(nodes, *threshold, graphHintAdvice)
-	out := map[string]any{"logs": logs, "from": *from, "depth": *depth, "count": res.Count, "nodes": res.Nodes}
-	if res.Truncated {
-		out["truncated"] = res.Truncated
 		out["hint"] = res.Hint
 	}
 	emit(out)

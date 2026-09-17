@@ -186,8 +186,7 @@ not there, which sends the run to step 5 to author a new one.
 Two flags carry the target, and both appear on every command that accepts them:
 
 - **`--dir <target-repo>`** resolves *which log* — the records filed under
-  `<repo>`. Accepted by `query`, `search`, `anchors`, `edges`, `add`, `link`,
-  `graph`.
+  `<repo>`. Accepted by `query`, `search`, `anchors`, `edges`, `add`, `link`.
 - **`--repo-root <target-repo>`** resolves *which working tree* the anchors are
   relative to and read out of. Accepted by `anchors` and `add`, and by nothing
   else — do not put it on `query` or `link`, which refuse an undefined flag.
@@ -239,9 +238,9 @@ see step 3. It is not a placeholder for a `gotcha` you could not anchor; it is t
 record that says nobody in the room knew, so the next session does not read the
 silence as "there is nothing here".
 
-The surface is thirteen commands and these are all of them: `init`, `add`,
-`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
-`promote`, `validate`, `kinds`. The steps below run the ones this skill needs and
+The surface is twelve commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `state`, `promote`,
+`validate`, `kinds`. The steps below run the ones this skill needs and
 write the flags out at each call site, so there is no command here to go and
 discover. `memory kinds` stays worth running for what it alone reports: every
 valid record kind and edge type, and the count at which `query` starts

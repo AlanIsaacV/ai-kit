@@ -678,9 +678,9 @@ And one honest limit: **returning to bare `planned` is not expressible.**
 In practice nothing wants to: a record leaves `approved_for_execution` for
 `blocked` or `cancelled`, not for `planned`.
 
-`memory state` is what computes it. `edges` and `graph` still report the edges
-themselves — deliberately, since listing or walking relations is a different
-question from resolving one record's state.
+`memory state` is what computes it. `edges` still reports the edges themselves —
+deliberately, since listing relations is a different question from resolving one
+record's state.
 
 ## The objective tree
 
@@ -947,9 +947,8 @@ integer, not semver — there is nothing to be compatible *within* a version.
 
 **A record with no `version` key is version 1.** The stamp arrived after those
 records were written, and nothing on disk is ever rewritten to add one. It is
-*printed* as 1 as well — `query` and `graph` show the version the record is
-judged at, because `"version": 0` is on no line and names no schema that ever
-existed.
+*printed* as 1 as well — `query` shows the version the record is judged at,
+because `"version": 0` is on no line and names no schema that ever existed.
 
 **The compatibility rule.** Within a version, changes are additive only.
 
@@ -1183,8 +1182,6 @@ memory anchors --scope user      # each promoted record against the checkout it 
 memory anchors --all --kind gotcha --current   # every log in the store, each against its own repo
 memory edges --type supersedes   # every edge of one relation, no starting id
 memory edges --from <id> --since 2026-09-01   # what that record linked this month
-memory graph --from <id> --depth 2
-memory graph --from <id> --threshold -1   # the whole walk, however big it is
 
 memory state                     # every objective: state, tree, blocking, tally
 memory state --id <objective-id> # just that one
@@ -1227,12 +1224,12 @@ answer, and every other command refuses it —
 `--scope` at all, because it answers for both.
 
 **A command whose answer spans the store refuses a `--scope` that was named.**
-`graph`, `edges` under `--from`/`--to`, `anchors --all`, `state --all`,
-`state --text` without `--here`, and `validate --all` each read every log the
-store holds, so the flag chose nothing there and was only deciding which single
-log the envelope would claim the answer came from. Naming it is a refusal at exit
-1 now — `scope_not_on_store_wide_read`, the shape
-[`edges`](#asking-about-edges-and-a-walk-that-cannot-dump) already gives `--plan`
+`edges` under `--from`/`--to`, `anchors --all`, `state --all`, `state --text`
+without `--here`, and `validate --all` each read every log the store holds, so the
+flag chose nothing there and was only deciding which single log the envelope would
+claim the answer came from. Naming it is a refusal at exit 1 now —
+`scope_not_on_store_wide_read`, the shape
+[`edges`](#asking-about-edges-and-a-list-that-cannot-dump) already gives `--plan`
 — and those answers name every log they read under `logs` in place of the `path`
 and `scope` they used to claim. The refusal keys on whether the caller passed the
 flag and never on its value, so an invocation that did not name `--scope` answers
@@ -1241,9 +1238,9 @@ no endpoint keeps it live, because "every edge here" is a question about a log.
 
 `--plan` is a *stamp* on `add`, optional there since a record without one belongs
 to the [repository](#records-the-repository-owns), and a *bound* on `query` and
-`search`; other commands accept it and read the whole log, since `link` and
-`graph` are the operations the collapse exists to let cross plans.
-[`edges`](#asking-about-edges-and-a-walk-that-cannot-dump) is the one command
+`search`; other commands accept it and read the whole log, since `link` is the
+operation the collapse exists to let cross plans.
+[`edges`](#asking-about-edges-and-a-list-that-cannot-dump) is the one command
 that refuses it outright, because an edge carries no plan at all. `state` is in
 that second group on purpose — an objective's parent, its children and which
 objective is current are properties of the log, so narrowing the derivation would
@@ -1379,15 +1376,14 @@ place of `path`.
   `--scope repo` gives there, before the user location is touched.
 - **`both` is not a scope.** No record can carry it, `memory kinds` does not list
   it, and adding it to the [record scopes](#changing-the-schema) would be a schema
-  version. It is a value of one flag on one command: `search`, `edges`, `graph`,
-  `anchors`, `state` and every write refuse it exactly as they did before it
-  existed.
+  version. It is a value of one flag on one command: `search`, `edges`, `anchors`,
+  `state` and every write refuse it exactly as they did before it existed.
 
-### Asking about edges, and a walk that cannot dump
+### Asking about edges, and a list that cannot dump
 
-`graph --from <id>` answers what one record is connected to, and it used to be the
-only way to learn anything about an edge — every entry point demanded the starting
-id the caller was trying to find. `edges` is the read that needs none.
+`edges` answers what got linked, and it is the one read that needs no starting id:
+"every `supersedes` edge" and "what got linked last Tuesday" are questions about
+the edges themselves rather than about a record somebody has already found.
 
 ```bash
 memory edges                                 # every edge in the log
@@ -1400,22 +1396,18 @@ memory edges --count                         # how many, and no edges
 ```
 
 **A read addressed by an id reads the store; a read addressed by a filter reads
-this log.** `edges --from`/`--to` and `graph --from` name a record, and a record
-is where it is: an edge drawn in another repository is still an edge that names
-it, so both answer the same from either end of it. `edges` with neither — bare,
-or bounded by `--type` and the time bounds alone — is this log's edges, as it has
-always been, because "every edge here" is a question about a log and not about a
-record. `graph` always names one, so it always walks the store: its entries and
-its edges are widened together, and a node reached across a log carries its own
-record rather than being skipped as dangling. An id no log of the store holds is
-still `unknown_id`, and the refusal names the store it searched.
+this log.** `edges --from`/`--to` name a record, and a record is where it is: an
+edge drawn in another repository is still an edge that names it, so both answer
+the same from either end of it. `edges` with neither — bare, or bounded by
+`--type` and the time bounds alone — is this log's edges, as it has always been,
+because "every edge here" is a question about a log and not about a record.
 
-So `--scope` is refused beside `--from` or `--to`, and on `graph` wherever it is
-named: the answer is every log's, and the flag was only deciding which single log
-the envelope claimed it came from — `edges --scope user --from <id>` used to
-return an edge living in a repository's log while reporting the user log as its
-source. Both now name every log they read under `logs`, in place of the `path` and
-`scope` they used to emit, the way [`anchors --all`](#anchors) and
+So `--scope` is refused beside `--from` or `--to`: the answer is every log's, and
+the flag was only deciding which single log the envelope claimed it came from —
+`edges --scope user --from <id>` used to return an edge living in a repository's
+log while reporting the user log as its source. `edges --from`/`--to` name every
+log they read under `logs`, in place of the `path` and `scope` they used to emit,
+the way [`anchors --all`](#anchors) and
 [`state --all`](#what-is-waiting-on-you-across-every-log) already do. `edges`
 naming no endpoint keeps `--scope`, because there the question really is about one
 log.
@@ -1423,11 +1415,11 @@ log.
 It filters on what an edge carries and on nothing else: its type, its two
 endpoints, its `at` stamp. That is the whole of an edge — no body, no `about` and
 **no plan** — so `--plan` is refused here (`plan_not_on_edges`) rather than
-accepted and ignored the way `graph` and `state` accept it. Bounding edges by a
-plan would mean joining against the records at their ends, and so would filtering
-by those records' kind or areas; none of that is in this command. Only `--plan` on
-the command line refuses: `AI_KIT_PLAN` in the environment is not this caller
-naming a flag, and it leaves `edges` answering.
+accepted and ignored the way `state` accepts it. Bounding edges by a plan would
+mean joining against the records at their ends, and so would filtering by those
+records' kind or areas; none of that is in this command. Only `--plan` on the
+command line refuses: `AI_KIT_PLAN` in the environment is not this caller naming a
+flag, and it leaves `edges` answering.
 
 `--type` takes the [edge types](#edge-types), comma-separated, and refuses a value
 outside that closed set (`unknown_edge_type`) naming the eleven it does take.
@@ -1437,28 +1429,11 @@ matching nothing answers `edges: []` and never `null`, at exit 0. Edges come bac
 most recent first by their stamp, and edges sharing a stamp stay in the order the
 log holds them.
 
-**`edges` and `graph` both carry the count-before-dump guard now**, the same one
-`query` carries and for the same reason: every node of a walk embeds a whole
-record, body included, so an unbounded `graph` is an unbounded dump of bodies.
-Above the threshold both return nothing — `edges: []`, `nodes: []` — with
-`truncated: true` and a hint naming the flags *that* command accepts and no
-others. On `edges` the ways out are the filters, `--limit N` and `--count`; on
-`graph` they are a smaller `--depth` and `--threshold -1`.
-
-`graph` withholds rather than slicing, which is not the choice `--limit` makes on
-`query`. A graph is emitted in traversal order, so the first N nodes of one is a
-partial graph that misreports its own shape — it says a record has no children
-where the cut happened to land. "The N most recent records" is an answer; "the
-first N nodes" is not. `--depth 0`, which answers with the record at `--from`
-alone, is the other way to make a walk small.
-
-**One existing invocation answers differently because of this, deliberately.**
-A `graph --from <id>` reaching more nodes than
-the threshold returned all of them before and returns none of them now, saying so
-with `truncated` and a hint. `--threshold -1` gets the old answer back byte for
-byte. The guard ships on by default because shipping it dormant behind an explicit
-flag would have left the unbounded dump as the default, which is the thing it
-exists to stop.
+**`edges` carries the count-before-dump guard**, the same one `query` carries and
+for the same reason: a filter matching most of a log is an answer nobody asked to
+be that big. Above the threshold it returns nothing — `edges: []` — with `count`
+set to the true number of matches, `truncated: true` and a hint naming the flags
+this command accepts and no others: the filters, `--limit N` and `--count`.
 
 ### Writing many records at once
 
@@ -1588,18 +1563,14 @@ under different tags is invisible to whoever finds the mistake.
 - `query` returns the true count even when it returns no records.
 - `--plan` bounds a query to one plan's records out of a log holding several,
   counts only that plan's matches, and still withholds them above the threshold.
-- Two records written under different plans can be linked, and each is reachable
-  from the other by a graph walk.
+- Two records written under different plans can be linked, and `edges --from` on
+  one of them returns the edge that reaches the other.
 - `edges --plan <slug>` is refused at a non-zero exit, the refusal says an edge
   carries no plan, and it hands back no `edges` key at all.
 - `edges` answers a filter that matched nothing with an empty list and never with
   `null` — over a log holding no edges, over a type nothing carries, and over an
   endpoint no edge names — asserted by decoding the output rather than matching
   its text.
-- A `graph` walk reaching more nodes than the threshold comes back with `count`
-  set to the true reach, `nodes: []`, `truncated: true` and a hint.
-- `graph --depth 0` returns exactly one node, the record at `--from`, at depth 0,
-  over a log where one hop out would have reached a second.
 - `add` writes a record when no plan is named, and it carries no `plan` key at
   all rather than an empty one; a plan slug that is not kebab-case is still
   refused, and so is a kind outside the closed set, a missing `about` and a blank
@@ -1723,17 +1694,15 @@ under different tags is invisible to whoever finds the mistake.
   dropped by `query --current`, `search --current` and `anchors --current` the
   moment a `supersedes` or an `answers` edge naming them is written into a third
   log; without `--current` both come back.
-- `graph --from` returns the same two nodes read from either of the two logs a
-  `derives_from` spans, each carrying its own record; `edges --from <child>` and
-  `edges --to <parent>` each return that one edge from either log, while `edges`
+- `edges --from <child>` and `edges --to <parent>` each return the one edge a
+  `derives_from` spanning two logs draws, read from either of them, while `edges`
   naming no endpoint still answers with the log it was asked from.
-- A `--scope` the caller named is refused at exit 1 by `graph`, by `edges --from`,
-  by `anchors --all`, by `state --all`, by `state --text` without `--here` and by
+- A `--scope` the caller named is refused at exit 1 by `edges --from`, by
+  `anchors --all`, by `state --all`, by `state --text` without `--here` and by
   `validate --all` — `scope_not_on_store_wide_read`, naming the flag and saying
   the answer spans every log in the store; `edges --scope user` naming no endpoint
-  is not refused and returns that log's edges at exit 0. `graph --from` and
-  `edges --from` each name both logs under `logs` and carry no top-level `path` or
-  `scope`.
+  is not refused and returns that log's edges at exit 0. `edges --from` names both
+  logs under `logs` and carries no top-level `path` or `scope`.
 - `state` with no flags reports `objectives_from` and `derived_over`, and its
   `objectives` list is what it was before either key existed. `areas --current`
   drops a record a `supersedes` edge in another log settles, which it used to
@@ -1855,8 +1824,8 @@ under different tags is invisible to whoever finds the mistake.
   `not_found` naming `<c>` alone.
 - `query --scope both` against a HOME holding no `.ai-kit/` at all exits 0 and
   returns the repository log's records, each carrying `scope: "repo"`.
-- `search`, `edges` and `graph` refuse `--scope both` at exit 1 with `bad_scope`,
-  naming the scope they were handed.
+- `search` and `edges` refuse `--scope both` at exit 1 with `bad_scope`, naming
+  the scope they were handed.
 
 ```bash
 go test ./...

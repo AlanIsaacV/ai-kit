@@ -488,44 +488,6 @@ func TestTheNewFiltersDoNotHoleTheCountBeforeDumpGuard(t *testing.T) {
 	}
 }
 
-// Both directions matter: from an ADR you want its sources, and from a
-// decision you want the ADR that consumed it.
-func TestGraphWalksBothDirections(t *testing.T) {
-	decision := entry(t, KindDecision, "Use RS256", "auth")
-	deviation := entry(t, KindDeviation, "HS256 cannot rotate per service", "auth")
-	adr := entry(t, KindADR, "Asymmetric signing for service tokens", "auth")
-	now := time.Now().UTC().Format(time.RFC3339)
-	edges := []*Edge{
-		{Kind: KindEdge, Type: EdgeDerivesFrom, From: adr.ID, To: decision.ID, At: now},
-		{Kind: KindEdge, Type: EdgeDerivesFrom, From: adr.ID, To: deviation.ID, At: now},
-	}
-	all := []*Entry{decision, deviation, adr}
-
-	forward := Graph(all, edges, adr.ID, 1)
-	if len(forward) != 3 {
-		t.Fatalf("from the ADR we should reach both sources, got %d", len(forward))
-	}
-
-	backward := Graph(all, edges, decision.ID, 1)
-	if len(backward) != 2 {
-		t.Fatalf("from a source we should reach the ADR, got %d", len(backward))
-	}
-	if !backward[1].Backward {
-		t.Error("a reverse hop should be flagged as such")
-	}
-
-	two := Graph(all, edges, decision.ID, 2)
-	if len(two) != 3 {
-		t.Fatalf("depth 2 should reach the sibling source, got %d", len(two))
-	}
-}
-
-func TestGraphUnknownRoot(t *testing.T) {
-	if Graph(nil, nil, "01JXKQ7M4T8YZPABCDEFGHJKMN", 2) != nil {
-		t.Fatal("an unknown root must be distinguishable from an isolated one")
-	}
-}
-
 func TestProjectionReturnsExactlyTheFieldsItWasNamed(t *testing.T) {
 	dir := t.TempDir()
 	store := OpenIn(filepath.Join(dir, "memory.db"), filepath.Join(dir, ".ai-kit", "memory.jsonl"))

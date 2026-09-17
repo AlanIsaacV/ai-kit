@@ -187,12 +187,11 @@ func TestQueryScopeBothAnswersFromTheRepoLogWhenThereIsNoUserLog(t *testing.T) {
 
 func TestScopeBothIsRefusedByEveryReadButQuery(t *testing.T) {
 	r := throwawayRepo(t)
-	from := add(t, r, "RS256 over HS256")
+	add(t, r, "RS256 over HS256")
 
 	for _, args := range [][]string{
 		{"search", "--scope", "both", "RS256"},
 		{"edges", "--scope", "both"},
-		{"graph", "--scope", "both", "--from", from},
 	} {
 		t.Run(args[0], func(t *testing.T) {
 			res := runBare(t, r, args...)

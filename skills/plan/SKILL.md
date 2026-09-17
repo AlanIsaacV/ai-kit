@@ -71,9 +71,9 @@ child is worth opening, which is the only thing the descent needs from you.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the log by hand.
 
-The surface is thirteen commands and these are all of them: `init`, `add`,
-`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
-`promote`, `validate`, `kinds`. The steps below run the ones this skill needs and
+The surface is twelve commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `state`, `promote`,
+`validate`, `kinds`. The steps below run the ones this skill needs and
 write the flags out at each call site, so there is no command here to go and
 discover. `memory kinds` stays worth running for what it alone reports: every
 valid record kind and edge type, and the count at which `query` starts
@@ -649,9 +649,7 @@ never run `memory init` for a child: one log holds one objective tree, `init` is
 for a repo that has no log at all, and an edge in a batch still names an endpoint
 already in the log it is written into — so the batch below, which is what
 attaches the child to its parent, is refused outright when the child goes into a
-log of its own. `link` would take that edge, since an edge may now cross logs,
-but `graph` and `edges` still read one log and neither would see the tree it
-joined.
+log of its own.
 
 What this step writes is the objective, one record per surviving assumption, one
 per open question, one per decision the conversation settled, and the edges that

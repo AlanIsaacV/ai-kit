@@ -94,7 +94,7 @@ func TestRenderingLeavesAngleBracketsAlone(t *testing.T) {
 		t.Errorf("the body was escaped on the way out: %s", line)
 	}
 
-	// The CLI's own encoder, which is what `query` and `graph` print through.
+	// The CLI's own encoder, which is what `query` prints through.
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)

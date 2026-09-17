@@ -67,9 +67,9 @@ stays withheld however little of each record you asked for. What they change is
 the price of the records that do come back. If you genuinely need to read a lot
 of history, that is a job for a subagent, not for this context.
 
-The surface is thirteen commands and these are all of them: `init`, `add`,
-`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
-`promote`, `validate`, `kinds`. The steps below run the ones this loop needs and
+The surface is twelve commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `state`, `promote`,
+`validate`, `kinds`. The steps below run the ones this loop needs and
 write the flags out at each call site, so there is no command here to go and
 discover. `memory kinds` stays worth running for what it alone reports: every
 valid record kind and edge type, which record each state edge is allowed to
@@ -1029,10 +1029,10 @@ memory query --id <the id in the to field of that edge, pasted literally> --fiel
 what bounds it is `--from`, `--to` and `--type`. Not the plan: `--plan` on it is
 refused outright with `plan_not_on_edges`, and an `AI_KIT_PLAN` in the environment
 is ignored rather than applied, so the answer spans the whole log and `--from` is
-the only thing keeping it to this objective. `graph` would find the same edge and
-carry back the full record of every node it reached, in either direction and at any
-edge type — measured against this repository's log, 23 KB where the edge alone is
-559 bytes.
+the only thing keeping it to this objective. A read that walked out from the id
+instead would come back with the full record of every node it reached, in either
+direction and at any edge type, when what this step needs is one id out of one
+edge.
 
 What the subagent needs the claim for is deciding whether the lesson generalizes
 past this bug, which is the one judgment at the close that cannot be reconstructed

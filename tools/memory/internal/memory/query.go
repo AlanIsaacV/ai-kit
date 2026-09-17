@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// DefaultThreshold is how many records, edges or graph nodes a read will hand
-// back before it stops and reports a count instead.
+// DefaultThreshold is how many records or edges a read will hand back before
+// it stops and reports a count instead.
 //
 // This is the whole point of the retrieval contract. An agent that asks a broad
 // question and receives two hundred records has just spent its context on
@@ -494,86 +494,6 @@ func QueryEdges(lines []Line, f EdgeFilter) EdgeResult {
 		res.Edges = []*Edge{}
 	}
 	res.Returned = len(res.Edges)
-	return res
-}
-
-// Node is one step of a graph walk.
-type Node struct {
-	Entry    *Entry `json:"entry"`
-	Depth    int    `json:"depth"`
-	Via      string `json:"via,omitempty"`      // edge type that reached it
-	From     string `json:"from,omitempty"`     // id it was reached from
-	Backward bool   `json:"backward,omitempty"` // traversed against the edge direction
-}
-
-// Graph walks outward from an id in both directions up to depth.
-//
-// Both directions matters: from an ADR you want the decisions it derives from,
-// and from a decision you want the ADR that consumed it. A one-way walk would
-// answer only half the questions anyone actually asks of this graph.
-func Graph(entries []*Entry, edges []*Edge, from string, depth int) []Node {
-	byID := map[string]*Entry{}
-	for _, e := range entries {
-		byID[e.ID] = e
-	}
-	root, ok := byID[from]
-	if !ok {
-		return nil
-	}
-
-	out := []Node{{Entry: root, Depth: 0}}
-	seen := map[string]bool{from: true}
-	frontier := []string{from}
-
-	for d := 1; d <= depth && len(frontier) > 0; d++ {
-		var next []string
-		for _, cur := range frontier {
-			for _, e := range edges {
-				var otherID string
-				backward := false
-				switch {
-				case e.From == cur:
-					otherID = e.To
-				case e.To == cur:
-					otherID = e.From
-					backward = true
-				default:
-					continue
-				}
-				if seen[otherID] {
-					continue
-				}
-				other, ok := byID[otherID]
-				if !ok {
-					continue // dangling; `validate` reports it
-				}
-				seen[otherID] = true
-				out = append(out, Node{Entry: other, Depth: d, Via: string(e.Type), From: cur, Backward: backward})
-				next = append(next, otherID)
-			}
-		}
-		frontier = next
-	}
-	return out
-}
-
-type GraphResult struct {
-	Count     int    `json:"count"`
-	Truncated bool   `json:"truncated"`
-	Hint      string `json:"hint,omitempty"`
-	Nodes     []Node `json:"nodes"`
-}
-
-func GuardGraph(nodes []Node, threshold int, advice []string) GraphResult {
-	res := GraphResult{Count: len(nodes), Nodes: nodes}
-	if threshold == 0 {
-		threshold = DefaultThreshold
-	}
-	if threshold > 0 && len(nodes) > threshold {
-		res.Nodes = []Node{}
-		res.Truncated = true
-		res.Hint = withheldHint(advice)
-	}
 	return res
 }
 

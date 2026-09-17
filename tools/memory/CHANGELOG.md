@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+### `graph` is gone, and the surface is twelve commands
+
+`memory graph --from <id>` walked the edges out of one record and answered with a
+node per record it reached. Of the thirteen subcommands it was the only one no
+file under `skills/` or `agents/` named: decision 01M2PSD2C4FGNKZT8PBZ5PW58X
+counted the references and counted zero for `graph`, against 30 for `query`, 21
+for `add` and 3 for `edges`. The rule it fell to is the one the surface work runs
+under — every command has a demonstrated user, a measured invocation or a caller
+that names it, and one with neither is deleted rather than left in place
+(objective 01M2ERKD79EYK78VYBRWN469QQ, criterion 6). A command with no caller and
+no reader is not a surface, it is a claim about one, and every line of usage text
+is read by the agent deciding what this tool can do.
+
+```bash
+memory edges --from <id>      # what that record points at, in every log
+memory edges --to <id>        # what points at it, in every log
+```
+
+- **The subcommand and everything that existed only for it are gone.** `cmdGraph`
+  and `graphHintAdvice` in `cmd/memory/main.go`; `memory.Graph`,
+  `memory.GuardGraph`, `memory.Node` and `memory.GraphResult` in
+  `internal/memory/query.go`; and with them the error codes `missing_from` and
+  `unknown_id`, which no other command ever emitted — `graph` was the only read
+  that had to resolve an id before it could start, so it was the only one that
+  refused a missing `--from` or an id no log of the store held. `edges --from` an
+  id nothing points from answers an empty list, as it always did. The shared
+  machinery the walk used stays and still has callers: `memory.Entries`,
+  `memory.Edges`, `withheldHint`, `refuseNamedScope` and `storeLogs`. The usage
+  block and the dispatch switch list twelve commands, and the paragraph that
+  documented the walk and `edges` in one breath — in the usage text and again in
+  `README.md` — documents `edges` alone.
+- **`graph`'s one real user in this repository was a test, and it was not deleted
+  with it.** `TestAWrittenStateEdgeIsStampedAndReachable` and
+  `TestRecordsFromDifferentPlansCanBeLinked` in `cmd/memory/main_test.go` ran
+  `graph --from <id> --depth 1` as an *oracle*: neither is a test of `graph`, and
+  both used it to prove that an edge just written came back reachable. They ask
+  `edges --from` now, which answers that narrower question exactly and has crossed
+  logs since a043e95, and both still fail when the edge they are about is absent.
+  REJECTED: dropping the two assertions along with the command, which deletes a
+  check that was doing real work for a reason that has nothing to do with it. The
+  tests that tested `graph` itself go with it — `cmd/memory/graph_test.go` whole,
+  and `TestGraphWalksBothDirections` and `TestGraphUnknownRoot` from
+  `internal/memory/query_test.go` — and the `graph` rows come out of the shared
+  tables in `scope_test.go`, `batch_test.go` and `query_test.go`, where the
+  commands beside them are still covered.
+- **Three things were left alone on purpose.** The historical entries in this file
+  that name `graph` are not edited or annotated: they describe changes that really
+  happened to a command that really existed, and the way a dead symbol is recorded
+  here is a bullet in the entry that killed its last caller — as `Query(lines, f)`
+  was, in the entry below — never a hand laid on the one that introduced it. ADR
+  01M2P2WSXBZQ5SANJFAEVKFJVR cites `graph --from` as one of the five examples
+  behind "an id-addressed read answers from the whole store"; the claim survives on
+  the other four, and restating the ADR is a decision of its own that was not taken
+  here. And the command list is restated in five skill files with nothing in the
+  build comparing it to the CLI, so this removal was propagated by hand and the
+  next one will be too — open question 01M2Q1PFT6D1C2E426DN1BPAGN, still open.
+- **No schema change**, no new record kind, no migration, and every surviving
+  command answers exactly what it answered before.
+
 ### `--scope` names one log, and a store-wide answer names every log
 
 The store consolidated and `--scope` did not move with it. It was written when a

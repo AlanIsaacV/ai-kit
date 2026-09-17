@@ -991,7 +991,7 @@ func TestAStateEdgeIsWrittenOnlyWhenSomethingJustifiesIt(t *testing.T) {
 
 // A state edge is a record like any other: it lands on disk stamped with the
 // version whose rule set accepted it, and it is reachable from both of its
-// endpoints by a graph walk — which is the only way anything reads a state, this
+// endpoints by `edges` — which is the only way anything reads a state, this
 // unit having added no command that reports one.
 func TestAWrittenStateEdgeIsStampedAndReachable(t *testing.T) {
 	r := throwawayRepo(t)
@@ -1024,30 +1024,15 @@ func TestAWrittenStateEdgeIsStampedAndReachable(t *testing.T) {
 		t.Fatalf("the appended line is not that edge: %s", got[2])
 	}
 
-	res = runBare(t, r, "graph", "--from", objective, "--depth", "1")
-	if res.code != 0 {
-		t.Fatalf("graph: exit %d\n%s%s", res.code, res.stdout, res.stderr)
-	}
-	var g struct {
-		Nodes []struct {
-			Entry struct {
-				ID string `json:"id"`
-			} `json:"entry"`
-			Via   string `json:"via"`
-			Depth int    `json:"depth"`
-		} `json:"nodes"`
-	}
-	if err := json.Unmarshal([]byte(res.stdout), &g); err != nil {
-		t.Fatal(err)
-	}
+	out := listEdges(t, r, "--from", objective)
 	reached := false
-	for _, n := range g.Nodes {
-		if n.Entry.ID == decision && n.Depth == 1 && n.Via == "met" {
+	for _, e := range out.Edges {
+		if e.Type == "met" && e.From == objective && e.To == decision {
 			reached = true
 		}
 	}
 	if !reached {
-		t.Fatalf("the justifying record must be one hop from the objective: %+v", g.Nodes)
+		t.Fatalf("the justifying record must be reachable from the objective: %+v", out.Edges)
 	}
 }
 
@@ -1389,29 +1374,15 @@ func TestRecordsFromDifferentPlansCanBeLinked(t *testing.T) {
 		t.Fatalf("the appended line is not that edge: %s", got[2])
 	}
 
-	res = runBare(t, r, "graph", "--from", b, "--depth", "1")
-	if res.code != 0 {
-		t.Fatalf("graph: exit %d\n%s%s", res.code, res.stdout, res.stderr)
-	}
-	var g struct {
-		Nodes []struct {
-			Entry struct {
-				ID string `json:"id"`
-			} `json:"entry"`
-			Depth int `json:"depth"`
-		} `json:"nodes"`
-	}
-	if err := json.Unmarshal([]byte(res.stdout), &g); err != nil {
-		t.Fatal(err)
-	}
+	out := listEdges(t, r, "--from", b)
 	reached := false
-	for _, n := range g.Nodes {
-		if n.Entry.ID == a && n.Depth == 1 {
+	for _, e := range out.Edges {
+		if e.Type == "relates_to" && e.From == b && e.To == a {
 			reached = true
 		}
 	}
 	if !reached {
-		t.Fatalf("the other plan's record must be reachable from this one: %+v", g.Nodes)
+		t.Fatalf("the other plan's record must be reachable from this one: %+v", out.Edges)
 	}
 }
 

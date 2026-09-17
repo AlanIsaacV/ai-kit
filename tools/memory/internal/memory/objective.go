@@ -13,11 +13,7 @@ import (
 //
 // Two things are true of all of it and are the reason it looks the way it does.
 //
-// It reads the edge list directly and never walks Graph. Graph deduplicates by
-// *node* and reports only the first edge that reaches one, so a typed edge can
-// be shadowed by an older relates_to between the same pair and simply not be
-// seen — wont-fix 01KZ4ZXEPR07E7VH06JTG8E6J0, decided not worth fixing. State
-// and parentage resolved from the edges themselves are unaffected by it.
+// It reads the edge list directly.
 //
 // And it is derivation, not enforcement. The tree rules are refused on the way
 // in by CheckParent at the bottom of this file; nothing here condemns a record

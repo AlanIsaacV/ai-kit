@@ -13,7 +13,6 @@ type storeWideRead struct {
 
 func storeWideReads(from string) []storeWideRead {
 	return []storeWideRead{
-		{"graph", []string{"graph", "--from", from}},
 		{"edges --from", []string{"edges", "--from", from}},
 		{"anchors --all", []string{"anchors", "--all"}},
 		{"state --all", []string{"state", "--all"}},
@@ -84,10 +83,9 @@ func TestAScopeNobodyNamedChangesNothing(t *testing.T) {
 }
 
 func TestAStoreWideAnswerNamesEveryLogItRead(t *testing.T) {
-	alpha, beta, parent, kid := aTreeAcrossTwoLogs(t)
+	alpha, beta, _, kid := aTreeAcrossTwoLogs(t)
 
 	for _, args := range [][]string{
-		{"graph", "--from", parent},
 		{"edges", "--from", kid},
 	} {
 		t.Run(args[0], func(t *testing.T) {

@@ -200,9 +200,9 @@ skill; a human invokes it, and it records what they settle and stops.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the log by hand.
 
-The surface is thirteen commands and these are all of them: `init`, `add`,
-`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
-`promote`, `validate`, `kinds`. The steps below run the ones this skill needs and
+The surface is twelve commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `state`, `promote`,
+`validate`, `kinds`. The steps below run the ones this skill needs and
 write the flags out at each call site, so there is no command here to go and
 discover. `memory kinds` stays worth running for what it alone reports: every
 valid record kind and edge type, and the count at which `query` starts
@@ -911,13 +911,13 @@ of reasoning means *nobody asked* and one whose absence of reasoning means *aske
 and there was none* — and only the second one stops the next run from re-opening it.
 
 **No edge to the user-scope preference.** The temptation is real and the reason is
-mechanical: an edge may cross logs but `graph` still walks one, and nothing stops
-you from writing one anyway. Measured — an edge from a repository record to an id
-that exists only in the user log is accepted at exit 0, printed back in full, and
-`memory validate` on that repository answers `ok: true` with `problems: []`. So it
-neither refuses nor reports; it just sits there, joining nothing, indistinguishable
-from structure. The join between an adoption and the opinion it adopts is the area
-tag, which both carry and which every read in this file is already bounded by.
+mechanical: nothing refuses one. Measured — an edge from a repository record to an
+id that exists only in the user log is accepted at exit 0, printed back in full,
+and `memory validate` on that repository answers `ok: true` with `problems: []`.
+So what it buys is an edge written into this log joining an id this log does not
+contain, asserting a relation nothing on this side ever checks. The join between
+an adoption and the opinion it adopts is the area tag, which both carry and which
+every read in this file is already bounded by.
 
 #### When it replaces one that is already there
 
