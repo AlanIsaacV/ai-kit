@@ -31,20 +31,10 @@ ELEMENTS = (
     ("query --fields", (alternative("query", r"--fields\b"),)),
     ("query --body-lines", (alternative("query", r"--body-lines\b"),)),
     ("query --scope both", (alternative("query", r"--scope[ \t=]+both\b"),)),
-    (
-        "anchors --verdict or anchors --path",
-        (
-            alternative("anchors", r"--verdict\b"),
-            alternative("anchors", r"--path\b"),
-        ),
-    ),
-    (
-        "query --id or anchors --id",
-        (
-            alternative("query", r"--id\b"),
-            alternative("anchors", r"--id\b"),
-        ),
-    ),
+    ("query --id", (alternative("query", r"--id\b"),)),
+    ("anchors --verdict", (alternative("anchors", r"--verdict\b"),)),
+    ("anchors --path", (alternative("anchors", r"--path\b"),)),
+    ("anchors --id", (alternative("anchors", r"--id\b"),)),
 )
 
 

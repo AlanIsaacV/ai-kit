@@ -67,10 +67,22 @@ stays withheld however little of each record you asked for. What they change is
 the price of the records that do come back. If you genuinely need to read a lot
 of history, that is a job for a subagent, not for this context.
 
-`memory kinds` is the authority on which record kinds and edge types exist and
-on which record each state edge is allowed to point at; `memory --help` on
-which flags exist. A command this file does not show is one of those two reads
-away.
+The surface is thirteen commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
+`promote`, `validate`, `kinds`. The steps below run the ones this loop needs and
+write the flags out at each call site, so there is no command here to go and
+discover. `memory kinds` stays worth running for what it alone reports: every
+valid record kind and edge type, which record each state edge is allowed to
+point at, and the count at which `query` starts withholding.
+
+Another repository's records are one flag away: `--dir` resolves the log of
+whichever repository the path sits in, so
+`memory query --dir <another-repo> --kind adr,decision --current` answers out of
+that repository without this turn leaving its own. Reach for it when the surface
+this turn touches lives in more than one repository — an `adr` written next door
+binds this change exactly as much as a local one — and put `--repo-root` beside
+`--dir` on `anchors`, which is what lets the check read the cited lines out of
+that working tree.
 
 ## Steps
 
@@ -97,7 +109,7 @@ elsewhere can still bind what this turn changes.
 
 ```bash
 memory query   --plan <tree-slug> --kind gotcha --about <area> --current
-memory anchors --plan <tree-slug> --kind gotcha --about <area> --current
+memory anchors --plan <tree-slug> --kind gotcha --about <area> --current --verdict changed
 ```
 
 A `gotcha` is a constraint the code obeys without stating it, written because
@@ -111,6 +123,18 @@ narrower than the check reports on records the check never saw, and a check wide
 than the query verdicts records nobody loaded — either way the round would be
 describing two sets while reading as one. Change one line's filter and change the
 other with it.
+
+**`--verdict changed` is not part of that filter, which is why it can sit on one
+line and not the other.** `anchors` matches, checks and counts before `--verdict`
+decides which records to hand back: `matched`, `checked` and `counts` are
+computed over everything the filter admitted and still answer for the whole set,
+and the flag only shortens `records`, adding `returned` to say by how much. Run
+the line both ways against your own log and the two answers show it, whatever the
+day's numbers are: `matched`, `checked` and `counts` come back the same in each,
+the only thing that moves is the length of `records`, and `returned` is on the
+filtered answer alone to say how many of that checked set it kept. So every record
+the query loaded was still checked — `counts` is the proof — and what the flag
+saves is the bodies of the records there was no move to make about.
 
 `--current` drops what something else supersedes, and for a gotcha that is not
 tidiness: **a re-anchored constraint supersedes the record it replaces**, so the
@@ -127,19 +151,25 @@ line, with its count, on exactly the grounds stated there. The same query withou
 true number and withholds the records once there is more than one, so naming what
 was dropped does not cost the round the thing the bound was there to save.
 
-Every anchored record comes back with one verdict:
+Every anchored record carries one verdict and `counts` says how many took each.
+Only one of the three comes back as a record, and it is the one that needs you:
 
-- `still_holds` — the cited lines are still there. `moved: true` means they are at
-  a different line now, which is not a problem and needs nothing from you.
 - `changed` — the cited lines were rewritten. **Put it in front of the user in
   this same round**, with the gotcha's title and its `path:line`. Nobody can tell
   from here whether the constraint still binds: either the rewrite respected it
   and the record wants re-anchoring, or the rewrite broke it and this turn is
   about to build on something that is no longer true. That is a question for the
   user, not a call to make quietly.
+- `still_holds` — the cited lines are still there, and `counts.still_holds` is
+  the whole of what this round needs from it. `moved: true` on a record you did
+  get back means the lines sit at a different number now, which is not a problem
+  and needs nothing from you.
 - `could_not_check` — the file is gone or the anchor cannot be resolved. Say so
   with the same weight; an unchecked claim must never be reported as a confirmed
-  one.
+  one. `--verdict` takes one value, so this one arrives as a number:
+  `counts.could_not_check` above zero is a second run of the `anchors` line with
+  `--verdict could_not_check` in place of `--verdict changed`, and it is worth
+  the call every time it is not zero.
 
 Never say a gotcha holds because the check said `still_holds` about *some* of the
 records — the count is per record, and `checked` next to `matched` says how many
@@ -302,24 +332,44 @@ the directory after that same field when it recorded the objective, and a
 derived name that lands one character off finds no draft and sends this step down
 the no-draft branch for an objective that has one.
 
-Look in **both** locations, the new one first, because `plans/<slug>/` at the
-repository root is where drafts were written before this moved and the ones already
-there are not migrated:
+Both candidates hang off the objective's own repository root. `<root>` below is
+the `root` step 1's `memory state` printed on that objective — the absolute
+working-tree root of the log the objective is listed from — and you paste it in
+literally. That is what the join is for: an objective can live in another
+repository's log, and a relative pair resolves against whatever directory this
+turn's shell is standing in, which finds nothing and reads as no draft. Step 1's
+`memory state` runs bare and lists only this repository's objectives, so an
+objective whose log is somewhere else is not among them: ask for that one by id
+with `memory state --id <objective-id> --all`, which reads every log on this
+host and reports the `root` this join needs.
+
+Look in **both** locations under that root, the new one first, because
+`plans/<slug>/` at the repository root is where drafts were written before this
+moved and the ones already there are not migrated:
 
 ```bash
-sh -c 'for p in .ai-kit/plans/<objective-slug>/draft-objective.md plans/<objective-slug>/draft-objective.md; do
+sh -c 'for p in <root>/.ai-kit/plans/<objective-slug>/draft-objective.md <root>/plans/<objective-slug>/draft-objective.md; do
   [ -f "$p" ] && { echo "$p"; exit 0; }
 done; exit 1'
 ```
 
 It prints the first path that exists, so `.ai-kit/` wins when both do — a slug can
-exist in both places, and the newer file is the one `plan` last wrote to. **Exit 1
-is the no-draft branch and exit 0 is not**, which is why this is not an `ls` over
-both paths: `ls` exits 1 whenever either argument is missing, so an objective whose
-draft sits in exactly one location looks found and failed at once, and the next edit
-that chains it with `&&` sends a draft that exists down the no-draft branch. The
-`sh -c` wrapper is not decoration either — nothing here says which shell this turn
-got, and a `for` loop written this way is not something every shell parses.
+exist in both places, and the newer file is the one `plan` last wrote to. What it
+prints is absolute, and that is the path the subagents downstream are handed as
+`objective_draft`. **Exit 1 is the no-draft branch and exit 0 is not**, which is
+why this is not an `ls` over both paths: `ls` exits 1 whenever either argument is
+missing, so an objective whose draft sits in exactly one location looks found and
+failed at once, and the next edit that chains it with `&&` sends a draft that
+exists down the no-draft branch. A root left unsubstituted reaches neither branch:
+the shell reads the bare `<root>` as a redirect, refuses the line as a syntax
+error — ``sh: -c: line 1: syntax error near unexpected token `<'`` — and exits 2
+with nothing having run. That failure is loud and whole, which is the opposite of
+the one this block is built against, and it is the other half of the sentence
+above: exit 1 is the no-draft branch, exit 0 is not, and exit 2 is not an answer
+about drafts at all — so a caller that reads anything-but-1 as found takes an empty
+line for a path. The `sh -c` wrapper is not decoration either — nothing here says
+which shell this turn got, and a `for` loop written this way is not something
+every shell parses.
 
 `plan` wrote that file. Open it and check two things, and nothing else:
 

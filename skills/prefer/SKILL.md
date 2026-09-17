@@ -200,9 +200,21 @@ skill; a human invokes it, and it records what they settle and stops.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the log by hand.
 
-`memory kinds` lists every valid record kind and edge type and reports the count
-at which `query` starts withholding; `memory --help` lists the flags each command
-takes. A command this file does not show is one of those two reads away.
+The surface is thirteen commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
+`promote`, `validate`, `kinds`. The steps below run the ones this skill needs and
+write the flags out at each call site, so there is no command here to go and
+discover. `memory kinds` stays worth running for what it alone reports: every
+valid record kind and edge type, and the count at which `query` starts
+withholding.
+
+To read what another repository already recorded, pass `--dir` and point it
+there — `env -u AI_KIT_PLAN memory query --dir <another-repo> --kind preference`
+answers out of that repository's log from wherever this session is standing.
+Reach for it when the user says they settled this somewhere else: a preference
+filed next door is the record you are otherwise about to write a second copy of.
+It is a read and nothing more — the writes below stay in the repository this
+session is standing in, and the subsection after this one says why.
 
 ### Every command here clears `AI_KIT_PLAN`
 
@@ -254,10 +266,12 @@ promotion was run. Which is the argument for catching it at `add` and nowhere el
 append-only log.
 
 **The log is the one belonging to the repository this session is standing in**, so
-no `--dir` appears on any command here. This skill is not pointed at somebody
-else's checkout the way `ask` and `bootstrap` are: preferences about a repository
-are gathered by somebody working in it, and taking a path as an input would mostly
-buy a way to file one repository's choices in another's log.
+no `--dir` appears on any command in the steps below — the one read that reaches
+another repository is named in the section on the memory log above, and it writes
+nothing. This skill is not pointed at somebody else's checkout the way `ask` and
+`bootstrap` are: preferences about a repository are gathered by somebody working
+in it, and taking a path as an input would mostly buy a way to file one
+repository's choices in another's log.
 
 The cost of leaving the flag off is worth naming rather than discovering. With no
 `--dir`, every command resolves the log from whatever directory the session is

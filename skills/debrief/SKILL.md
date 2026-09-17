@@ -225,7 +225,7 @@ nobody finds it by reading the diff. Check whether the code it cites is still
 where it was, and hand the verdict on to `evaluate` with the record:
 
 ```bash
-env -u AI_KIT_PLAN memory anchors --kind gotcha --path "<a path or a directory from the step 2 list>" --current
+env -u AI_KIT_PLAN memory anchors --kind gotcha --path "<a path or a directory from the step 2 list>" --current --verdict changed
 ```
 
 **`--path` here and not `--about`**, because this is the one bound in this step
@@ -233,16 +233,20 @@ that needs no guess: it matches the anchor's own cited path as a case-insensitiv
 substring, so the file list step 2 already produced *is* the filter, and one call
 per directory the change touches asks which recorded constraints are anchored in
 the code this work actually edited. `query` has no `--path`, so the tag guess
-stays on the lines above and stops here. `matched`, `checked` and `counts` are
-computed before `--path` narrows anything and still describe every anchored gotcha
-the filter admits; `returned` and `records` are the ones in these files, so
-`returned: 0` reads as "nothing recorded is anchored here" and never as "the log
-is empty".
+stays on the lines above and stops here.
 
-A gotcha whose anchors came back `changed` is a constraint that may already have
-been broken by the work you are about to read — which is a finding, not a
-housekeeping note. Every record in `records` carries its own verdict alongside its
-anchors, so that partition is read off this answer rather than asked for again.
+**`--verdict changed` because that is the verdict this step reaches for first.** A
+gotcha whose anchors came back `changed` is a constraint that may already have
+been broken by the work you are about to read — a finding, not a housekeeping
+note — while one that still holds is a constraint the diff left where it was.
+Neither flag narrows the check: `matched`, `checked` and `counts` are computed
+before `--path` and `--verdict` see anything and still describe every anchored
+gotcha the filter admits, and `returned` says how many of them came back. So
+`returned: 0` reads as "nothing recorded in these files drifted" and never as "the
+log is empty", and `counts` beside it is how you say that with a number.
+`--verdict` takes one value, so a `counts.could_not_check` above zero is a second
+call with `--verdict could_not_check`, and it is worth making: an anchor nobody
+could resolve is not an anchor that held.
 
 Say in one line what came back, including "nada". A filter that ran and found
 nothing is a different thing from a read that was skipped.
@@ -260,7 +264,7 @@ intent_source: <stated | inferred>
 manual_checks: <Manual checks to run, verbatim — or empty>
 repo_root: <absolute path>
 changed_files: <the list from step 2>
-constraints: <the gotcha and preference records from step 3, each gotcha with its anchor verdict>
+constraints: <the gotcha and preference records from step 3, each gotcha marked with the verdict its anchors returned — changed, or could_not_check>
 ```
 
 `intent_source` is `stated` only when the intent came from the user — a brief they

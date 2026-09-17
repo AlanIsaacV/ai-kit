@@ -239,9 +239,21 @@ see step 3. It is not a placeholder for a `gotcha` you could not anchor; it is t
 record that says nobody in the room knew, so the next session does not read the
 silence as "there is nothing here".
 
-`memory kinds` is the authority on which kinds and edge types exist; `memory
---help` on which flags do. A command this file does not show is one of those two
-reads away.
+The surface is thirteen commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
+`promote`, `validate`, `kinds`. The steps below run the ones this skill needs and
+write the flags out at each call site, so there is no command here to go and
+discover. `memory kinds` stays worth running for what it alone reports: every
+valid record kind and edge type, and the count at which `query` starts
+withholding, which the interview read below runs into.
+
+`--dir` reaches past `<target-repo>` too: it resolves whichever repository the
+path sits in, so `memory query --dir <another-repo> --kind adr,decision` reads
+that repository's log while this session stays where it is. A convention some
+neighbouring repository already settled is worth finding before the interview
+asks for it a second time, and the pair above is the whole of the reach —
+`--dir` for the log, `--repo-root` beside it on `anchors`, so the cited lines are
+read out of that working tree.
 
 ## Steps
 
@@ -300,7 +312,7 @@ re-asked:
 
 ```bash
 memory query   --dir <target-repo> --kind gotcha --current
-memory anchors --dir <target-repo> --repo-root <target-repo> --kind gotcha --current
+memory anchors --dir <target-repo> --repo-root <target-repo> --kind gotcha --current --verdict changed
 memory query   --dir <target-repo> --kind adr,decision --current
 ```
 
@@ -309,6 +321,11 @@ may have been written under any tree, and bounding by one would hide exactly the
 record that matters. The first two lines carry the same filter as each other, and
 that identity is the point — a query narrower than the check verdicts records
 nobody loaded, and a check narrower than the query loads records nobody verified.
+`--verdict changed` is not part of that filter and does not break it: `anchors`
+matches, checks and counts before the flag decides which records to hand back, so
+`matched`, `checked` and `counts` still answer for every gotcha the filter
+admitted and only `records` gets shorter, with `returned` saying by how much. What
+comes back is the set this round has to put in front of the user.
 
 **Read `truncated` before you say anything about what came back.** These queries
 are deliberately unbounded by tree, which is exactly the shape that breaches the
@@ -330,32 +347,28 @@ the same trade paid in context: every body loaded into this thread so that one o
 them can be cited in a `CLAUDE.md` pointer.
 
 The threshold is `query`'s alone. `anchors` has no `--threshold` flag and never
-withholds anything, so it is the line that quietly gets long: every gotcha it
-matched, each with every anchor it checked. Its own lever is `--verdict`, and it is
-not the same kind of narrowing — `matched`, `checked` and `counts` are computed over
-everything that matched, *before* `--verdict` decides which records come back. So it
-does not break the identity rule above: every record the query loaded was still
-checked, and `counts` is what proves it.
+withholds anything, so unfiltered it is the line that quietly gets long: every
+gotcha it matched, each with every anchor it checked. `--verdict changed` is why
+the line above is short instead: it hands back the records whose cited lines have
+moved and drops the rest, and on a repository with any history behind it the ones
+that moved are the small minority. Nothing is hidden by that, and you can see as
+much on your own log — run the line with the flag and without it and `matched`,
+`checked` and `counts` come back the same in both answers, because all three are
+computed before the verdict filter is consulted. What the filtered answer adds is
+`returned`, the number of records it kept out of the ones it checked.
 
-What comes back does three things. A `gotcha` already on disk is one you do not
-re-interview and do not re-write. A `gotcha` whose anchor came back `changed` or
-`could_not_check` is named to the user in this same round, with its title and its
-`path:line`: nobody can tell from a hash whether the constraint still binds, and
-this is the one moment somebody who knows the repo is in the conversation. Read
-`counts` for how many of each there are, and when the answer is too long to pick
-them out of by hand, ask for them on their own — `--verdict` takes one value, so
-this is one call per verdict and worth spending only on a verdict `counts` says is
-non-zero:
-
-```bash
-memory anchors --dir <target-repo> --repo-root <target-repo> --kind gotcha --current --verdict changed
-```
-
-Measured against this repository's log while this was written, that returned the 9
-records that had to be named where the unfiltered line returned all 56 it checked,
-with `matched`, `checked` and `counts` identical in both answers. An `adr` or a
-`decision` on this repository is a candidate invariant for the `CLAUDE.md` — as a
-pointer to the record, by step 7, never as a copy of its text.
+What comes back does three things. A `gotcha` already on disk — every one of them,
+named by the `query` line whatever its verdict — is one you do not re-interview
+and do not re-write. A `gotcha` in the `anchors` answer is one whose cited lines
+were rewritten, and it is named to the user in this same round, with its title and
+its `path:line`: nobody can tell from a hash whether the constraint still binds,
+and this is the one moment somebody who knows the repo is in the conversation. A
+`could_not_check` belongs in that same conversation and the flag does not hand it
+to you — `--verdict` takes one value, so read `counts.could_not_check`, and when
+it is above zero run the `anchors` line again with `--verdict could_not_check` in
+place of `--verdict changed`. An `adr` or a `decision` on this repository is a
+candidate invariant for the `CLAUDE.md` — as a pointer to the record, by step 7,
+never as a copy of its text.
 
 Say in one line what these returned, including nothing. On a repository the loop
 has never seen, nothing is the ordinary answer, and a filter that ran and found
@@ -588,14 +601,23 @@ Then confirm what landed, and **announce the log if this run is what put anythin
 in it**:
 
 ```bash
-memory anchors --dir <target-repo> --repo-root <target-repo> --plan repo-bootstrap --kind gotcha --current
+memory anchors --dir <target-repo> --repo-root <target-repo> --plan repo-bootstrap --kind gotcha --current --id "<id>,<id>"
 ```
 
-`checked` equal to `matched` says every record under the filter is anchored;
-`counts.still_holds` equal to `checked` says every anchor resolves against the
-code right now, which for records written seconds ago is the only acceptable
-answer. Anything else means a range was drawn at the wrong place — say so and
-write the corrected record, since nothing already written is ever edited.
+**`--id` carries the ids the `add` calls above printed** — one per gotcha this run
+wrote, comma-separated. Each `add` prints the record it appended, so the ids are
+already in front of you and you type them in; nothing here captures one command's
+output into another. Without them the filter is every gotcha ever written under
+`repo-bootstrap` in that repository, which on a repository the loop has
+bootstrapped before is not the set this step is confirming, and the sentence below
+would be a claim about somebody else's records.
+
+`not_found` empty says every id you pasted is in the log; `checked` equal to
+`matched` says every one of them is anchored; `counts.still_holds` equal to
+`checked` says every anchor resolves against the code right now, which for records
+written seconds ago is the only acceptable answer. Anything else means a range was
+drawn at the wrong place — say so and write the corrected record, since nothing
+already written is ever edited.
 
 Then say what landed, in words, here and not at step 9 — including that it stands
 whatever step 9 decides, because that is the part the user cannot infer and the

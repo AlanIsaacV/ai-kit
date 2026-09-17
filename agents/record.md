@@ -141,9 +141,9 @@ dump the threshold exists to stop. **An empty `records` array is never "nothing
 exists".** Read it that way once and you write the duplicate of a record already
 on disk, which is the one thing this check exists to prevent.
 
-`memory kinds` is the authority on which record kinds and edge types exist
-and on which record each state edge is allowed to point at. Resolve it, do not
-recall it.
+`memory kinds` is in the block above for what nothing else reports: every valid
+record kind and edge type, and a `justifications` map saying which record each
+state edge is allowed to point at.
 
 ## How the records get written: one batch file, one command
 
@@ -155,8 +155,17 @@ quoting, and worse, a dozen chances for half of a pair to land in a log that can
 take it back.
 
 Write it beside the draft, as `close.jsonl` in the directory `objective_draft`
-already names — that directory is under `.ai-kit/`, which the CLI keeps out of git
-by itself, so the file saying what you appended survives without reaching a commit.
+already names — and that path is absolute on purpose. `work` built it by joining
+`.ai-kit/plans/<objective-slug>/draft-objective.md` onto the `root` that
+`memory state` reports for this objective: the working-tree root of the log the
+objective is listed from, which is not always `repo_root`, because the objective
+this turn closes can live in another repository's log. If you have to rebuild the
+path, join it onto that same root — `memory state --id <objective_id> --all`
+reports it as `root`, and the `--all` is what reaches an objective whose log is
+not this repository's — and never onto the directory this session happens to be
+standing in. That directory is under `.ai-kit/`, which the CLI keeps out of git
+by itself, so the file saying what you appended survives without reaching a
+commit.
 
 One JSON object per line, carrying the fields `add`'s flags carry — `kind`,
 `title`, `body`, `about`, `slug`, `anchor` — plus the edges that record takes part
@@ -183,8 +192,14 @@ one alongside: a `decision` that settles a carried-in question carries both its
 `answers` edge and its `derives_from`, in the same array.
 
 ```bash
-memory add --plan <plan_slug> --batch <the directory objective_draft is in>/close.jsonl
+memory add --plan <plan_slug> --batch "<root>/.ai-kit/plans/<objective-slug>/close.jsonl"
 ```
+
+`<root>` is the root the paragraph above named and `<objective-slug>` is the
+directory `objective_draft` already sits in — the same join, one file along. When
+the draft came from the legacy `plans/<objective-slug>/` location, that is the
+directory in the join instead: `close.jsonl` goes beside the draft, wherever the
+draft turned out to be.
 
 **Every entry lands in one write, or none of them does.** A line the tool refuses
 refuses the whole batch, names the line and the field, and leaves the log exactly as

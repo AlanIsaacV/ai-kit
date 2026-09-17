@@ -26,7 +26,9 @@ need from anybody.
 - `repo_root` — absolute path.
 - `changed_files` — the files to read, taken from the working tree.
 - `constraints` — the `gotcha` and `preference` records `debrief` read out of the
-  log at both scopes, each gotcha with the verdict on its anchors.
+  log at both scopes. Every gotcha here carries the verdict its anchors came
+  back with: `changed`, its cited lines moved, or `could_not_check`, nobody
+  could resolve them. The ones that held were checked and are not here.
 
 ## What you judge against
 
@@ -48,8 +50,8 @@ Against the intent and against `manual_checks`:
   there, the constant renamed in the definition only.
 - A constraint in `constraints` the change disobeys. A `gotcha` is a constraint
   the code obeys without saying so, which is exactly what reading the diff cannot
-  turn up; one whose anchors came back `changed` may already be broken, and which
-  of the two it is belongs in the finding.
+  turn up; none of these held, so each one may already be broken rather than
+  still obeyed, and which of the two it is belongs in the finding.
 - A check in `manual_checks` the change makes impossible to run, or makes
   meaningless.
 

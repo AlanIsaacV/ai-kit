@@ -227,9 +227,20 @@ costs is real and worth knowing: these records share a kind with the findings
 `review` produces, so a `--kind review-finding` query that omits `--plan` will mix
 them. Always pass `--plan repo-questions` on both the read and the write.
 
-`memory kinds` is the authority on which kinds and edge types exist; `memory
---help` on which flags do. A command this file does not show is one of those two
-reads away.
+The surface is thirteen commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
+`promote`, `validate`, `kinds`. The steps below run the ones this skill needs and
+write the flags out at each call site, so there is no command here to go and
+discover. `memory kinds` stays worth running for what nothing else reports:
+every valid record kind and edge type, and the count above which `query`
+withholds the records it matched.
+
+`--dir` reaches past `<target-repo>` too: it resolves whichever repository the
+path sits in, so `memory query --dir <another-repo> --kind adr,decision` reads
+that repository's log while this session stays where it is. That is how a
+question about one repository gets answered with what was settled in another, and
+the pair above is the whole of the reach — `--dir` for the log, `--repo-root`
+beside it on `anchors`, so the cited lines are read out of that working tree.
 
 ## Steps
 

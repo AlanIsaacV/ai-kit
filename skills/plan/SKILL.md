@@ -71,11 +71,21 @@ child is worth opening, which is the only thing the descent needs from you.
 State lives in an append-only log, read and written only through the `memory`
 CLI. Never edit the log by hand.
 
-`memory kinds` lists every valid record kind and edge type and reports the count
-at which `query` starts withholding; `memory --help` lists the flags each command
-takes and how naming a plan bounds what a read returns. `memory state` reports
-the objectives in the log with each one's `parent`, `children` and `depth`. A
-command this file does not show is one of those reads away.
+The surface is thirteen commands and these are all of them: `init`, `add`,
+`link`, `query`, `search`, `areas`, `anchors`, `edges`, `graph`, `state`,
+`promote`, `validate`, `kinds`. The steps below run the ones this skill needs and
+write the flags out at each call site, so there is no command here to go and
+discover. `memory kinds` stays worth running for what it alone reports: every
+valid record kind and edge type, and the count at which `query` starts
+withholding. `memory state` reports the objectives in the log with each one's
+`root`, `parent`, `children` and `depth`.
+
+A parent, a child or an `adr` in another repository is one flag away: `--dir`
+resolves the log of whichever repository the path sits in, so
+`memory query --dir <another-repo> --kind objective --current` lists that
+repository's objectives from here. The tree itself needs no flag — `state` reads
+parentage from every edge in the store, so a parent or a child in another
+repository is already named as one, with the `root` it lives under.
 
 ## Steps
 
@@ -408,10 +418,14 @@ If a draft for that slug already exists, that slug belongs to another objective 
 two objectives can legitimately derive the same one — and writing there would
 overwrite somebody else's draft: pick a slug that distinguishes this objective, and
 put that same slug on the objective's line in step 7. Look in **both** locations,
-the new one first:
+the new one first, and hang both off the root of the repository this draft is
+written under: `<root>` below is the absolute path `memory state` reports as
+`root`, on `current` and on every objective it lists, which step 1 already read.
+Paste it in literally — a relative pair resolves against whatever directory this
+turn's shell is standing in, which is how a slug that is taken comes back free.
 
 ```bash
-sh -c 'for p in .ai-kit/plans/<slug>/draft-objective.md plans/<slug>/draft-objective.md; do
+sh -c 'for p in <root>/.ai-kit/plans/<slug>/draft-objective.md <root>/plans/<slug>/draft-objective.md; do
   [ -f "$p" ] && { echo "$p"; exit 0; }
 done; exit 1'
 ```
@@ -423,9 +437,14 @@ either path answers, while a new draft is always written under `.ai-kit/`.
 It prints the first path that exists and **exits 0 only when it found one**, which
 an `ls` over both paths does not: `ls` exits 1 whenever either argument is missing,
 so a draft that exists in one location comes back printed and failed at the same
-time, and the next edit that chains this with `&&` reads that as no draft. The
-`sh -c` wrapper is not decoration either — nothing here says which shell this turn
-got, and a `for` loop written this way is not something every shell parses.
+time, and the next edit that chains this with `&&` reads that as no draft. A root
+left unsubstituted reaches neither answer: the shell reads the bare `<root>` as a
+redirect, refuses the line as a syntax error — ``sh: -c: line 1: syntax error near
+unexpected token `<'`` — and exits 2 with nothing having run. That one fails loudly
+and whole, which is the better failure to have here: a slug never comes back free
+because the root was left in. Only exit 1 says the slug is free. The `sh -c`
+wrapper is not decoration either — nothing here says which shell this turn got,
+and a `for` loop written this way is not something every shell parses.
 
 #### A parent objective's draft
 
@@ -664,15 +683,21 @@ as a redirect. A shell that refuses one of them refuses the whole block at parse
 time, with none of its lines having run. A dozen bodies going through a heredoc is
 a dozen chances to meet one of the three; a file the shell never opens has none.
 
-First, `.ai-kit/plans/<objective-slug>/objective.jsonl`, holding exactly one line —
-the objective and nothing else:
+Both files hang off the root of the repository whose log this objective goes into
+— the same `<root>` step 5's lookup joined onto, the absolute path `memory state`
+reports as `root` — and you paste it in literally. A relative path resolves against
+whatever directory this turn's shell is standing in, so the file you wrote and the
+file this command reads are the same file only when the two happen to coincide.
+
+First, `<root>/.ai-kit/plans/<objective-slug>/objective.jsonl`, holding exactly one
+line — the objective and nothing else:
 
 ```jsonl
 {"kind":"objective","slug":"<the slug you derived in step 5>","title":"<objective one-liner>","body":"<Objective or Deliverable + Constraints + Out of scope + the criteria as written>","about":["<area>","<area>"],"edges":[{"type":"derives_from","to":"<parent-objective-id>"}]}
 ```
 
 ```bash
-memory add --plan <tree-slug> --batch .ai-kit/plans/<objective-slug>/objective.jsonl
+memory add --plan <tree-slug> --batch "<root>/.ai-kit/plans/<objective-slug>/objective.jsonl"
 ```
 
 **Read the id off the row that command printed — the one whose kind is
@@ -683,8 +708,8 @@ before any line of the block has run, while a shell that accepts it runs the sam
 text through — and the id is going into a file the shell never opens anyway. One
 you can read where you wrote it is one you can see is wrong.
 
-Then `.ai-kit/plans/<objective-slug>/records.jsonl`, one line per record, every
-one of them carrying that id:
+Then `<root>/.ai-kit/plans/<objective-slug>/records.jsonl`, one line per record,
+every one of them carrying that id:
 
 ```jsonl
 {"kind":"assumption","title":"<what you assumed rather than established>","body":"Provenance: <you chose this | their words | my call>","about":["<area>"],"edges":[{"type":"derives_from","to":"<the objective id the first command printed>"}]}
@@ -693,7 +718,7 @@ one of them carrying that id:
 ```
 
 ```bash
-memory add --plan <tree-slug> --batch .ai-kit/plans/<objective-slug>/records.jsonl
+memory add --plan <tree-slug> --batch "<root>/.ai-kit/plans/<objective-slug>/records.jsonl"
 ```
 
 The edge goes on every line of that file and there is no exception — an assumption
