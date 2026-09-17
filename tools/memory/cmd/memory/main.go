@@ -653,6 +653,19 @@ func namedFlags(fs *flag.FlagSet, names ...string) []string {
 	return out
 }
 
+func refuseNamedScope(fs *flag.FlagSet, c *common, subject, alternative string) error {
+	if len(namedFlags(fs, "scope")) == 0 {
+		return nil
+	}
+	drop := "Drop --scope."
+	if alternative != "" {
+		drop = "Drop --scope, or " + alternative + "."
+	}
+	return fail("scope_not_on_store_wide_read", "--scope %q bounds nothing here: %s spans every log in %s, "+
+		"so naming one would claim the answer came from a log that need not hold it. %s",
+		c.scope, subject, memory.CurrentStore(), drop)
+}
+
 // runBatch is `add` over a JSONL file: every entry in it appended in one write,
 // or nothing appended at all.
 //
@@ -1139,6 +1152,11 @@ func cmdAreas(args []string) error {
 	}
 	f := memory.Filter{Plan: plan, Kinds: toKinds(splitList(*kinds))}
 
+	stored, err := memory.ReadStore("")
+	if err != nil {
+		return fail("read_failed", "%s", err.Error())
+	}
+
 	reports := make([]areaReport, 0, 2)
 	for _, s := range []memory.Scope{memory.ScopeRepo, memory.ScopeUser} {
 		// Through load, so each scope goes through the same best-effort resolve
@@ -1152,7 +1170,7 @@ func cmdAreas(args []string) error {
 		if err != nil {
 			return err
 		}
-		areas := memory.Areas(lines, f)
+		areas := memory.Areas(lines, stored, f)
 		reports = append(reports, areaReport{Path: loc.Path, Scope: loc.Scope, Count: len(areas), Areas: areas})
 	}
 
@@ -1214,6 +1232,9 @@ func cmdAnchors(args []string) error {
 	var stored []memory.Line
 	if *all {
 		if err := c.checkScopeFlags(); err != nil {
+			return err
+		}
+		if err := refuseNamedScope(fs, &c, "what --all checks", "drop --all to check one log"); err != nil {
 			return err
 		}
 		if locs, held, stored, err = everyLog(); err != nil {
@@ -1491,6 +1512,13 @@ func cmdState(args []string) error {
 		if err := c.checkScopeFlags(); err != nil {
 			return err
 		}
+		subject, alternative := "what --all reports", "drop --all to report this repository's log"
+		if !*all {
+			subject, alternative = "what --text prints", "add --here to print this repository's"
+		}
+		if err := refuseNamedScope(fs, &c, subject, alternative); err != nil {
+			return err
+		}
 		return stateAcrossLogs(*id, *text)
 	}
 
@@ -1526,11 +1554,13 @@ func cmdState(args []string) error {
 
 	emit(map[string]any{
 		"path": loc.Path, "scope": loc.Scope,
-		"count":      len(rep.Objectives),
-		"objectives": rep.Objectives,
-		"excluded":   rep.Excluded,
-		"current":    rep.Current,
-		"anomalies":  rep.Anomalies,
+		"objectives_from": loc.Path,
+		"derived_over":    memory.CurrentStore(),
+		"count":           len(rep.Objectives),
+		"objectives":      rep.Objectives,
+		"excluded":        rep.Excluded,
+		"current":         rep.Current,
+		"anomalies":       rep.Anomalies,
 	})
 	return nil
 }
@@ -1554,6 +1584,18 @@ func everyLog() ([]memory.Location, [][]memory.Line, []memory.Line, error) {
 		stored = append(stored, lines...)
 	}
 	return locs, held, stored, nil
+}
+
+func storeLogs() ([]string, error) {
+	sources, err := memory.SourcePaths("")
+	if err != nil {
+		return nil, fail("read_failed", "%s", err.Error())
+	}
+	paths := make([]string, 0, len(sources))
+	for _, src := range sources {
+		paths = append(paths, src.Path)
+	}
+	return paths, nil
 }
 
 func pathsOf(locs []memory.Location) []string {
@@ -1698,10 +1740,21 @@ func cmdEdges(args []string) error {
 	if err != nil {
 		return err
 	}
+	endpoint := *from != "" || *to != ""
+	if endpoint {
+		if err := refuseNamedScope(fs, &c, "the search for an edge at --from/--to",
+			"drop --from/--to to list one log's edges"); err != nil {
+			return err
+		}
+	}
 	var lines []memory.Line
-	if *from != "" || *to != "" {
+	var logs []string
+	if endpoint {
 		if lines, err = memory.ReadStore(""); err != nil {
 			return fail("read_failed", "%s", err.Error())
+		}
+		if logs, err = storeLogs(); err != nil {
+			return err
 		}
 	} else if lines, err = readLog(loc); err != nil {
 		return err
@@ -1720,9 +1773,13 @@ func cmdEdges(args []string) error {
 	})
 
 	out := map[string]any{
-		"path": loc.Path, "scope": loc.Scope,
 		"count": res.Count, "returned": res.Returned, "truncated": res.Truncated,
 		"edges": res.Edges,
+	}
+	if endpoint {
+		out["logs"] = logs
+	} else {
+		out["path"], out["scope"] = loc.Path, loc.Scope
 	}
 	if res.Hint != "" {
 		out["hint"] = res.Hint
@@ -1749,8 +1806,10 @@ func cmdGraph(args []string) error {
 	if *from == "" {
 		return fail("missing_from", "graph needs --from <id>")
 	}
-	loc, err := c.resolve()
-	if err != nil {
+	if _, err := c.resolve(); err != nil {
+		return err
+	}
+	if err := refuseNamedScope(fs, &c, "the walk out from --from", ""); err != nil {
 		return err
 	}
 	lines, err := memory.ReadStore("")
@@ -1761,8 +1820,12 @@ func cmdGraph(args []string) error {
 	if nodes == nil {
 		return fail("unknown_id", "no entry with id %s in any log of %s", *from, memory.CurrentStore())
 	}
+	logs, err := storeLogs()
+	if err != nil {
+		return err
+	}
 	res := memory.GuardGraph(nodes, *threshold, graphHintAdvice)
-	out := map[string]any{"path": loc.Path, "from": *from, "depth": *depth, "count": res.Count, "nodes": res.Nodes}
+	out := map[string]any{"logs": logs, "from": *from, "depth": *depth, "count": res.Count, "nodes": res.Nodes}
 	if res.Truncated {
 		out["truncated"] = res.Truncated
 		out["hint"] = res.Hint
@@ -1922,6 +1985,9 @@ func cmdValidate(args []string) error {
 	var locs []memory.Location
 	notCreated := []string{}
 	if *all {
+		if err := refuseNamedScope(fs, &c, "what --all validates", "drop --all to validate one log"); err != nil {
+			return err
+		}
 		sources, err := memory.SourcePaths("")
 		if err != nil {
 			return fail("read_failed", "%s", err.Error())

@@ -120,3 +120,70 @@ func TestEdgesNamingAnEndpointAnswerTheSameFromEitherLog(t *testing.T) {
 		t.Errorf("the log the edge was written into still lists it unasked, got %d edges", out.Count)
 	}
 }
+
+func addUserScoped(t *testing.T, r repo, title string) string {
+	t.Helper()
+	res := runBare(t, r, "add", "--scope", "user", "--kind", "decision",
+		"--title", title, "--about", "auth")
+	if res.code != 0 {
+		t.Fatalf("add --scope user %q: exit %d\n%s%s", title, res.code, res.stdout, res.stderr)
+	}
+	return recordID(t, res)
+}
+
+func TestEdgesKeepsScopeLiveWhenNoEndpointIsNamed(t *testing.T) {
+	r := throwawayRepo(t)
+	held := add(t, r, "RS256 over HS256")
+	mustLink(t, r, "derives_from", held, add(t, r, "Asymmetric signing"))
+
+	promoted := addUserScoped(t, r, "Tests name the behaviour")
+	if res := runBare(t, r, "link", "--scope", "user", "--type", "derives_from",
+		"--from", promoted, "--to", addUserScoped(t, r, "A test says what it pins")); res.code != 0 {
+		t.Fatalf("link --scope user: exit %d\n%s%s", res.code, res.stdout, res.stderr)
+	}
+
+	type scopedEdges struct {
+		Path  string `json:"path"`
+		Scope string `json:"scope"`
+		Count int    `json:"count"`
+		Edges []struct {
+			From string `json:"from"`
+		} `json:"edges"`
+	}
+	for _, tc := range []struct {
+		scope string
+		path  string
+		from  string
+	}{
+		{"user", r.user, promoted},
+		{"repo", r.log, held},
+	} {
+		t.Run(tc.scope, func(t *testing.T) {
+			res := runBare(t, r, "edges", "--scope", tc.scope)
+			if res.code != 0 {
+				t.Fatalf("--scope with no endpoint is not refused: exit %d\n%s%s",
+					res.code, res.stdout, res.stderr)
+			}
+			var out scopedEdges
+			if err := json.Unmarshal([]byte(res.stdout), &out); err != nil {
+				t.Fatalf("edges printed something that is not JSON: %v\n%s", err, res.stdout)
+			}
+			if out.Count != 1 || len(out.Edges) != 1 || out.Edges[0].From != tc.from {
+				t.Fatalf("--scope %s lists that log's edges and no other log's, got %+v", tc.scope, out)
+			}
+			if out.Path != tc.path || out.Scope != tc.scope {
+				t.Errorf("--scope %s still names the one log it filtered to, got %q %q",
+					tc.scope, out.Path, out.Scope)
+			}
+		})
+	}
+
+	res := runBare(t, r, "edges", "--from", promoted, "--scope", "user")
+	if res.code != 1 {
+		t.Fatalf("naming an endpoint makes the answer the store's, so --scope goes with it: exit %d\n%s%s",
+			res.code, res.stdout, res.stderr)
+	}
+	if code, _ := errorCode(t, res); code != "scope_not_on_store_wide_read" {
+		t.Errorf("the refusal code names the flag it refused, got %q", code)
+	}
+}

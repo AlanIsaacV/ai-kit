@@ -1036,7 +1036,8 @@ func TestCriterion4BareStateEmitsExactlyTheFieldsItEmitsToday(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	want := []string{"anomalies", "count", "current", "excluded", "objectives", "path", "scope"}
+	want := []string{"anomalies", "count", "current", "derived_over", "excluded", "objectives",
+		"objectives_from", "path", "scope"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("the single-repo document is %v, and it has to stay %v", keys, want)
 	}

@@ -89,9 +89,13 @@ file. An entry written *without* one belongs to the repository rather than to an
 plan in it, and every plan-bounded read returns it; see
 [records the repository owns](#records-the-repository-owns).
 
-**Every command reads one log unless asked otherwise, and one command reads them
-all.** [`areas`](#which-areas-a-log-answers-for) reads both of these, reported
-apart, and [`query --scope both`](#asking-both-logs-at-once) reads both as one
+**`--scope` names the one log a command writes to or filters by**, and those two
+are its only values: a scope is a value carried on every row, not a second file to
+be opened, which is why nothing has to exist at either path above for `user` to
+mean something. Where a command's answer spans the store there is nothing left for
+the flag to choose, and naming it is [a refusal](#usage). Two commands read both
+logs at once: [`areas`](#which-areas-a-log-answers-for) reads them reported
+apart, and [`query --scope both`](#asking-both-logs-at-once) reads them as one
 answer. [`state --text`](#what-is-waiting-on-you-across-every-log) reaches every log the
 store holds, because "what is waiting on me" is the one question whose answer is
 not about the repository you are standing in. It creates nothing and writes
@@ -100,9 +104,9 @@ nothing.
 There used to be a third scope, `plan → <repo>/plans/<slug>/memory.jsonl`, and
 removing it is what [schema version 2](#changing-the-schema) is. One file per
 plan was not a tidier arrangement of the same graph, it was a smaller graph: an
-edge needs both of its endpoints in the file it is written to, so nothing in one
-plan's log could ever point at anything in another's. Any two records in a repo
-can now be linked, whatever plan produced them.
+edge needed both of its endpoints in the log it was written to, as the rule then
+was, so nothing in one plan's log could ever point at anything in another's. Any
+two records in a repo can now be linked, whatever plan produced them.
 
 ## Record kinds
 
@@ -315,8 +319,10 @@ each for its own reason:
   Sweeping the class would carry hundreds of records about *this* repository's
   code into a log meant to hold what outlives it.
 - **`gotcha`** because it cannot exist without an [anchor](#anchors), and an
-  anchor's path is resolved against `origin.repo` and nothing else. A `path:line`
-  means nothing in the next repository.
+  anchor is resolved against the repository the record's log lives in — or, once
+  it is in the user log, against the checkout `origin.repo_id` names. Either way
+  it is a claim about one repository's code: a `path:line` means nothing in the
+  next repository.
 - **`review-finding`** because it names a defect in one repository's code at one
   moment, and what settles it is fixing that code.
 
@@ -348,9 +354,11 @@ out of the front one:
   objective names work that happened in one repository; the ADR it produced is
   what was meant to outlive it.
 - **`gotcha`.** It cannot exist without an [anchor](#anchors), and an anchor's
-  `path:line` is resolved against `origin.repo`. `--kind` refuses the class for
-  that reason, and an edge into one would have carried it up regardless — anchor
-  and all.
+  `path:line` is resolved against the repository the record's log lives in, or
+  against the checkout `origin.repo_id` names once it is in the user log — a claim
+  about one repository's code, which means nothing in the next one. `--kind`
+  refuses the class for that reason, and an edge into one would have carried it up
+  regardless — anchor and all.
 
 This bounds the *reach* and not the *selection*: either kind named in `--ids` is
 promoted like anything else, because a caller typing an id has decided. And
@@ -494,7 +502,21 @@ its own `repo_root`, since no one root served the answer; and `--limit N` takes
 the N most recent across every log rather than N from each. Naming `--repo-root`
 alongside it still decides the root for every record. A repository whose
 directory is no longer on disk makes its own records `could_not_check` rather
-than refusing the run.
+than refusing the run. `--scope` beside `--all` is refused: `--all` already
+answers for every log, and there is nothing left for the flag to choose.
+
+**It deduplicates nothing, where
+[`state --all`](#what-is-waiting-on-you-across-every-log) deduplicates, and the
+asymmetry is the two questions rather than an oversight in either.** Two logs can
+hold one id — a promotion, or a checkout and one of its git worktrees — and here
+each copy is checked against *its own* repository root, so the two rows are two
+verdicts about two working trees and both are the answer. Collapsing them would
+answer with whichever sorted first and hide that a promoted record is checked in
+both places, which is the thing the per-record `repo_root` exists to show. `state
+--all` asks what is waiting on you, and an objective is one thing however many
+logs hold it, so it names each record once. Neither one moves: `anchors --all`
+answers about code, which is per repository, and `state --all` answers about work,
+which is not.
 
 At user scope `add` also has no repo to read the cited lines out of, so
 `--repo-root` supplies one. The requirement does not bend for the scope: a
@@ -845,7 +867,10 @@ repository is answering a question you did not ask.
 | narrowed to this repository | the default | `--here` |
 
 `--all` and `--here` together is a refusal — `conflicting_scope` — rather than a
-precedence nobody would remember.
+precedence nobody would remember. **`--scope` is refused wherever the answer is
+every log's** — `scope_not_on_store_wide_read`, beside `--all` and beside `--text`
+without `--here`. It names one log, and neither of those is asking about one.
+Where the answer is a single log's it still chooses which, as it always did.
 
 **Which logs.** Every distinct `source_path` the store holds, in path order. There
 is no registry of repositories and no scan of the filesystem: a log is in the
@@ -862,9 +887,15 @@ objective's parent, children and completion reach across repositories, while the
 objectives listed under a log are the ones that log holds and an anomaly is
 reported by the log holding the record it is about. In the `--all` JSON every
 objective, exclusion, anomaly and current objective carries a `repo`. That field
-is `omitempty` and no single-log report ever sets it: `memory state` with no
-flags emits exactly the top-level keys it emitted before any of this existed, and
-no `repo` anywhere.
+is `omitempty` and no single-log report ever sets it, so `memory state` with no
+flags carries no `repo` anywhere.
+
+**The single-log report says which half came from where**, because both halves are
+in it and they do not come from the same place. `objectives_from` is the log the
+`objectives` list was filtered out of, and `derived_over` is the store the
+anomalies, the current objective and the parentage behind them were derived over.
+The lists themselves are what they always were; what is new is that a reader no
+longer has to know which half `path` was naming.
 
 **Every objective names the working tree it was recorded in.** Each objective,
 each exclusion and each current objective carries `root`: the absolute path of the
@@ -884,7 +915,10 @@ never by id alone: a promoted record's two rows genuinely differ in text, and
 collapsing them would answer with whichever sorted first. `anomalies` keys on the
 message as well: an objective with three parents produces two anomalies carrying
 its id, and by id alone the second one — naming the second edge that was ignored —
-would be dropped as a duplicate.
+would be dropped as a duplicate. [`anchors --all`](#anchors) does the opposite,
+deliberately: it returns a record once per log that holds it, because there each
+copy is a separate verdict read out of a separate working tree. The two commands
+answer different questions, and the keys follow the questions.
 
 **The grouping is read off the state and nothing else** — no body is parsed and
 no prose is matched. `planned` is waiting for your approval, `approved_for_execution`
@@ -1183,13 +1217,30 @@ either, and a caller reading only the exit code has to hear about it. Only the
 one-log sweep can report `init_failed`: `--all` takes its set out of the store and
 creates nothing, so there is nothing there for it to fall short of.
 
-`--scope` is `repo` by default, and `user` is the only other value a record can
-live at. `query` alone also takes [`both`](#asking-both-logs-at-once), which reads
-the two as one answer, and every other command refuses it —
+`--scope` names the one log a command writes to or filters by. It is `repo` by
+default and `user` is the only other value a record can live at — a value stamped
+on the row, not a second file somebody has to have created: both logs are rows of
+the one store, and nothing writes a `memory.jsonl` at either path. `query` alone
+also takes [`both`](#asking-both-logs-at-once), which reads the two as one
+answer, and every other command refuses it —
 [`areas`](#which-areas-a-log-answers-for) is the one command that does not take
-`--scope` at all, because it answers for both. `--plan` is a
-*stamp* on `add`, optional there since a record without one belongs to the
-[repository](#records-the-repository-owns), and a *bound* on `query` and
+`--scope` at all, because it answers for both.
+
+**A command whose answer spans the store refuses a `--scope` that was named.**
+`graph`, `edges` under `--from`/`--to`, `anchors --all`, `state --all`,
+`state --text` without `--here`, and `validate --all` each read every log the
+store holds, so the flag chose nothing there and was only deciding which single
+log the envelope would claim the answer came from. Naming it is a refusal at exit
+1 now — `scope_not_on_store_wide_read`, the shape
+[`edges`](#asking-about-edges-and-a-walk-that-cannot-dump) already gives `--plan`
+— and those answers name every log they read under `logs` in place of the `path`
+and `scope` they used to claim. The refusal keys on whether the caller passed the
+flag and never on its value, so an invocation that did not name `--scope` answers
+exactly what it answered before — the default `repo` included — and `edges` with
+no endpoint keeps it live, because "every edge here" is a question about a log.
+
+`--plan` is a *stamp* on `add`, optional there since a record without one belongs
+to the [repository](#records-the-repository-owns), and a *bound* on `query` and
 `search`; other commands accept it and read the whole log, since `link` and
 `graph` are the operations the collapse exists to let cross plans.
 [`edges`](#asking-about-edges-and-a-walk-that-cannot-dump) is the one command
@@ -1358,6 +1409,16 @@ record. `graph` always names one, so it always walks the store: its entries and
 its edges are widened together, and a node reached across a log carries its own
 record rather than being skipped as dangling. An id no log of the store holds is
 still `unknown_id`, and the refusal names the store it searched.
+
+So `--scope` is refused beside `--from` or `--to`, and on `graph` wherever it is
+named: the answer is every log's, and the flag was only deciding which single log
+the envelope claimed it came from — `edges --scope user --from <id>` used to
+return an edge living in a repository's log while reporting the user log as its
+source. Both now name every log they read under `logs`, in place of the `path` and
+`scope` they used to emit, the way [`anchors --all`](#anchors) and
+[`state --all`](#what-is-waiting-on-you-across-every-log) already do. `edges`
+naming no endpoint keeps `--scope`, because there the question really is about one
+log.
 
 It filters on what an edge carries and on nothing else: its type, its two
 endpoints, its `at` stamp. That is the whole of an edge — no body, no `about` and
@@ -1666,6 +1727,17 @@ under different tags is invisible to whoever finds the mistake.
   `derives_from` spans, each carrying its own record; `edges --from <child>` and
   `edges --to <parent>` each return that one edge from either log, while `edges`
   naming no endpoint still answers with the log it was asked from.
+- A `--scope` the caller named is refused at exit 1 by `graph`, by `edges --from`,
+  by `anchors --all`, by `state --all`, by `state --text` without `--here` and by
+  `validate --all` — `scope_not_on_store_wide_read`, naming the flag and saying
+  the answer spans every log in the store; `edges --scope user` naming no endpoint
+  is not refused and returns that log's edges at exit 0. `graph --from` and
+  `edges --from` each name both logs under `logs` and carry no top-level `path` or
+  `scope`.
+- `state` with no flags reports `objectives_from` and `derived_over`, and its
+  `objectives` list is what it was before either key existed. `areas --current`
+  drops a record a `supersedes` edge in another log settles, which it used to
+  report as its area's live answer.
 - `anchors --all` checks a record in each of two repositories against its own
   repository's working tree, reporting `changed` for the one whose cited lines
   were rewritten there and `still_holds` for the other, names both logs under
@@ -1796,4 +1868,6 @@ go test ./...
 go build -o bin/memory ./cmd/memory
 ```
 
-No dependencies beyond the standard library.
+One dependency beyond the standard library: `modernc.org/sqlite`, the store's
+driver, and the nine indirect modules `go.mod` names behind it. It is a pure-Go
+implementation, so the build above needs no cgo and no SQLite on the machine.

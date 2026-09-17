@@ -95,16 +95,6 @@ func targetsOf(edges []*Edge, t EdgeType) map[string]bool {
 	return out
 }
 
-// Query applies a filter and enforces the count-before-dump contract.
-//
-// It takes the log's lines rather than the entries and edges split out of them.
-// Both views are needed and both are taken here — but so is a third thing, the
-// order of the file itself, which the split throws away: two slices each ordered
-// internally cannot say which of one's members came before one of the other's,
-// and the current-objective tie-break is stated in terms of exactly that. See
-// Tree.recordActivity.
-func Query(lines []Line, f Filter) Result { return QueryIn(lines, lines, f) }
-
 func QueryIn(lines, store []Line, f Filter) Result {
 	matched, cur := match(lines, store, f)
 	return bound(matched, cur, f)
@@ -114,7 +104,7 @@ func QueryIn(lines, store []Line, f Filter) Result {
 // matched on its own and the count, the limit, the guard and NotFound are applied
 // once over the union.
 //
-// The logs' lines are never concatenated into one Query. The objectives a tree
+// The logs' lines are never concatenated into one QueryIn. The objectives a tree
 // holds are one log's, and one Tree over two logs would join two unrelated
 // hierarchies and let either one change which objective the other calls current.
 // The edges are the store's in every pass, so what they say about a log's own
@@ -143,7 +133,7 @@ func sortMostRecentFirst(entries []*Entry) {
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].ID > entries[j].ID })
 }
 
-// match is the filtering half of Query: every entry the filter admits, most recent
+// match is the filtering half of QueryIn: every entry the filter admits, most recent
 // first, and the current objective when the filter admits objectives.
 func match(lines, store []Line, f Filter) ([]*Entry, *CurrentObjective) {
 	entries := Entries(lines)
@@ -247,7 +237,7 @@ func match(lines, store []Line, f Filter) ([]*Entry, *CurrentObjective) {
 	return matched, &cur
 }
 
-// bound is the half of Query that decides how much of the matches to hand back.
+// bound is the half of QueryIn that decides how much of the matches to hand back.
 func bound(matched []*Entry, cur *CurrentObjective, f Filter) Result {
 	res := Result{Count: len(matched), Records: []*Entry{}, CurrentObjective: cur}
 	for _, id := range f.ID {

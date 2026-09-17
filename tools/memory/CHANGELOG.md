@@ -2,6 +2,89 @@
 
 ## Unreleased
 
+### `--scope` names one log, and a store-wide answer names every log
+
+The store consolidated and `--scope` did not move with it. It was written when a
+scope was one of two files, and eleven of the thirteen commands still declared it
+— but six of them now answer from every log in the store, where the flag chose
+nothing and was only deciding which single `path` the envelope would claim the
+answer came from. It now names the one log a command writes to or filters by, and
+a command whose answer spans the store refuses one that was named and says which
+logs it read.
+
+```bash
+memory graph --from <id>                  # names every log it walked, under logs
+memory edges --from <id> --scope user     # refused: that answer is every log's
+memory edges --scope user                 # still one log's edges, as it always was
+```
+
+- **A `--scope` the caller named is refused where the answer spans the store.**
+  `graph` always, `edges` under `--from`/`--to`, `anchors --all`, `state --all`,
+  `state --text` without `--here`, and `validate --all`, at exit 1 with
+  `scope_not_on_store_wide_read`, in the shape `edges` already refuses `--plan`
+  in. The refusal keys on whether the flag was
+  passed — through the same `namedFlags` helper, which reports what `fs.Visit`
+  saw and not what differs from a default — so **an invocation that did not name
+  `--scope` answers exactly what it answered before**, the default `repo`
+  included, which is the constraint the whole change was balanced against.
+  `edges` naming no endpoint keeps the flag live, because "every edge here" is a
+  question about a log rather than about a record. REJECTED: dropping `--scope`
+  from those flag sets, which moves `--help` and refuses a `--scope repo` that
+  was harmless; and refusing it on its value, which breaks every existing call of
+  `graph`.
+- **A store-wide answer names every log it read.** `graph` and `edges --from`/
+  `--to` emit `logs` in place of the single `path` they used to claim — and, on
+  `edges`, its `scope` — which is the shape `anchors --all` and `state --all`
+  already emit. What that replaces was not cosmetic: `edges --scope
+  user --from <id>` returned an edge living in a repository's log while reporting
+  the user log as where the answer came from, and a reader taking the envelope at
+  its word concluded the user log held an edge it has never held. `graph` did it
+  on every invocation. REJECTED, again: renaming the `path` key across the sites
+  that emit it, which is an envelope change and a decision of its own.
+- **`state` in single-log mode says which half came from where.** Its envelope
+  gains `objectives_from`, the log the `objectives` list was filtered out of, and
+  `derived_over`, the store the anomalies, the current objective and the parentage
+  behind them were derived over. Both halves were always in that report and only
+  one of them was ever a log's; `path` named one location for the two. The lists
+  themselves are unchanged. REJECTED: making `state` stop reading the store so
+  that one name would be honest, which narrows the tree back to one repository.
+- **`areas --current` settles from the store's edges**, like `query`, `search` and
+  `anchors` before it — it was the last read in the tool whose settled set came
+  out of the log being read, so a `decision` superseded from another repository
+  was still its area's live answer here. `Areas` takes the store beside the log
+  and `Query(lines, f)`, which was `QueryIn(lines, lines, f)` and had no caller
+  left once it did, is deleted rather than kept as the shorthand for reading a log
+  against itself.
+- **"User scope" is a value on a row, not a second file.** `Store.Init` creates
+  the `.ai-kit/` directory and its `.gitignore` and ensures the shared SQLite file
+  the whole host writes into; it creates nothing at the log's own path. Neither
+  `~/.ai-kit/memory.jsonl` nor this repository's exists on this host — what sits
+  in those directories is a `.gitignore` and a `memory.jsonl.pre-store` backup
+  from the cutover — so `--scope user` has never been a file to open, and the
+  README no longer reads as though it were.
+- **The two store-wide reads deduplicate differently, and both are right.**
+  `anchors --all` returns a record once per log that holds it, deduplicating
+  nothing, because each copy is checked against *its own* repository root: two
+  logs holding one id — a promotion, or a checkout and one of its git worktrees —
+  are two verdicts about two working trees, and collapsing them would answer with
+  whichever sorted first and hide that the record is checked in both places.
+  `state --all` returns an objective once, keyed by `(id, scope)` for its three
+  record lists and by id *and message* for anomalies, since two anomalies can
+  carry one id. The asymmetry is the two questions — code is per repository, work
+  is not — and it is closed here as documentation. REJECTED: unifying them, in
+  either direction.
+- **The four places explaining why `promote` will not carry a `gotcha` name the
+  field that actually resolves an anchor.** They said `origin.repo`, which is a
+  directory label two checkouts can share; what resolves it is the repository the
+  record's log lives in, or the checkout `origin.repo_id` names once the record is
+  in the user log — `repoLocator.locate`, and what the `Anchor.Path` doc had said
+  correctly all along. Their conclusion is untouched: a `path:line` is a claim
+  about one repository's code and means nothing in the next one, which is why the
+  class is refused and why the one-hop reach will not pull one in either. Nothing
+  about what `promote` refuses moved.
+- **No schema change**, no new column, no migration, no new record field, and
+  nothing new is written.
+
 ### Reads cross repositories, and so does a settling edge
 
 The five read commands answer from the store `link`, `validate` and `state`

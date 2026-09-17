@@ -512,7 +512,8 @@ func TestQueryNamesTheCurrentObjectiveEvenWhenItIsOutsideTheFilter(t *testing.T)
 	theirs.Origin = &Origin{Plan: "another-plan"}
 
 	edges := []*Edge{edgeAt(EdgeRelatesTo, mine.ID, theirs.ID, "2026-08-04T10:00:00Z")}
-	res := Query(logOf([]*Entry{mine, theirs}, edges), Filter{Plan: "this-plan", Kinds: []Kind{KindObjective}})
+	log := logOf([]*Entry{mine, theirs}, edges)
+	res := QueryIn(log, log, Filter{Plan: "this-plan", Kinds: []Kind{KindObjective}})
 
 	if res.Count != 1 || res.Records[0].ID != mine.ID {
 		t.Fatalf("the filter still bounds what comes back: %+v", res.Records)
@@ -542,7 +543,8 @@ func TestQueryOverOtherKindsReportsNoCurrentObjective(t *testing.T) {
 	o := objective(t, "An objective")
 	q := entry(t, KindOpenQuestion, "An open question", "auth")
 
-	res := Query(logOf([]*Entry{o, q}, nil), Filter{Kinds: []Kind{KindOpenQuestion, KindAssumption}, CurrentOnly: true})
+	log := logOf([]*Entry{o, q}, nil)
+	res := QueryIn(log, log, Filter{Kinds: []Kind{KindOpenQuestion, KindAssumption}, CurrentOnly: true})
 	if res.CurrentObjective != nil {
 		t.Fatalf("a question-shaped query asked nothing about objectives: %+v", res.CurrentObjective)
 	}
@@ -560,13 +562,13 @@ func TestQueryCurrentDropsOnlyTerminalObjectives(t *testing.T) {
 	all := []*Entry{root, middle, leaf, decision}
 	edges := []*Edge{derivesFrom(middle, root), derivesFrom(leaf, middle)}
 
-	res := Query(logOf(all, edges), Filter{Kinds: []Kind{KindObjective}, CurrentOnly: true})
+	res := QueryIn(logOf(all, edges), logOf(all, edges), Filter{Kinds: []Kind{KindObjective}, CurrentOnly: true})
 	if res.Count != 3 {
 		t.Fatalf("all three open objectives come back; depth removes nothing: %d", res.Count)
 	}
 
 	edges = append(edges, edgeAt(EdgeMet, leaf.ID, decision.ID, "2026-08-04T10:00:00Z"))
-	res = Query(logOf(all, edges), Filter{Kinds: []Kind{KindObjective}, CurrentOnly: true})
+	res = QueryIn(logOf(all, edges), logOf(all, edges), Filter{Kinds: []Kind{KindObjective}, CurrentOnly: true})
 	if res.Count != 2 {
 		t.Fatalf("marking the leaf met drops the leaf and only the leaf: %d", res.Count)
 	}

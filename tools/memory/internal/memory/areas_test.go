@@ -32,7 +32,7 @@ func areaNames(areas []Area) []string {
 func TestAreasEnumeratesEveryTagAndNamesWhichOneIsTheKey(t *testing.T) {
 	e := entry(t, KindPreference, "Migrations go through Atlas", "migrations", "db")
 
-	areas := Areas(fileOf(e), Filter{})
+	areas := Areas(fileOf(e), fileOf(e), Filter{})
 	if got := areaNames(areas); len(got) != 2 || got[0] != "db" || got[1] != "migrations" {
 		t.Fatalf("both tags, sorted by name: got %v", got)
 	}
@@ -55,7 +55,8 @@ func TestAreasCountsTheSettledAndNamesOnlyTheLive(t *testing.T) {
 	older := entry(t, KindPreference, "Persistence is GORM", "persistence")
 	newer := entry(t, KindPreference, "Persistence is sqlc", "persistence")
 
-	areas := Areas(logOf([]*Entry{older, newer}, []*Edge{supersedes(t, newer, older)}), Filter{})
+	log := logOf([]*Entry{older, newer}, []*Edge{supersedes(t, newer, older)})
+	areas := Areas(log, log, Filter{})
 	a := areaNamed(t, areas, "persistence")
 	if a.Records != 2 {
 		t.Errorf("both records carry the tag: got %d", a.Records)
@@ -72,7 +73,8 @@ func TestAnAreaWhoseEveryRecordIsSettledKeepsItsRowAndLosesItsAnswer(t *testing.
 	retired := entry(t, KindPreference, "Persistence is GORM", "persistence")
 	replacement := entry(t, KindPreference, "Persistence is sqlc", "orm")
 
-	areas := Areas(logOf([]*Entry{retired, replacement}, []*Edge{supersedes(t, replacement, retired)}), Filter{})
+	log := logOf([]*Entry{retired, replacement}, []*Edge{supersedes(t, replacement, retired)})
+	areas := Areas(log, log, Filter{})
 	a := areaNamed(t, areas, "persistence")
 	if a.Records != 1 {
 		t.Errorf("the settled record is still counted: got %d", a.Records)
@@ -82,7 +84,7 @@ func TestAnAreaWhoseEveryRecordIsSettledKeepsItsRowAndLosesItsAnswer(t *testing.
 	}
 }
 
-// The plan bound is Query's, not a second reading of it: a record the repository
+// The plan bound is QueryIn's, not a second reading of it: a record the repository
 // owns is enumerated under every plan, and one that names a plan stays out of
 // another plan's enumeration.
 func TestAreasInheritsTheRuleThatAPlanLessRecordBelongsToEveryPlan(t *testing.T) {
@@ -90,11 +92,12 @@ func TestAreasInheritsTheRuleThatAPlanLessRecordBelongsToEveryPlan(t *testing.T)
 	theirs := entry(t, KindDecision, "Cancel is async", "orders")
 	theirs.Origin = &Origin{Plan: "tree-a"}
 
-	areas := Areas(logOf([]*Entry{owned, theirs}, nil), Filter{Plan: "tree-b"})
+	log := logOf([]*Entry{owned, theirs}, nil)
+	areas := Areas(log, log, Filter{Plan: "tree-b"})
 	if got := areaNames(areas); len(got) != 1 || got[0] != "migrations" {
 		t.Fatalf("only the repository's own record is in scope for another tree: got %v", got)
 	}
-	if got := areaNames(Areas(logOf([]*Entry{owned, theirs}, nil), Filter{Plan: "tree-a"})); len(got) != 2 {
+	if got := areaNames(Areas(log, log, Filter{Plan: "tree-a"})); len(got) != 2 {
 		t.Fatalf("a tree's own records are enumerated beside the repository's: got %v", got)
 	}
 }
@@ -105,10 +108,10 @@ func TestAreasNarrowsByKind(t *testing.T) {
 	other := entry(t, KindDecision, "Migrate on boot", "migrations")
 	log := logOf([]*Entry{pref, other}, nil)
 
-	if got := areaNamed(t, Areas(log, Filter{}), "migrations").Records; got != 2 {
+	if got := areaNamed(t, Areas(log, log, Filter{}), "migrations").Records; got != 2 {
 		t.Errorf("unfiltered, both records carry the tag: got %d", got)
 	}
-	a := areaNamed(t, Areas(log, Filter{Kinds: []Kind{KindPreference}}), "migrations")
+	a := areaNamed(t, Areas(log, log, Filter{Kinds: []Kind{KindPreference}}), "migrations")
 	if a.Records != 1 || a.Live == nil || a.Live.ID != pref.ID {
 		t.Errorf("--kind preference counts and names only the preference: %d, %+v", a.Records, a.Live)
 	}
@@ -122,7 +125,7 @@ func TestAreasFoldsCaseTheWayMatchingFoldsIt(t *testing.T) {
 	quiet := entry(t, KindPreference, "Persistence is sqlc", "persistence")
 
 	log := logOf([]*Entry{shouty, quiet}, nil)
-	areas := Areas(log, Filter{})
+	areas := Areas(log, log, Filter{})
 	if got := areaNames(areas); len(got) != 1 || got[0] != "persistence" {
 		t.Fatalf("one area under the folded spelling: got %v", got)
 	}
@@ -131,7 +134,7 @@ func TestAreasFoldsCaseTheWayMatchingFoldsIt(t *testing.T) {
 	}
 	// The claim the fold rests on, checked rather than assumed: matching really
 	// does return both, so the one row is the same population the count is over.
-	if got := Query(log, Filter{About: []string{"persistence"}}).Count; got != areas[0].Records {
+	if got := QueryIn(log, log, Filter{About: []string{"persistence"}}).Count; got != areas[0].Records {
 		t.Errorf("the row's count must be the count a query for that name gives back: %d vs %d",
 			areas[0].Records, got)
 	}
@@ -140,7 +143,7 @@ func TestAreasFoldsCaseTheWayMatchingFoldsIt(t *testing.T) {
 // Padding is *not* stripped, and that asymmetry with the case fold is what this
 // pins: matchesAbout folds case and does not trim, so two spellings that differ
 // only in padding match separately and are therefore two areas. For a Go caller
-// holding a reported name and passing it straight to Query, the round trip below
+// holding a reported name and passing it straight to QueryIn, the round trip below
 // holds — that is the whole of what this test crosses.
 //
 // **It does not hold through the CLI, and a reader who assumes it does will be
@@ -163,7 +166,7 @@ func TestAPaddedTagIsReportedWithItsPaddingBecauseMatchingKeepsIt(t *testing.T) 
 	plain := entry(t, KindPreference, "Persistence is sqlc", "persistence")
 
 	log := logOf([]*Entry{padded, plain}, nil)
-	areas := Areas(log, Filter{})
+	areas := Areas(log, log, Filter{})
 	if got := areaNames(areas); len(got) != 2 {
 		t.Fatalf("two spellings matching separately are two areas: got %q", got)
 	}
@@ -172,10 +175,10 @@ func TestAPaddedTagIsReportedWithItsPaddingBecauseMatchingKeepsIt(t *testing.T) 
 		if row.Records != 1 {
 			t.Errorf("%q holds one record: got %d", name, row.Records)
 		}
-		// The reported name, handed back to Query unchanged, finds exactly the
+		// The reported name, handed back to QueryIn unchanged, finds exactly the
 		// records the row counted. In-package only — see the header: the same name
 		// through `query --about` is trimmed before it gets here and finds nothing.
-		if got := Query(log, Filter{About: []string{name}}).Count; got != row.Records {
+		if got := QueryIn(log, log, Filter{About: []string{name}}).Count; got != row.Records {
 			t.Errorf("querying for the reported name %q gives %d, the row says %d", name, got, row.Records)
 		}
 	}
@@ -185,7 +188,7 @@ func TestAPaddedTagIsReportedWithItsPaddingBecauseMatchingKeepsIt(t *testing.T) 
 func TestARepeatedTagCountsItsRecordOnce(t *testing.T) {
 	e := entry(t, KindPreference, "Migrations go through Atlas", "db", "DB")
 
-	areas := Areas(fileOf(e), Filter{})
+	areas := Areas(fileOf(e), fileOf(e), Filter{})
 	if len(areas) != 1 || areas[0].Records != 1 {
 		t.Fatalf("one area, one record: got %v", areas)
 	}
@@ -198,7 +201,7 @@ func TestAreasIsNeverWithheldByTheThreshold(t *testing.T) {
 	for i := 0; i <= DefaultThreshold+4; i++ {
 		entries = append(entries, entry(t, KindPreference, "Preference "+itoa(i), "area-"+itoa(i)))
 	}
-	if got := len(Areas(logOf(entries, nil), Filter{})); got != len(entries) {
+	if got := len(Areas(logOf(entries, nil), logOf(entries, nil), Filter{})); got != len(entries) {
 		t.Fatalf("every area is enumerated past the threshold: want %d, got %d", len(entries), got)
 	}
 }
@@ -207,7 +210,7 @@ func TestAreasIsNeverWithheldByTheThreshold(t *testing.T) {
 
 // These two are characterization tests: they state what `Areas` does today when
 // two records under one tag carry the same `at`, they do not ask for it. Nothing
-// designed this — the tie-break falls out of `Query` sorting on the id — and it
+// designed this — the tie-break falls out of `QueryIn` sorting on the id — and it
 // is worth pinning because `at` is written to the second while records arrive
 // far faster than that. A fixture of three preferences stamped
 // `2026-08-08T20:19:24Z` is what prompted this.
@@ -249,7 +252,8 @@ func TestWithinOneSecondTheLaterWriteIsTheLiveAnswer(t *testing.T) {
 		t.Fatalf("the fixture must give both records one stamp: %q vs %q", earlier.At, later.At)
 	}
 
-	a := areaNamed(t, Areas(logOf([]*Entry{earlier, later}, nil), Filter{}), "persistence")
+	log := logOf([]*Entry{earlier, later}, nil)
+	a := areaNamed(t, Areas(log, log, Filter{}), "persistence")
 	if a.Records != 2 {
 		t.Fatalf("both records carry the tag: got %d", a.Records)
 	}
@@ -276,7 +280,7 @@ func TestWithinOneMillisecondTheIdBreaksTheTieAndFileOrderDoesNot(t *testing.T) 
 	}
 
 	for _, order := range [][]*Entry{{lower, higher}, {higher, lower}} {
-		a := areaNamed(t, Areas(logOf(order, nil), Filter{}), "persistence")
+		a := areaNamed(t, Areas(logOf(order, nil), logOf(order, nil), Filter{}), "persistence")
 		if a.Live == nil || a.Live.ID != higher.ID {
 			t.Errorf("the greater id answers whatever order the file holds, got %+v", a.Live)
 		}
@@ -287,7 +291,7 @@ func TestWithinOneMillisecondTheIdBreaksTheTieAndFileOrderDoesNot(t *testing.T) 
 // with nothing — which is what the CLI needs to print `[]` for a scope nobody
 // has ever written to.
 func TestAreasOverAnEmptyLogIsAnEmptyListAndNotNil(t *testing.T) {
-	areas := Areas(nil, Filter{})
+	areas := Areas(nil, nil, Filter{})
 	if areas == nil || len(areas) != 0 {
 		t.Fatalf("want an empty non-nil slice, got %#v", areas)
 	}

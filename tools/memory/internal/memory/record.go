@@ -232,8 +232,10 @@ var anchoredKindsV3 = map[Kind]bool{KindGotcha: true}
 //     sweeping the class would carry hundreds of records about this repository's
 //     own code into a log meant to outlive it.
 //   - `gotcha` because it cannot exist without an Anchor, and a path:line is
-//     resolved against `origin.repo` and nothing else — it means nothing in the
-//     next repository. See anchoredKindsV3.
+//     resolved against the repository the record's log lives in — or, once it is
+//     in the user log, against the checkout `origin.repo_id` names. Either way it
+//     is a claim about one repository's code and means nothing in the next one.
+//     See anchoredKindsV3 and Anchor.Path.
 //   - `review-finding` because it names a defect in one repository's code at one
 //     moment, and what settles it is fixing that code.
 //

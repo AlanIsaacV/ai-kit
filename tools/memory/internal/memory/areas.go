@@ -46,21 +46,20 @@ type AreaLive struct {
 
 // Areas enumerates the distinct tags the filtered records carry.
 //
-// The filtering is Query's, called twice rather than reimplemented once: the
+// The filtering is QueryIn's, called twice rather than reimplemented once: the
 // plan-less rule ("a record with no plan is the repository's rather than
 // nobody's") is stated there, and a second reading of it would be a second thing
-// to keep in step. What `--current` means is no longer one of those things.
-// Query is QueryIn(lines, lines), so what settles a record here is this log's
-// edges, where query, search and anchors now read the store's. The first pass
-// counts, the second decides what is live — the two differ only in CurrentOnly,
-// and they are separate passes because the count is deliberately over the
-// settled records too.
+// to keep in step. What `--current` means is no longer one of those things:
+// what settles a record here is the store's edges, the same set query, search
+// and anchors read. The first pass counts, the second decides what is live —
+// the two differ only in CurrentOnly, and they are separate passes because the
+// count is deliberately over the settled records too.
 //
 // The caller's Limit, Threshold and CurrentOnly are overridden. A partial
 // enumeration is not an enumeration, and the count-before-dump threshold guards
 // against spending a caller's context on record bodies, which this returns none
 // of.
-func Areas(lines []Line, f Filter) []Area {
+func Areas(lines, store []Line, f Filter) []Area {
 	f.Limit, f.Threshold = 0, -1
 
 	all, live := f, f
@@ -68,16 +67,16 @@ func Areas(lines []Line, f Filter) []Area {
 	live.CurrentOnly = true
 
 	counts := map[string]int{}
-	for _, e := range Query(lines, all).Records {
+	for _, e := range QueryIn(lines, store, all).Records {
 		for _, tag := range tagsOf(e) {
 			counts[tag]++
 		}
 	}
 
-	// Query returns most recent first, so the first record met carrying a tag is
-	// the live answer for it.
+	// QueryIn returns most recent first, so the first record met carrying a tag
+	// is the live answer for it.
 	answers := map[string]*Entry{}
-	for _, e := range Query(lines, live).Records {
+	for _, e := range QueryIn(lines, store, live).Records {
 		for _, tag := range tagsOf(e) {
 			if _, taken := answers[tag]; !taken {
 				answers[tag] = e

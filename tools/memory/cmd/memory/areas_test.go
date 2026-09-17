@@ -344,3 +344,19 @@ func TestAreasRefusesAScopeItCannotHonour(t *testing.T) {
 		t.Errorf("the refusal should name the flag it did not understand:\n%s", res.stderr)
 	}
 }
+
+func TestAreasDropsARecordSettledByAnEdgeInAnotherLog(t *testing.T) {
+	_, alpha, beta := twoDepths(t)
+	settled := addPreferenceTagged(t, alpha, "Persistence is GORM", "persistence")
+	mustLink(t, beta, "supersedes",
+		addPreferenceTagged(t, beta, "The service next door replaced it", "persistence"), settled)
+
+	out, _ := readAreas(t, alpha)
+	row := rowOf(t, out, "repo", "persistence")
+	if row.Records != 1 {
+		t.Fatalf("the count is over the settled records too, got %d", row.Records)
+	}
+	if row.Live != nil {
+		t.Errorf("a supersedes edge written next door settles the record held here, got %+v", row.Live)
+	}
+}
