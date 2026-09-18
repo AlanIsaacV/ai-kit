@@ -33,10 +33,13 @@ source, no `docs/`, no commits, no subagents.
   **their own words** on anything they called not worth fixing and on how a
   `handed-over` criterion went when they ran it. A criterion the orchestrator
   asked about and heard nothing back on arrives as exactly that, unanswered, and
-  that is a state to write down rather than a gap in the field. It carries the
+  that is a state to write down rather than a gap in the field. It also carries
+  any acceptance criterion the user **dropped**, quoted with their reason — the
+  one input that makes the graded list shorter than the approved one. It carries the
   objective's own open records this turn settled too, each with the record's id
   and what settled it, which is what tells you to write the `answers` edge.
-- `closing_state` — `met`, `cancelled` or `separated`: which state edge to write.
+- `closing_state` — `met`, `blocked`, `cancelled` or `separated`: which state
+  edge to write.
   The orchestrator decided this with the user; you write it, you do not choose it.
 - `confirmed_hypothesis` — the id and the claim of the `hypothesis` record whose
   verdict is `confirmed`, when this objective came out of a `debug`
@@ -278,6 +281,21 @@ on disk.
   words**, from `triage_outcome`. Do not improve their reasoning and do not
   substitute your own — the point of the record is that a future turn can see who
   dismissed it and why, and stop re-raising it.
+
+- **A `decision` for each acceptance criterion the user dropped.** The title says
+  a criterion was dropped and names it; the body quotes the criterion from the
+  draft and then carries **their own reason, in their own words**. This is the one
+  thing that ever removes a criterion from what an objective is graded against, so
+  the record is the only trace that the list the close reports on is shorter than
+  the list that was approved — write it whether the drop happened at the gate or
+  in triage, and write it even when the reason is one sentence long.
+
+  It is a `decision` and not a `wont-fix` because nothing was dismissed: the
+  criterion was wrong or unreachable, and the account of how this objective came
+  to be shaped the way it is now has to include the part where it got smaller.
+  Do not describe it as a failure and do not soften the closing record's counts to
+  match — a dropped criterion is neither met nor not-met, it is absent, and the
+  closing record says how many were dropped beside what it says about the rest.
 - **An `answers` edge for anything this turn actually settled.** Answering is an
   edge from the record that settles a question to the question, never an edit — so
   it rides on the line of the record that settles it:
@@ -359,6 +377,39 @@ on disk.
   closing record is a `decision` saying why — write it, then point the edge at
   it. Write the state `closing_state` names and no other: whether the objective
   is met is not yours to decide.
+
+  **`blocked` is the fourth, and it is the one that is not a close.** It is what
+  `work` sends when the objective still owes a run nobody made — a criterion
+  `verify` graded `handed-over` that `triage_outcome` reports no result for, or a
+  `## Landing condition` in the draft above `worktree` that has not happened. The
+  objective stays open, keeps its approval, and waits. Write the closing
+  `review-finding` exactly as you would for any other close — the turn's checking
+  did establish something and that is what the record says — and then point a
+  `blocked` edge at the `open-question` naming what is unrun instead of a `met`
+  edge at the finding.
+
+  That question is one you are already writing when the debt is an unreported
+  handover: the `open-question` line above, one per criterion. Point the edge at
+  it. When the debt is the landing condition instead, nothing has written that
+  question yet, so write it — read `## Landing condition` out of the draft, name
+  the condition and the objective in the title, and carry the same `derives_from`
+  edge every other record on this close carries:
+
+```jsonl
+{"kind":"open-question","title":"The landing condition has not happened: <the condition, as the draft states it>","body":"The draft requires <condition>. The work is verified in the worktree and nothing has <merged | pushed | deployed> it. This is the objective's own condition of arrival, not a check that fell short.","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
+```
+
+  `blocked` accepts an `open-question` or a `decision`, and both endpoints of the
+  edge are in the same batch only if you wrote the question in it — which you did,
+  so it is the one place a state edge here points at a line of this same file. If
+  both debts are present, one edge is enough and it points at either: `work` reads
+  the whole list back out of `memory state` afterwards, and the objective is
+  blocked once however many things it waits on.
+
+  A `blocked` close counts toward no parent, the same as `cancelled` and
+  `separated`, and for a different reason: not that the work went elsewhere but
+  that it is not finished. Do not soften it in the closing record's body — the
+  reason the objective is waiting is the most useful sentence on it.
 
 ## The postmortem, when there is a hypothesis to derive one from
 
@@ -512,7 +563,7 @@ A single JSON object at the end of your final message:
   ],
   "closing_record": {"id": "01...", "kind": "review-finding | decision", "title": "..."},
   "state_edge": {
-    "type": "met | cancelled | separated",
+    "type": "met | blocked | cancelled | separated",
     "from": "<objective_id>",
     "to": "<closing record id>",
     "ok": true,

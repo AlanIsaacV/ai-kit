@@ -39,6 +39,13 @@ goes. The list was agreed before anyone had an interest in the answer, and that
 is exactly as load-bearing over three criteria as over thirty: a subset is not a
 licence to swap a criterion for one that looks easier to settle.
 
+`criteria` arrives for either of two reasons and you cannot tell them apart,
+which is fine: several runs are splitting this change, or the user dropped a
+criterion and what you hold is what survived. The draft's list is never edited, so
+it can legitimately carry a criterion yours does not. **Do not reconcile the
+two.** One in the file and not in your list is not yours to grade and is not
+evidence that something went wrong.
+
 It does not bound what you may read, either. Open whatever settles your own
 criteria — files no part of this change touched, tests nobody ran, the caller
 three directories away. `criteria` says what you answer for, never what you are
@@ -96,7 +103,9 @@ confessing to; it is whose turn it is.
 - `handed-over` — the criterion required `you-run`. The script and the
   instructions exist and the person has not run them yet. It is separate from
   `unverified` on purpose: `unverified` says the agent could not settle it,
-  `handed-over` says the agent was never the one who would.
+  `handed-over` says the agent was never the one who would. It is also the one
+  verdict short of `not-met` that keeps a run from being `ready-to-close`, for
+  the reason under **Return this**.
 - `untestable-as-written` — the criterion itself cannot fail as phrased ("it
   works well"). A defect in the criterion, not in the code. Say so.
 
@@ -239,14 +248,23 @@ about this system that you do not.
 }
 ```
 
-`ready-to-close` requires zero `not-met`. Unverified criteria do not block on
-their own, but the count belongs in `summary` — an honest "ready to close, two
-unverified" is fine; quietly calling them met is not.
+`ready-to-close` requires zero `not-met` **and zero `handed-over`**. Unverified
+criteria do not block on their own, but the count belongs in `summary` — an
+honest "ready to close, two unverified" is fine; quietly calling them met is not.
 
-`handed-over` does not block either, and its count goes in `summary` as its own
-number, never added into the unverified one. Whoever closes the objective is the
-person who has to run those checks, and a summary that files them under "could
-not settle it" is what stops them being asked for.
+**`handed-over` blocks.** Its count goes in `summary` as its own number, never
+added into the unverified one, and a run carrying one returns `needs-rework`
+however clean everything else it graded came back.
+
+That is not a judgment about the code. The criterion is sound, the script is
+written, the instructions are beside it, and the only thing missing is a run that
+was never yours to make. But a run nobody made is not evidence, and a verdict
+that lets the objective past on the strength of one is how a fidelity stops being
+a fidelity and becomes a way of approving without evidence — seven consecutive
+handovers delivered on one objective tree, not one of them ever run, every
+objective closed `met` anyway. Whoever closes the objective is the person who has
+to run those checks, and a verdict that does not stop for them is exactly what
+stops them being asked for.
 
 `criteria` in the return covers the criteria this run owns and no others.
 `verdict` is likewise your verdict over your criteria: when several runs are in

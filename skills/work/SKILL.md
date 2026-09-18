@@ -43,7 +43,10 @@ run, and invoke `plan` for the one that is.
 4. **Acceptance criteria are frozen at approval.** Nothing downstream may add,
    soften or reinterpret them. A condition discovered later is an
    `open-question` for the user, never a criterion the system grades itself
-   against.
+   against. **The user may drop one outright, in words, and that is the only
+   exception** — steps 4 and 8 say how. Dropping is not softening: a criterion
+   that is gone grades nothing, where a criterion that was made easier grades the
+   same work against a lower bar and reports it green.
 5. **Verification runs in a different subagent than implementation**, with
    fresh context.
 6. **State changes go through the `memory` CLI, and at the close it is the
@@ -104,6 +107,39 @@ turn will touch, `--kind wont-fix` before proposing work that someone already
 decided was not worth doing, `--kind adr` for that same surface before building
 on it, because an ADR outlives the objective that wrote it and one written
 elsewhere can still bind what this turn changes.
+
+#### Read what this tree already owes, before anything gets chosen
+
+`memory state` above reports every objective's `state`, and any of them reading
+`blocked` is an objective this loop stopped rather than closed. What it is waiting
+on is the record the block points at:
+
+```bash
+memory state --text
+```
+
+That prints **Blocked on a question or a decision**, grouped by the record each
+objective waits on, over every log in the store rather than this tree alone. It is
+the ledger for the debt step 9 writes — a `you-run` check nobody ran, a landing
+condition that has not happened — and reading it *here* is what makes the debt
+something the next turn pays rather than something the last turn recorded.
+
+**Name every blocked objective in this tree before step 2 chooses anything**, one
+line each, with what it waits on. The ask is short because there are only ever
+three answers: they ran it and it passed, they ran it and it failed, or it is not
+going to be run. The first closes that objective `met` this turn, before a new one
+starts; the second is a fix; the third is a `wont-fix` in their own words and then
+the close.
+
+> Antes de elegir: `<title>` quedó bloqueado esperando `<lo que falta correr>`.
+> ¿Lo corriste, falló, o no se va a correr?
+
+**Nothing forces them to pay it now.** "Later" leaves the objective blocked and
+this turn goes on to something else. What changed is that the debt was named
+before the next one was taken on, which is the whole distance between one unpaid
+check and seven. Several in one tree is a count and one line, not a list — it is
+the same sentence about the same loop, and repeating it per objective is how it
+stops being read.
 
 #### Read the gotchas for this turn's surface, and check they still point at code
 
@@ -430,7 +466,35 @@ them yet, this is where rule 3's hard stop happens:
 Stop, and wait for their words. Feedback comes in chat — there is one correction
 channel, because two of them is how the file and the conversation drift apart.
 
-Feedback that touches an acceptance criterion is a **supersede, not an edit**. The
+**Dropping a criterion is not changing one, and it does not go through `plan`.**
+If the user says a criterion is unreachable, or that it stopped making sense, and
+they want it gone — not easier, not reworded, gone — take it here: say back which
+one in its own words, write the `decision` below, and run the objective against
+what is left.
+
+```bash
+memory add --plan <tree-slug> --kind decision \
+  --title "Dropped a criterion before execution: <the criterion in a few words>" \
+  --body "<the criterion, quoted from the draft>
+
+Dropped because: <the user's own reason, in their own words>" \
+  --about <areas>
+```
+
+That is safe where an edit is not, and the asymmetry is the whole of why it is
+allowed: **a criterion that is gone grades nothing.** A criterion that was made
+easier is graded, against a bar that moved after somebody had an interest in
+where it sat, and comes back green. There is no version of dropping that reports
+a pass it did not earn — the count of criteria goes down, the record says who
+dropped it and why, and `verify` never sees it. The freeze is a defense against
+this thread grading itself, and this thread cannot drop anything: only the user
+can, only in words, and only with their reason on disk.
+
+Do it before the freeze where you can, so the `decision` step 4 writes already
+holds the list the turn actually runs against. Dropped after the freeze, it is the
+same record and step 8 is where it lands.
+
+Feedback that **changes** a criterion is still a **supersede, not an edit**. The
 criteria sit in the objective's own record and in the `decision` its approval
 pointed at, both append-only, and neither ever moves — so changing a criterion
 means writing a **new objective that supersedes this one**, not correcting the one
@@ -729,7 +793,7 @@ runs as a single part, that part carries it.
 objective_draft: <absolute path to draft-objective.md>
 repo_root: <absolute path>
 changed_files: <the union across every part step 5 launched>
-criteria: <the criteria this part owns, quoted from the draft's `## Acceptance criteria` — omit when verification runs as one part>
+criteria: <the criteria this part owns, quoted from the draft's `## Acceptance criteria`, minus any the user dropped — omit only when verification runs as one part and nothing was dropped>
 whole_change_checks: <true, on exactly one part — omitted on the others>
 plan_slug: <tree-slug>   objective_id: <the objective's id>
 ```
@@ -738,13 +802,24 @@ plan_slug: <tree-slug>   objective_id: <the objective's id>
 verifier grading one criterion still needs to know what moved, because the file
 that settles a criterion is frequently one the criterion never names.
 
+**A dropped criterion is the second reason `criteria` is not optional.** The
+draft's `## Acceptance criteria` is never edited, so a criterion the user dropped
+at step 4 or step 8 is still sitting in the file `verify` opens — and a run told
+to grade the whole heading grades it, reports it `not-met`, and hands back a
+verdict about a criterion nobody is being held to. So when anything was dropped,
+pass `criteria` explicitly on every part, carrying the survivors and nothing else,
+whether or not verification was going to split at all. The `decision` recording
+the drop says why the list got shorter; this is what makes the run agree with it.
+
 #### Collect the verification parts into one result
 
 The per-criterion results concatenate, and they are disjoint by construction —
 no criterion was given to two parts. **The overall verdict is recomputed here,
 across all of them, and never taken from whichever part answered first**:
-`ready-to-close` still means zero `not-met` anywhere, so one part's
-`ready-to-close` beside another's `needs-rework` merges to `needs-rework`.
+`ready-to-close` still means zero `not-met` **and zero `handed-over`** anywhere,
+so one part's `ready-to-close` beside another's `needs-rework` merges to
+`needs-rework` — and so does a part that graded everything it owned cleanly and
+handed one criterion over.
 `risks`, `assumptions` and `open_questions` concatenate with the part each came
 from still attached to it.
 
@@ -781,7 +856,10 @@ Read the merged result against four things:
   comes back `handed-over`, naming the script and the instructions, because
   `verify` cannot run what belongs to the person — so it is unresolved rather
   than fallen short, it is counted apart from the unverified ones for that
-  reason, and step 8 is where it gets asked about.
+  reason, and step 8 is where it gets asked about. **Left unresolved it is the
+  one verdict short of `not-met` that keeps the objective from closing `met`**:
+  step 9 closes it `blocked` instead, so the count travels there rather than
+  being spent in this round.
 - Any `unverified` criterion is named to the user explicitly, with its count.
   "Ready to close, two criteria unverified" is an honest sentence; silence
   about them is not.
@@ -885,6 +963,30 @@ reality differed from the objective, say it will be a `dead-end` or a
 `deviation` and carry it to step 9 as `on_demand_kinds`, because the close
 writes neither unless asked.
 
+**On a `first` cut, the risks do not get a round.** That draft says the
+verification of this objective is somebody using it, and ranking hypothetical
+failure modes against a thing nobody has used yet is precisely the cost the cut
+was made to avoid. Write verification's risks into the draft under `## Cut` as
+prose, say in one line how many went there, and spend this round on what decides
+whether it ships: the criteria that did not come back met, and the handover
+below. On an `iteration` cut the round runs as written above — there the thing is
+already in front of somebody, and a risk is a statement about real traffic.
+
+**A criterion that stopped making sense is dropped here, by the user, exactly as
+step 4 drops one.** `not-met`, `unverified` and `untestable-as-written` all carry
+a reading nobody has while writing criteria: the criterion itself was wrong. Put
+that beside fixing it, in these words, because the difference is the whole point:
+
+> ¿Esto lo arreglamos, o el criterio ya no tiene sentido?
+
+Their answer travels to step 9 in `triage_outcome` — the criterion quoted, their
+reason in their own words — and `record` writes the `decision`. **You do not
+decide this, and you do not lean on a criterion that merely came back hard.** A
+criterion this thread talked the user out of is a criterion this thread graded
+itself against, which is the single thing the freeze exists to prevent. Ask, take
+the answer, and if they want it kept, it stays `not-met` and the turn goes back to
+a fix.
+
 **A comment the change added does not get ranked away.** `review` reports it
 high against the rule in `agents/implement.md`, and nothing it reports blocks —
 `agents/review.md` says as much itself. So the user reading it here is the whole
@@ -925,11 +1027,28 @@ unresolved by construction, so it gets named here: the criterion, the script and
 the instructions `implement` left in `.ai-kit/plans/<slug>/manual-checks.md`,
 and the question of what happened when they ran it. Their answer travels to step
 9 in `triage_outcome` in their own words, which is what puts it in the closing
-record — this thread writes nothing about it itself. No answer is not a pass:
-the criterion is still `handed-over` and nobody has run it, which is a different
-sentence from the agent falling short of a fidelity, and whether the objective
-closes anyway is something the user says in this round rather than something
-this thread settles by moving on.
+record — this thread writes nothing about it itself.
+
+**No answer is not a pass, and this is where that stops being a sentiment.** The
+criterion is still `handed-over`, nobody has run it, and the objective does not
+close `met` on it. There are exactly three ways out, and the user picks one in
+words, in this round:
+
+- **They ran it and it passed.** The criterion is met. Carry what they observed
+  to step 9 in their own words.
+- **They ran it and it failed.** That is a `not-met` criterion, and the turn goes
+  back to a fix rather than on to the close.
+- **It is not going to be run.** That is a decision, and it is kept as a
+  `wont-fix` in their own words like any other "not worth it" — and once that is
+  on disk the criterion stops holding the objective, because what closes it is
+  now a choice somebody made instead of a check nobody ran.
+
+Silence is none of the three, and it is no longer this thread's to resolve by
+moving on. It leaves the criterion `handed-over`, and step 9 closes the objective
+`blocked` on the open question naming the unrun check — the objective staying
+open and the ask coming back at the top of the next turn, which is what step 1's
+ledger is for. Seven of these in a row closed `met` because the default in this
+round was to carry on; the default is now that the objective waits.
 
 Take "not worth it" seriously. A verification pass that keeps raising scenarios
 the user knows cannot happen burns time and trains everyone to skim the
@@ -994,8 +1113,8 @@ objective_id: <the executable objective's id>
 plan_slug: <tree-slug>
 verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON — empty when step 7 did not run>
-triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; and each open record above that this turn settled, with its id and what settled it>
-closing_state: <met | cancelled | separated>
+triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; each criterion the user dropped, quoted from the draft, with their reason in their own words; and each open record above that this turn settled, with its id and what settled it>
+closing_state: <met | blocked | cancelled | separated>
 confirmed_hypothesis:
 on_demand_kinds:
 existing_closing_record:
@@ -1082,8 +1201,50 @@ write, which is what `closing_state` carries: `met` is the state that counts
 toward the parent; an objective that is not going to happen closes `cancelled`,
 and one whose work continues outside this parent `separated`. Those two point at
 a `decision` instead, and neither counts toward the parent's completion — and none
-of the three is reached on a turn whose verification came back `blocked`, which
-step 6 stops before this step.
+of these is reached on a turn whose verification came back `blocked`, which is
+`verify` reporting that it graded nothing at all and which step 6 stops before
+this step. That is a verdict and not a state, and it is not the `blocked` below.
+
+**`met` is unavailable while anything this objective still owes is unrun.** Two
+things put it there, and both resolve the same way:
+
+- a criterion still `handed-over` after step 8's round, and
+- a `## Landing condition` above `worktree` that has not happened yet.
+
+Either one and `closing_state` is `blocked`, pointing at the `open-question` that
+names what is unrun — the same pair step 5 already writes for an external wall,
+and `record` already writes that question for a handover nobody reported on.
+
+`blocked` is an **open** state in this log rather than a closing one, which is
+what makes this a pause and not a failure: the objective keeps its approval, it
+stays a candidate for `--current`, `approved_for_execution → blocked → met` is a
+sequence the log resolves to `met`, and `memory state --text` lists it under
+**Blocked on a question or a decision** grouped by the record it waits on. That
+listing is the ledger step 1 reads at the top of the next turn, which is when this
+gets paid. Nothing in the CLI changes for any of it.
+
+Say it in one line, as a pause rather than an apology, and **hand over the
+command that closes it**:
+
+> El objetivo queda `blocked` esperando `<el chequeo o el aterrizaje>`. El código
+> está hecho y verificado en todo lo demás. Cuando lo corras o lo despliegues y
+> esté bien, cerralo vos — no hace falta abrir una sesión para esto:
+>
+> ```bash
+> memory link --type met --from <objective-id> --to <closing-record-id>
+> ```
+
+Both ids are in your hand already: the objective's, and the closing
+`review-finding` the subagent just wrote. **Paste them in literally.** A command
+with angle brackets left in it is a command somebody opens a session to get
+filled in, which is the entire cost this branch exists to remove.
+
+**Reopening a session to say "it worked" is waste, and this is what removes it.**
+The debt is real and it holds the objective open, but paying it is one append to
+the log by the person who already ran the check — not a turn that reloads the
+tree, re-reads the draft, re-reads the log and spends a whole context to write a
+single edge. Step 1's ledger is for the checks they never got to, not for the
+ones they did.
 
 #### Confirm the close landed, do not trust the report
 
@@ -1095,8 +1256,10 @@ Read the objective's `state` out of what comes back rather than out of the
 subagent's report. A `link` that refused inside a subagent still printed JSON and
 still exited, so "closed" in a report is a claim and this is the evidence.
 
-- It reads the state you asked for — `met`, `cancelled` or `separated`. The close
-  landed. Before step 10, give the user the subagent's `failures` and
+- It reads the state you asked for — `met`, `blocked`, `cancelled` or
+  `separated`. The close landed. `blocked` landing is the close landing: the
+  objective is open on purpose and waiting on a named record, which is a
+  different thing from the edge never having been written. Before step 10, give the user the subagent's `failures` and
   `not_recorded` in one line: a state edge that landed says the objective closed,
   not that everything this turn agreed to write got written. Anything the user
   triaged **record for later** that comes back in `not_recorded` is a
@@ -1104,7 +1267,8 @@ still exited, so "closed" in a report is a claim and this is the evidence.
   offered that option and are owed the news that it did not happen. Nothing in
   either list and one line says so.
 - It still reads `approved_for_execution`, or anything else from before the
-  close: **the close did not land.** The objective is open whatever the report
+  close — including `blocked` when that is not the state you asked for:
+  **the close did not land.** The objective is open whatever the report
   said. Say so to the user in one line, show the subagent's `failures`, and
   relaunch `record` with the same handover — `missing` naming exactly what did
   not land, and `existing_closing_record` carrying the closing record's id when
@@ -1204,6 +1368,11 @@ user's — suggest candidates, do not promote on your own.
   a real database is not a passing check, it is a false one. `you-run` is agreed
   the same way and says something else: the check belongs to the person, so it
   comes back handed over rather than met, and the close asks them how it went.
+- **An unrun check holds the objective open.** A fidelity nobody ever pays is not
+  a fidelity, it is a way of approving without evidence — so `handed-over` and an
+  unmet landing condition close the objective `blocked` rather than `met`, and the
+  next turn opens by naming what is owed. Waiting is not failing, and the debt is
+  cleared by running the check or by deciding in words that it never will be.
 - **Parts are drawn by what would collide, not by size.** Implementation splits
   by the files parts write, verification by criteria that settle without waiting
   on another part's evidence or verdict, review along the parts implementation

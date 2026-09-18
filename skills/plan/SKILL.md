@@ -362,7 +362,9 @@ five:
 
 - **It delivers something demonstrable.** At the end you can show it working.
   Not "the layer is refactored" — "you can cancel an order and see the reason
-  recorded".
+  recorded". On a `first` cut that bar is *usable*, not complete: somebody can do
+  the thing end to end, in one shape and badly, and tell you whether it was worth
+  building.
 - **It fits one session with room to spare.** Context that fills up is context
   that starts forgetting the objective, which is the failure this whole shape
   exists to avoid. When in doubt, split.
@@ -463,6 +465,10 @@ obvious to the user. Not a restatement of their sentence.>
 ## Objective
 <What must be true when this is done. One paragraph.>
 
+## Landing condition
+<One of `worktree` | `committed` | `merged` | `deployed` | `user-saw-it`, and who
+does it. A parent declares this once for everything underneath it.>
+
 ## How this serves the objective above
 <One line. A root objective serves the request that opened it.>
 
@@ -504,6 +510,15 @@ obvious to the user. Not a restatement of their sentence.>
 ## Deliverable
 <What will be demonstrably working when this is done. One paragraph.>
 
+## Cut
+<`first` or `iteration`. On a first cut, one line per thing you moved out of the
+criteria to get there — prose, not records, and not promises.>
+
+## Landing condition
+<One of `worktree` | `committed` | `merged` | `deployed` | `user-saw-it`, and who
+does it. Inherited from the nearest ancestor that declares one, unless this
+objective is the one that arrives.>
+
 ## How this serves the objective above
 <One line. A root objective serves the request that opened it.>
 
@@ -538,11 +553,41 @@ obvious to the user. Not a restatement of their sentence.>
 
 Every section the loop reads is in there, so nothing downstream has to add one:
 `verify` opens the file, grades `## Acceptance criteria` and checks the changed
-files against `## Out of scope`; `implement` and `review` read the whole thing.
+files against `## Out of scope`; `record` reads `## Landing condition` at the
+close; `implement` and `review` read the whole thing.
 `work` extends the sections around the criteria as it goes and leaves the
 criteria themselves alone. A parent's `## Findings` is what step 8 hands down to
 the child's `explore`, which is why the anchors go in the file instead of being
 paraphrased into `## What I understood`.
+
+**Before the criteria are written, decide how much of the objective this one is
+for.** `## Cut` is that decision and it takes one of exactly two values:
+
+- **`first`** — the smallest thing that does the job at all, shipped so that
+  using it is what says whether it was right. Criteria stop at what makes it
+  usable; everything else is named and moved out.
+- **`iteration`** — it improves something that already works and is already in
+  front of somebody. Criteria are whatever the improvement needs.
+
+**On a `first` cut, what you moved out is written as prose under `## Cut` — one
+line each, and no records.** Naming them is not optional: a first cut whose cost
+was hidden by never saying what it left out is an ordinary objective wearing a
+smaller word. Keeping them prose is the same rule step 8 applies to candidate
+children and it is there for the same reason — a record is for work somebody is
+about to do, and turning each deferred thing into one now is the phase list this
+shape exists to avoid, written at the moment you know least about it.
+
+**A `first` cut lands at `deployed` or `user-saw-it`, and that is the point
+rather than an extra demand.** What makes three criteria enough where nine were
+enough before is that the criteria are no longer the thing doing the verifying —
+the person using it is. A first cut that stops in the worktree has cut the
+checking and kept none of the feedback, which is strictly worse than the
+objective it was trying to be cheaper than.
+
+So the two values buy opposite things, and which one this is gets asked rather
+than decided quietly: `first` trades internal verification for external, and
+`iteration` is where the ladder below earns what it costs. The user is the one
+who knows whether anybody is waiting to use this.
 
 **The fidelity line on each criterion is the load-bearing part.** It is decided
 here, with the user, before anyone has an interest in the answer. Naming one
@@ -568,6 +613,49 @@ So `real-dependency` is what is left for a check that reaches something real the
 agent may still touch — the working tree's own filesystem, a process it starts
 itself — where the bar is above a double and still reachable by whoever
 verifies.
+
+**The criteria say whether it works. `## Landing condition` says where it has to
+be for that to matter**, and it is a closed set of five:
+
+| Value | What has to have happened |
+|---|---|
+| `worktree` | Written and verified where it was written. Nothing moved it. |
+| `committed` | It is a commit in this repository. |
+| `merged` | It is on the branch the team works from. |
+| `deployed` | It is running wherever this thing actually runs. |
+| `user-saw-it` | Somebody outside this conversation used it and said something. |
+
+**There is no default, and `worktree` is written rather than inherited from
+silence.** That is the whole of it: `worktree` is what every objective got by
+nobody asking, and a tree can close nineteen objectives `met` with nineteen
+commits that never left the machine and not one line that ever reached a user.
+Choosing `worktree` is fine and often right — a refactor under a suite lands
+there and nowhere else. Choosing it *in the open* is what makes the tree that
+never arrives visible while it is still one objective old rather than three weeks
+old. A draft written before this section existed carries none, and absent reads
+as `worktree`, which is the behaviour those objectives already had.
+
+`agents/implement.md` rule 9 prohibits commits and pushes, so **anything above
+`worktree` is a check no agent is ever going to run** — which by the mechanical
+test two paragraphs up makes it a criterion with `fidelity required: you-run` and
+nothing else. That is not a second mechanism bolted on: it is the same handover,
+the same `manual-checks.md`, the same `handed-over` verdict, and the same hold on
+the close. Write it as one criterion phrased as the observation rather than the
+act — "the change is on `main` and CI is green on it", not "push the branch".
+
+A `first` cut is the one case where the value is not a free choice: `worktree`
+on a first cut contradicts what the cut is for, so it is `deployed` or
+`user-saw-it` and the criteria were shortened on that basis.
+
+**Declare it on the objective that actually arrives, and let the tree inherit
+it.** A parent whose children are five slices of one service declares `deployed`
+once, on itself; the children declare `worktree`, close `met` on green, and the
+parent is what cannot close until the deploy happened. Put it on every child
+instead and a nineteen-commit tree needs nineteen pushes before anything closes,
+which is the friction that gets a rule deleted rather than followed. So ask which
+objective in this tree is the one that has to arrive — usually the one whose
+`## Success criteria` somebody outside the room would recognise — and put it
+there.
 
 **A unit test is authorized here or nowhere.** `agents/implement.md` prohibits
 writing one nobody asked for, and this is the only door left open: what
