@@ -13,3 +13,5 @@ __pycache__/
 # Per-machine host settings. The shared .claude/settings.json is committable;
 # this one holds one person's permission grants and absolute paths.
 .claude/settings.local.json
+
+.verify-tmp/
