@@ -344,8 +344,10 @@ Then ask, in two halves that stay distinguishable:
 > decime cómo va en realidad — y decime qué falta que no esté en la lista.
 > Todavía no escribí nada, así que corregir acá no cuesta nada.
 
-This round covers **only** the assumptions and the open questions. Not the
-objective, not the constraints, not the criteria, not what is out of scope —
+This round covers the assumptions, the open questions and **the premise** — step
+5's first beat, which goes here rather than in the file because it is the largest
+judgment call in the draft and words are the cheapest place to correct it. Not
+the objective, not the constraints, not the criteria, not what is out of scope —
 those are what the draft is for, and reading them back in chat is how the file
 stops being read.
 
@@ -355,6 +357,42 @@ question that was about that assumption, becomes `you chose this`; one they did 
 touch keeps `my call`, however obvious it looks to you.
 
 ### 5 — Decide whether this objective is executable, then write the draft
+
+**First, say what would have to be true for this to be worth building at all.**
+The five parts below ask how big this objective is and what shape it has; not one
+of them asks whether it is true. A perfectly sized objective resting on a premise
+nobody checked is the most expensive thing this loop can produce — every
+criterion comes back met, at the fidelity it demanded, on work that should never
+have been started.
+
+So state the premise the way a hypothesis is stated: one line, specific enough
+that it could turn out false. Not "users need a way to export" — "the people
+asking for export want a file they can mail, not an API". Then name the
+**cheapest observation that would show it is false**, and put that observation in
+one of exactly three places. Which one it lands in is mechanical, not a judgment
+about how risky the premise feels:
+
+- **It can be run now, from here.** A grep, a file read, a query against
+  something this turn already reaches, a version resolved under rule 4. Run it
+  before you write a single criterion, and write what it returned into
+  `## Premise`. This is the case the section exists for: minutes spent here
+  against an objective whose criteria never get written if the answer comes back
+  wrong.
+- **It cannot be run from here, and the first cut is it.** Then `## Cut` is
+  `first`, `## Landing condition` is `deployed` or `user-saw-it`, and
+  `## Premise` names the cut as the falsifier and says nothing more. Nothing is
+  added for this case, because nothing needs to be — a first cut already goes in
+  front of somebody, which is what makes it the cheapest observation there is.
+- **Neither.** Then the premise is being taken on faith, and that is an
+  assumption rather than a check: it goes in `## Assumptions I made` and gets its
+  record in step 7 like any other, which is what puts it back in front of the
+  user on every later turn through `work`'s step 1. Write `nobody checked` on the
+  falsifier line rather than leaving it empty, so the next reader can tell a
+  premise that survived a look from one that was never looked at.
+
+A premise that comes back false does not produce a smaller objective. It produces
+no objective: say what you observed, and go back to what the user was actually
+after.
 
 An objective is **executable** when one session can deliver it and somebody else
 can check it afterwards. That is a test with five parts, and it has to pass all
@@ -465,6 +503,12 @@ obvious to the user. Not a restatement of their sentence.>
 ## Objective
 <What must be true when this is done. One paragraph.>
 
+## Premise
+<What has to be true for this tree to be worth doing, in one line, stated so it
+could be false. Then `Falsified by:` the cheapest observation that would show it
+is not, and what it returned if you ran it here. A parent declares this once and
+its children inherit it.>
+
 ## Landing condition
 <One of `worktree` | `committed` | `merged` | `deployed` | `user-saw-it`, and who
 does it. A parent declares this once for everything underneath it.>
@@ -510,6 +554,14 @@ obvious to the user. Not a restatement of their sentence.>
 ## Deliverable
 <What will be demonstrably working when this is done. One paragraph.>
 
+## Premise
+<What has to be true for this to be worth building, in one line, stated so it
+could be false. Inherited from the nearest ancestor that declares one, unless
+this objective narrows it.>
+<`Falsified by:` the cheapest observation that would show it is not — what it
+returned when you ran it here, or `the first cut itself` on a `first` cut, or
+`nobody checked` when it is being taken on faith and carried as an assumption.>
+
 ## Cut
 <`first` or `iteration`. On a first cut, one line per thing you moved out of the
 criteria to get there — prose, not records, and not promises.>
@@ -554,7 +606,8 @@ objective is the one that arrives.>
 Every section the loop reads is in there, so nothing downstream has to add one:
 `verify` opens the file, grades `## Acceptance criteria` and checks the changed
 files against `## Out of scope`; `record` reads `## Landing condition` at the
-close; `implement` and `review` read the whole thing.
+close; `work`'s step 5 reads `## Premise` before it launches anything;
+`implement` and `review` read the whole thing.
 `work` extends the sections around the criteria as it goes and leaves the
 criteria themselves alone. A parent's `## Findings` is what step 8 hands down to
 the child's `explore`, which is why the anchors go in the file instead of being
@@ -583,6 +636,17 @@ enough before is that the criteria are no longer the thing doing the verifying �
 the person using it is. A first cut that stops in the worktree has cut the
 checking and kept none of the feedback, which is strictly worse than the
 objective it was trying to be cheaper than.
+
+**That is also what makes a first cut the premise check, for the one class of
+premise it can check.** A premise about whether anybody wants this has no cheaper
+falsifier than somebody having it and saying something, so when that is the
+premise, `## Premise` names the cut and there is nothing further to run — the
+mechanism is already here and it is this one. What the cut cannot check is a
+premise about whether the thing can work at all: that the endpoint returns that
+field, that the format is what everybody says it is, that the volume is the one
+somebody quoted. Those cost minutes of looking, they belong above the criteria
+rather than after the deploy, and shipping a first cut to discover one is the
+most expensive way there has ever been to read a schema.
 
 So the two values buy opposite things, and which one this is gets asked rather
 than decided quietly: `first` trades internal verification for external, and

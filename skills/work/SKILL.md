@@ -567,6 +567,23 @@ read in the command is one you can see is wrong.
 
 ### 5 — Implement
 
+**Before anything is launched, read `## Premise` in the draft.** It names the
+cheapest observation that would show this objective is not worth building, and
+its falsifier line says which of three states that observation is in. What it
+returned when `plan` ran it: the check is paid, carry on. `the first cut itself`:
+carry on too — the cut ships and the landing condition collects the answer.
+`nobody checked`, or no `## Premise` at all, which is every draft written before
+that section existed: also carry on, and the turn runs exactly as it did before.
+
+The one case that stops here is a falsifier this thread can run and nobody has —
+seconds of looking against an hour of implementation. Run it; rule 2 allows
+reading files and spot-checking a claim, and this is that. If what comes back is
+against the premise, **nothing gets launched**: put the premise and what you
+observed in front of the user in one round and let them say whether the objective
+still stands. That round is not one the loop pays on the ordinary path — it fires
+only where the alternative was building the thing anyway and finding out at the
+close.
+
 An objective is not automatically one piece of work, and handing all of it to a
 single subagent is a choice rather than the default. One long run carries the
 whole objective in one context, and by the end of it the parts decided first are
@@ -987,6 +1004,17 @@ itself against, which is the single thing the freeze exists to prevent. Ask, tak
 the answer, and if they want it kept, it stays `not-met` and the turn goes back to
 a fix.
 
+**A criterion that stopped making sense is dropped. A premise that stopped being
+true is not a drop at all.** Sometimes what the parts or the verification bring
+back says the thing `## Premise` rested on is false — the field is not there, the
+volume is nothing like what was quoted, the path everybody assumed exists does
+not. That is not a finding to rank and not a criterion to fix: it is the
+objective no longer being worth finishing. Quote the premise, say what
+contradicted it, and if the user agrees, the objective closes `cancelled` at step
+9 with their reason in their own words. That is the cheapest turn this loop has,
+and it is cheaper the earlier it is taken — which is why step 5 reads that
+section before it launches anything.
+
 **A comment the change added does not get ranked away.** `review` reports it
 high against the rule in `agents/implement.md`, and nothing it reports blocks —
 `agents/review.md` says as much itself. So the user reading it here is the whole
@@ -1233,6 +1261,14 @@ command that closes it**:
 > ```bash
 > memory link --type met --from <objective-id> --to <closing-record-id>
 > ```
+
+**When `## Premise` names the cut itself as its falsifier, that landing is the
+premise's verdict and not only the criterion's**, so ask for the answer that
+matters in the same breath:
+
+> Y si cuando lo despliegues resulta que la premisa era falsa — que no le sirve a
+> nadie, que no era esto lo que hacía falta — no lo cierres `met`. Decímelo y lo
+> cerramos `cancelled`, que es el resultado más barato que puede tener esto.
 
 Both ids are in your hand already: the objective's, and the closing
 `review-finding` the subagent just wrote. **Paste them in literally.** A command
