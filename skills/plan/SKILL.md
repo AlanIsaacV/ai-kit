@@ -344,9 +344,11 @@ Then ask, in two halves that stay distinguishable:
 > decime cómo va en realidad — y decime qué falta que no esté en la lista.
 > Todavía no escribí nada, así que corregir acá no cuesta nada.
 
-This round covers the assumptions, the open questions and **the premise** — step
-5's first beat, which goes here rather than in the file because it is the largest
-judgment call in the draft and words are the cheapest place to correct it. Not
+This round covers the assumptions, the open questions, **the premise** — step 5's
+first beat, which goes here rather than in the file because it is the largest
+judgment call in the draft and words are the cheapest place to correct it — and
+**the budget**, which is one closed question among the batched ones and is the
+user's number rather than yours. Not
 the objective, not the constraints, not the criteria, not what is out of scope —
 those are what the draft is for, and reading them back in chat is how the file
 stops being read.
@@ -405,7 +407,10 @@ five:
   building.
 - **It fits one session with room to spare.** Context that fills up is context
   that starts forgetting the objective, which is the failure this whole shape
-  exists to avoid. When in doubt, split.
+  exists to avoid. When in doubt, split. This part asks whether one session can
+  *hold* it and nothing else — whether it is worth that much is `## Budget`
+  below, a different question whose unit is not context and whose answer is not
+  yours.
 - **It is worth doing on its own.** If it only makes sense once a sibling
   objective lands, either merge them or do that one first.
 - **It names what it does not cover.** Two or three non-goals. This is the
@@ -566,6 +571,11 @@ returned when you ran it here, or `the first cut itself` on a `first` cut, or
 <`first` or `iteration`. On a first cut, one line per thing you moved out of the
 criteria to get there — prose, not records, and not promises.>
 
+## Budget
+<What the user said this objective is worth, in their own words — "medio día",
+"un par de horas". Their number and never yours. `work` says so when the turn
+passes it, in passing, and never stops for it.>
+
 ## Landing condition
 <One of `worktree` | `committed` | `merged` | `deployed` | `user-saw-it`, and who
 does it. Inherited from the nearest ancestor that declares one, unless this
@@ -606,8 +616,9 @@ objective is the one that arrives.>
 Every section the loop reads is in there, so nothing downstream has to add one:
 `verify` opens the file, grades `## Acceptance criteria` and checks the changed
 files against `## Out of scope`; `record` reads `## Landing condition` at the
-close; `work`'s step 5 reads `## Premise` before it launches anything;
-`implement` and `review` read the whole thing.
+close; `work`'s step 5 reads `## Premise` before it launches anything and copies
+`## Budget` into the freeze at its step 4; `implement` and `review` read the
+whole thing.
 `work` extends the sections around the criteria as it goes and leaves the
 criteria themselves alone. A parent's `## Findings` is what step 8 hands down to
 the child's `explore`, which is why the anchors go in the file instead of being
@@ -652,6 +663,31 @@ So the two values buy opposite things, and which one this is gets asked rather
 than decided quietly: `first` trades internal verification for external, and
 `iteration` is where the ladder below earns what it costs. The user is the one
 who knows whether anybody is waiting to use this.
+
+**Then ask what it is worth, and write their answer in their words under
+`## Budget`.** "Medio día", "un par de horas", "un día y no más" — a human
+number, because what is being bounded is somebody's patience and not a context
+window. The sizing test asks whether one session can hold this; the budget asks
+whether it is worth a session, and an objective can pass the first and fail the
+second without either answer being wrong.
+
+**You do not get to pick the number.** Rule 6 forbids inventing one and this is
+the case it exists for: the budget is the user's tolerance for this particular
+objective, and an agent's guess at it becomes a number that gets compared against
+reality later as though somebody had meant it. It goes into step 4's round beside
+the premise, or it is one line asked here when that round has already run.
+
+**The comparison survives the session for free, and nothing new is recorded to
+make it.** `work` copies the line into the freeze `decision` at its step 4; that
+decision is stamped, its `approved_for_execution` edge is stamped, and the edge
+that closes the objective is stamped too. So every objective that ever closed
+already carries both ends of its own elapsed time, and "did any of these budgets
+mean anything" is a question the log answers by being read rather than one that
+needs a record written at the close.
+
+**A parent declares none.** It spans sessions and carries no freeze, so there is
+no clock to run against it; what bounds a parent is each of its children
+declaring one.
 
 **The fidelity line on each criterion is the load-bearing part.** It is decided
 here, with the user, before anyone has an interest in the answer. Naming one

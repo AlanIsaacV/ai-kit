@@ -525,9 +525,19 @@ ago or you were already on it:
 ```bash
 memory add --plan <tree-slug> --kind decision \
   --title "Approved for execution: <short name>" \
-  --body "<the acceptance criteria as approved, each with its required fidelity>" \
+  --body "<the acceptance criteria as approved, each with its required fidelity>
+
+Budget: <the `## Budget` line from the draft, in the user's words>" \
   --about <areas>
 ```
+
+**The budget goes in this body and nowhere else, because this is the record that
+already carries the clock.** It is stamped when it is written and its
+`approved_for_execution` edge is stamped with it, so the declared number and the
+moment the work started against it come back from one read. Leave the line out
+entirely when the draft declares no `## Budget` — every draft written before that
+section existed — and the checkpoint at step 5 then has nothing to compare
+against, which is exactly the behaviour those objectives already have.
 
 ```bash
 memory link --type approved_for_execution --from <objective-id> \
@@ -752,6 +762,47 @@ carried at step 9, in the context that can least afford them. Run in a
 verification part, the same command produces the same answer and the log dies
 with the part. What step 6 is handed from here is the merged `files_changed`;
 what the tests say comes back with the verification result.
+
+**Say what it has cost, once, here.** The parts have returned and nothing is
+half-written, which is what makes this the only honest place for the checkpoint:
+a stop drawn anywhere earlier means abandoning a part mid-file and leaving the
+worktree split between agents, which costs more than any overrun it could catch.
+
+One command and a clock give both halves of the answer:
+
+```bash
+memory edges --from <objective-id> --type approved_for_execution
+date -u +%Y-%m-%dT%H:%M:%SZ
+```
+
+Every freeze this objective has ever taken comes back carrying its `at`. The
+latest one is when this session started working against it; the count is how many
+sessions it has taken, because step 4 writes one on a resumption exactly as it
+writes one on a first approval. Compare the elapsed against the `Budget:` line in
+the freeze `decision` and say it in one line, in passing, on the way to
+verification:
+
+> Esto ya lleva <lo transcurrido> contra el <presupuesto> que dijiste. Sigo a
+> verificar.
+
+The comparison is coarse on purpose. A budget said in words is compared in
+words — nobody declared "medio día" meaning four hours and seven minutes, and an
+alarm that reported minutes would be asking to be read as a measurement.
+
+**It is an alarm and never a brake.** You say it and you keep going: you do not
+ask, you do not wait for an answer, and you do not offer to stop. The user reads
+it while the turn is still running and interrupts if they want to — that is the
+whole mechanism, and it costs no round precisely because nothing waits. An alarm
+that stopped to ask permission would be the extra round this loop cannot afford,
+and one that fired at the close would be a receipt rather than a warning.
+
+**Say nothing when the objective is inside its budget, and nothing when the draft
+declares none.** A line reporting that everything is fine is noise, and noise is
+what gets an alarm ignored on the one turn it matters.
+
+The count is worth a clause of its own the moment it is greater than one: three
+freezes on an objective somebody called half a day is precisely what the number
+was declared for, and the elapsed within this session alone would never show it.
 
 If any part returns `blocked` or `partial`, stop and bring it to the user
 together with the other parts' results in one round — including what the parts
