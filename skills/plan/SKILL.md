@@ -46,11 +46,19 @@ child is worth opening, which is the only thing the descent needs from you.
 3. **The draft is the readback for the objective, the constraints and the
    criteria.** Do not restate those in chat and ask "does this look right?" —
    the user needs to read the detail, not your summary of it. Point them at the
-   file. The one exception is scoped by content, not by timing: your judgment
-   calls and the still-open questions go in front of the user in chat — step 4's
-   round, whenever it runs, including when step 6's feedback opens a new one.
-   Those are the cheapest things to correct and the most expensive ones to find
-   buried in a long draft.
+   file. There are two exceptions and both are scoped by content, never by
+   timing:
+   - **Your judgment calls and the still-open questions** go in front of the
+     user in chat — step 4's round, whenever it runs, including when step 6's
+     feedback opens a new one. Those are the cheapest things to correct and the
+     most expensive ones to find buried in a long draft.
+   - **The four-line card** step 6 puts above the link: the premise, what
+     follows if it is false, what this does not do, and what it costs. It is a
+     fixed form rather than a summary — those four and no fifth — and **it never
+     carries a criterion**. Approving the card is agreeing to fund the
+     objective; approving the criteria is something only reading them can do,
+     and the card is built out of four things that are not criteria precisely so
+     the first can never be mistaken for the second.
 4. **A library version, an SDK shape or a provider API is resolved, never
    recalled.** Your training data lags releases. If the plan turns on an external
    dependency, look it up — `context7` if available, otherwise the pinned source
@@ -781,8 +789,38 @@ entries even when the user shrugs.
 This is the only time anybody asks the user to read these criteria. `work` does
 not ask again, so what they let through here is what gets built and graded.
 
-For an executable objective, the criteria and the fidelity each one demands are
-the thing to read:
+**An executable objective goes over with a four-line card on top of the link.**
+It exists so that *no* costs sixty seconds instead of a full read: the four lines
+are the bet, and somebody who is going to kill this objective can kill it without
+opening the file. A *yes* buys nothing here and is not meant to — the criteria
+still have to be read, in the file, before anything gets built. So the card saves
+the whole read on every objective that should not exist and costs four lines on
+every one that should, inside a message that was going out anyway. That is why it
+adds no round: it is not a stage, it is the top of the one message this step
+already sends.
+
+The form is fixed and the four lines are always these four, each lifted from the
+section that already holds it rather than composed:
+
+> **Premisa** — <`## Premise`, the claim in its one line>
+> **Si es falsa** — <the `Falsified by:` line and what follows from it: there is
+> no objective at all, or the first cut is what will tell us, or nobody is going
+> to check and we are betting on it>
+> **No hace** — <two or three, from `## Out of scope` and from what `## Cut`
+> moved out on a first cut>
+> **Cuesta** — <`## Budget`, in their own words>
+
+**The card never carries a criterion.** Not one, not paraphrased, not folded into
+the *no hace* line. A criterion on the card is a criterion approved in chat,
+which is the whole of what rule 3 forbids and the one thing that cannot be
+allowed to happen at a glance: the criteria are what `verify` grades and what
+nobody may change once execution starts. The four lines are made of the four
+things that are not criteria for exactly that reason — the card cannot stand in
+for the criteria because it structurally does not contain them. A fifth line is
+the same failure arriving by growth, so there is no fifth line.
+
+Then the link, and the read the card does not replace — the criteria and the
+fidelity each one demands are still the thing to read:
 
 > Escribí el objetivo en `.ai-kit/plans/<slug>/draft-objective.md`. Leelo entero
 > — sobre todo los **criterios de aceptación** y la fidelidad que pide cada uno,
@@ -792,8 +830,12 @@ the thing to read:
 > está mal — el archivo lo reescribo yo con lo que me digas, no hace falta que lo
 > edites.
 
-For a parent objective there is nothing to verify yet, so the scope and the
-judgment calls are what matter:
+**A parent objective gets no card.** Nothing is being funded: a parent is not
+what gets built, it declares no budget, and its criteria are met by its children
+closing rather than by anybody executing it. Four lines summarising a draft
+nobody is about to run is the summary rule 3 forbids, with no decision bought for
+it. There is nothing to verify yet either, so the scope and the judgment calls
+are what matter:
 
 > Escribí el objetivo en `.ai-kit/plans/<slug>/draft-objective.md`. Abrilo y
 > leelo entero — sobre todo **Assumptions I made** y **What I don't know**, que es
