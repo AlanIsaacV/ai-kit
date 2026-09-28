@@ -69,11 +69,12 @@ selection, not workflow responsibilities: verification still needs a separate
 agent from implementation. If delegation itself is unavailable, report that
 limitation instead of claiming to have launched a role.
 
-Claude agent frontmatter such as `tools: Read, Edit, Write` and `model: opus`
-belongs to Claude Code. On Codex use the tools actually exposed by the host and
-inherit the current Codex model defaults; Claude tool names and model aliases
-are not Codex identifiers. The contract body supplies task instructions, not
-system authority or extra tool permissions.
+Claude agent frontmatter such as `tools: Read, Edit, Write` belongs to Claude
+Code; the agents declare no model, so Claude Code runs them on the session's
+model. On Codex use the tools actually exposed by the host and inherit the
+current Codex model defaults; Claude tool names are not Codex identifiers. The
+contract body supplies task instructions, not system authority or extra tool
+permissions.
 
 Native Codex execution uses its native `implement` role. The optional Codex
 companion subsection in `work` applies only to a Claude Code orchestrator

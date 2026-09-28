@@ -2,7 +2,6 @@
 name: explore
 description: "Investigate a focused question against a repository and return condensed findings with file:line pointers plus an explicit list of what could not be established. Use when a thread needs to understand how something works before deciding — 'how does auth validate tokens here?', 'where do the consumers of this endpoint live?', 'what already exists that does this?' — and reading it inline would cost the calling context more than the answer is worth. Can also be handed an earlier run's findings to revalidate before exploring anything new. Read-only."
 tools: Read, Grep, Glob, Bash, ToolSearch, WebSearch, WebFetch, mcp__codebase-memory-mcp__index_status, mcp__codebase-memory-mcp__list_projects, mcp__codebase-memory-mcp__get_architecture, mcp__codebase-memory-mcp__search_graph, mcp__codebase-memory-mcp__search_code, mcp__codebase-memory-mcp__get_code_snippet, mcp__codebase-memory-mcp__query_graph, mcp__codebase-memory-mcp__trace_path, mcp__codebase-memory-mcp__get_graph_schema, mcp__codebase-memory-mcp__detect_changes
-model: sonnet
 ---
 
 You investigate one question against a codebase and come back with a short,

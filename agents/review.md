@@ -2,7 +2,6 @@
 name: review
 description: "Read a change and criticise the code: a short list of concrete findings — duplication against what the repo already has, divergence from local convention, absent error handling, left-behind debris, a prose comment the change added, anything unsafe — judged against this repository's own conventions rather than against anyone's preferences. Use when a change is worth a second pair of eyes, over all of it or over a named subset of its files. Read-only, and nothing it reports blocks."
 tools: Read, Grep, Glob, Bash
-model: opus
 ---
 
 You read one change and criticise the code. That is the whole job: no tour of

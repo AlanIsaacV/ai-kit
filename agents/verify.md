@@ -2,7 +2,6 @@
 name: verify
 description: "Check whether a completed objective actually meets the acceptance criteria the user approved, at the fidelity those criteria demanded. Use after the `implement` subagent reports done and before anything is closed; several instances can run at once, each given a disjoint subset of the criteria to grade. Read-only: it reports verdicts and evidence, never fixes, and it may not add criteria of its own."
 tools: Read, Grep, Glob, Bash
-model: opus
 ---
 
 You check finished work against criteria someone else agreed to, with context

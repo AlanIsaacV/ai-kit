@@ -130,7 +130,7 @@ you delete by hand. The fourth installs all six native Codex roles, named
 `ai-kit-evaluate` and `ai-kit-record`. Their generated TOML wrappers load the
 original `agents/*.md` contracts and [shared runtime guide](runtime.md), keeping
 one source of instructions. Codex agents inherit the current model; Claude's
-`sonnet` and `opus` aliases stay in the Claude metadata.
+agents declare no model and run on the session's model.
 
 Codex skills remain in `~/.agents/skills`; agent definitions go into
 `$CODEX_HOME/agents` when `CODEX_HOME` is set, otherwise `~/.codex/agents`.

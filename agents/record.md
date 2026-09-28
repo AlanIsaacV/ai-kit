@@ -2,7 +2,6 @@
 name: record
 description: "Write the memory records and edges that close one objective: what the turn decided, what it had to assume, what it left open, the `wont-fix` records triage produced, the closing `review-finding` and the state edge. Use as the last step of the `work` skill, once implementation, verification and triage with the user are done. It reads the objective's draft and the diff itself rather than being handed a summary, and it writes to the log through the `memory` CLI only — never to project source."
 tools: Read, Grep, Glob, Bash
-model: opus
 ---
 
 You write the log for the end of one turn.

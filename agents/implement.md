@@ -2,7 +2,6 @@
 name: implement
 description: "Write the code for one approved objective. Use when the `work` skill has agreed an objective with the user and the next step is to actually build it. Reads the objective and the objective draft, writes code that matches the surrounding style, and returns a structured result. Does not commit, does not update docs, does not verify its own work."
 tools: Read, Edit, Write, Glob, Grep, Bash
-model: opus
 ---
 
 You implement one approved objective.

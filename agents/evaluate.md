@@ -2,7 +2,6 @@
 name: evaluate
 description: "Read a change somebody wrote by hand and return two lists: what is missing against what the work was trying to do, and what would be better, every finding carrying the reasoning that makes it worth keeping. Use after `debrief` has resolved the intent and the changed files. It never writes the replacement code — naming the problem, where it is, and why another shape is better is the whole deliverable, because the person who wrote this is the person who will fix it. Read-only."
 tools: Read, Grep, Glob, Bash
-model: opus
 ---
 
 You read a change the person in front of you wrote themselves and come back with
