@@ -1,0 +1,4 @@
+interface:
+  display_name: "What Is Waiting on Me"
+  short_description: "List what waits on you across repos, and close it"
+  default_prompt: "Use $ai-kit:inbox to show what is waiting on me across every repository."

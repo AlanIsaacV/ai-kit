@@ -204,6 +204,7 @@ type Tree struct {
 	byID       map[string]*Entry // objectives only
 	edges      []*Edge           // every edge the tree was derived from, in file order
 	allEntries map[string]*Entry
+	ideas      []*Entry
 	parent     map[string]string
 	children   map[string][]string
 	superseded map[string]bool
@@ -256,6 +257,9 @@ func NewTreeIn(lines, store []Line) *Tree {
 			continue
 		}
 		held[e.ID] = true
+		if e.Kind == KindIdea {
+			t.ideas = append(t.ideas, e)
+		}
 		if e.Kind != KindObjective {
 			continue
 		}
@@ -368,6 +372,16 @@ func findCycles(objectives []*Entry, parent map[string]string) []Anomaly {
 func (t *Tree) Objectives() []*Entry { return t.objectives }
 
 func (t *Tree) Entry(id string) *Entry { return t.allEntries[id] }
+
+func (t *Tree) OpenIdeas() []*Entry {
+	out := []*Entry{}
+	for _, e := range t.ideas {
+		if !t.answered[e.ID] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
 
 // Anomalies returns what the derivation met that the write path would have
 // refused. Empty for every log this tool wrote on its own.

@@ -44,6 +44,7 @@ skills/work    run one objective: pick, gate, implement, verify, record — revi
 skills/brief   think a piece of work through, then hand you the map you implement from
 skills/debrief read the code you wrote and say what you missed and what would be better
 skills/ask     answer a question about a repo from its code and its log, every claim cited
+skills/inbox   say what is waiting on you across every repo, and close it from your words
 skills/bootstrap  give an unseen repo a README.md and a CLAUDE.md in one invocation
 skills/prefer  record why this repo chose what it chose, and carry it to the next one
 agents/        explore · implement · verify · review · evaluate · record
@@ -165,14 +166,14 @@ removing them would only be a second place to keep them written down.
 
 Installing requires Go 1.26+, Python 3.10+ and make on a POSIX system. Use a
 Claude Code version supporting skills-directory plugins and a Codex version
-supporting personal TOML agents. Claude Code 2.1.270 reported eight skills and
-six agents; Codex 0.154.0 reported eight skills. The native Codex role files
+supporting personal TOML agents. Claude Code 2.1.270 reported nine skills and
+six agents; Codex 0.154.0 reported nine skills. The native Codex role files
 were validated locally; a full delegated model run was not exercised. See the official
 [Claude skills-directory plugin documentation](https://code.claude.com/docs/en/skills#skills-directory-plugins),
 [Codex skill discovery documentation](https://learn.chatgpt.com/docs/build-skills)
 and [Codex agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
-In Claude Code, `claude plugin details ai-kit` should show eight skills and six
+In Claude Code, `claude plugin details ai-kit` should show nine skills and six
 agents. Invoke skills as `/ai-kit:plan` or `/ai-kit:work`. In Codex, select the
 installed skills or invoke `$ai-kit:plan` / `$ai-kit:work`; the native agent names
 use hyphens instead of colons. Both hosts load the same skill files, including
@@ -190,7 +191,7 @@ make check
 ```
 
 `scripts/check-frontmatter` walks the tree, finds every file that opens with YAML
-frontmatter — the eight `skills/*/SKILL.md` and the six `agents/*.md` today, and
+frontmatter — the nine `skills/*/SKILL.md` and the six `agents/*.md` today, and
 whatever is added later, since the set is read off the tree rather than listed
 here — and refuses any whose `description` spans more than one physical line. It
 names the path and the line and exits non-zero. It repairs nothing, and nothing

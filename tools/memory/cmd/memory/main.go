@@ -1543,7 +1543,7 @@ func cmdState(args []string) error {
 	}
 
 	if *text {
-		fmt.Print(memory.RenderWaiting([]memory.LogState{{Name: loc.Name(), Tree: tree, Report: rep}}, nil))
+		fmt.Print(memory.RenderWaiting([]memory.LogState{{Name: loc.Name(), Root: loc.Repo, Tree: tree, Report: rep}}, nil))
 		return nil
 	}
 
@@ -1621,7 +1621,7 @@ func stateAcrossLogs(id string, text bool) error {
 			rep, n = filterByID(rep, id)
 			matched += n
 		}
-		logs = append(logs, memory.LogState{Name: loc.Name(), Tree: tree, Report: rep})
+		logs = append(logs, memory.LogState{Name: loc.Name(), Root: loc.Repo, Tree: tree, Report: rep})
 		reports = append(reports, memory.RepoReport{Repo: loc.Name(), Report: rep})
 	}
 
@@ -1643,6 +1643,7 @@ func stateAcrossLogs(id string, text bool) error {
 		"excluded":   merged.Excluded,
 		"current":    merged.Current,
 		"anomalies":  merged.Anomalies,
+		"ideas":      memory.WaitingIdeas(logs),
 	})
 	return nil
 }

@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### The `idea` kind, and an Ideas section in what is waiting on you
+
+Something you want to do some day had nowhere to live: the only thing the log
+could hold that shows up beside what is pending was an objective, and an
+objective means planning. An `idea` is one line — a title and an optional body —
+written without a plan, and it is listed until something `answers` it.
+
+```bash
+memory add --kind idea --title "A digest of pending items every morning" --about inbox
+memory add --kind idea --scope user --title "Voice notes become ideas" --about inbox
+memory state --all --text     # Ideas (2), each with its log's name and id
+```
+
+- **No version 4.** `entryKindsV3` gained a fourth widening with
+  `CurrentSchemaVersion` left at 3, for the reason the `hypothesis` widening
+  states in full: widening takes nothing back from a record already written.
+  `anchoredKindsV3` and `promotableKindsV3` are untouched — an idea is about work
+  that does not exist yet, so it has no code to anchor to, and a loose one is
+  written to the user log directly rather than promoted there.
+- **No new edge type and no new state.** An idea is open until some record
+  `answers` it — the objective that takes it up, or a `decision` that drops it —
+  which is the answered set `open-question` already reads. REJECTED: an
+  `open-question` tagged `idea`, which would have put ideas in the closing rate
+  and made every one read as something the loop owes an answer to.
+- **Ideas are listed and not counted.** `memory state --text` prints **Ideas**
+  after *Set aside*, one line per idea no record answers across every log, the
+  user log included. An idea is named once by id, the first log holding it owning
+  the line, because promotion copies a record with its id untouched — the same
+  reason the closing rate counts an id once. The closing rate's kinds are still
+  `open-question` and `assumption`. A log whose only open record is an idea is no
+  longer under *Nothing waiting*, and *Nothing is open* is printed only when no
+  idea is either.
+- **`state --all` gains a top-level `ideas` array**, each element
+  `{"root", "repo", "id", "title"}`, with `root` present and empty for the user
+  log. It is built from the same list the text prints, for the `inbox` skill to
+  read. The single-log report gains no key, and no struct of the report gained a
+  field: the per-item `repo` tag is still `omitempty` and still set only by
+  `MergeReports`.
+- **`LogState` carries `Root`**, the log's working tree, so the ideas can name it
+  without a second read of the store. `Tree` keeps the ideas the log itself holds,
+  in file order, beside its objectives; `Tree.OpenIdeas` is those less the
+  answered.
+
 ### `graph` is gone, and the surface is twelve commands
 
 `memory graph --from <id>` walked the edges out of one record and answered with a

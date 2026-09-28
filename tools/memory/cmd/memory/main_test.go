@@ -775,12 +775,12 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 	// Version 3 took `unit` away, and this is the list a caller reads to find out
 	// what the write gate accepts — so the narrowing has to show up here, or the
 	// tool advertises a kind it refuses. The ten that are left, plus the kinds
-	// widened into version 3 in place afterwards — `hypothesis`, `gotcha`, then
-	// `preference`: a widening owes this list the same update a narrowing does, in
+	// widened into version 3 in place afterwards — `hypothesis`, `gotcha`,
+	// `preference`, then `idea`: a widening owes this list the same update a narrowing does, in
 	// the other direction, or the tool hides a value it accepts.
 	wantKinds := []string{"objective", "decision", "deviation", "assumption",
 		"open-question", "wont-fix", "dead-end", "adr", "postmortem", "review-finding",
-		"hypothesis", "gotcha", "preference"}
+		"hypothesis", "gotcha", "preference", "idea"}
 	for _, want := range wantKinds {
 		if !slices.Contains(out.EntryKinds, want) {
 			t.Errorf("kind %q went missing from the advertised set: %v", want, out.EntryKinds)

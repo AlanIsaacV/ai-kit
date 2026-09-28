@@ -611,10 +611,10 @@ func TestTheUnitRecordsOnDiskAreJudgedByTheVersionTheyDeclare(t *testing.T) {
 func TestVersion3TookNothingAwayButTheUnitKind(t *testing.T) {
 	// Version 1's eleven minus `unit`, and every kind added to this set since. The
 	// count is written as that sum rather than as a number, because the number has
-	// already moved three times — `hypothesis`, `gotcha`, then `preference`, widened
+	// already moved four times — `hypothesis`, `gotcha`, `preference`, then `idea`, widened
 	// in afterwards — and a literal would have made an additive change look like a
 	// regression in the test that guards the narrowing.
-	widenedIn := []Kind{KindHypothesis, KindGotcha, KindPreference}
+	widenedIn := []Kind{KindHypothesis, KindGotcha, KindPreference, KindIdea}
 	if want := len(entryKindsV1) - 1 + len(widenedIn); len(entryKindsV3) != want {
 		t.Errorf("version 3 knows version 1's eleven minus `unit`, plus %d widened in since: %v",
 			len(widenedIn), sortedKinds(entryKindsV3))

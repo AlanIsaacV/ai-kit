@@ -8,8 +8,34 @@ import (
 
 type LogState struct {
 	Name   string
+	Root   string
 	Tree   *Tree
 	Report StateReport
+}
+
+type Idea struct {
+	Root  string `json:"root"`
+	Repo  string `json:"repo"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+func WaitingIdeas(logs []LogState) []Idea {
+	out := []Idea{}
+	seen := map[string]bool{}
+	for _, log := range logs {
+		if log.Tree == nil {
+			continue
+		}
+		for _, e := range log.Tree.OpenIdeas() {
+			if seen[e.ID] {
+				continue
+			}
+			seen[e.ID] = true
+			out = append(out, Idea{Root: log.Root, Repo: log.Name, ID: e.ID, Title: e.Title})
+		}
+	}
+	return out
 }
 
 const (
@@ -17,6 +43,7 @@ const (
 	headingBlocked  = "Blocked on a question or a decision"
 	headingApproved = "Waiting for you to start it"
 	headingAside    = "Set aside"
+	headingIdeas    = "Ideas"
 	headingAnomaly  = "Anomalies in the reading"
 	headingRate     = "Closing rate"
 	quietWidth      = 76
@@ -72,6 +99,12 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 		}
 	}
 
+	var ideas []waitItem
+	for _, idea := range WaitingIdeas(logs) {
+		named[idea.Repo] = true
+		ideas = append(ideas, waitItem{repo: idea.Repo, text: idea.Title, id: idea.ID})
+	}
+
 	var quiet []string
 	for _, log := range logs {
 		if !named[log.Name] {
@@ -85,6 +118,7 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 		{heading: headingBlocked, groups: blockedGroups(blocked)},
 		{heading: headingApproved, groups: oneGroup(items[StateApprovedForExecution])},
 		{heading: headingAside, groups: oneGroup(items[StateSeparated])},
+		{heading: headingIdeas, groups: oneGroup(ideas)},
 		{heading: headingAnomaly, groups: oneGroup(anomalies)},
 	}
 
@@ -105,7 +139,7 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 	for _, w := range warnings {
 		fmt.Fprintf(&b, "! %s\n", w)
 	}
-	if total == 0 && len(anomalies) == 0 {
+	if total == 0 && len(anomalies) == 0 && len(ideas) == 0 {
 		b.WriteString("\nNothing is open.\n")
 		b.WriteString(renderRate(logs))
 		return b.String()

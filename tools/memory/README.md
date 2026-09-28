@@ -115,6 +115,7 @@ two records in a repo can now be linked, whatever plan produced them.
 | Core | `objective` `decision` `deviation` | Make the work loop run |
 | Learning | `assumption` `open-question` `wont-fix` `dead-end` `hypothesis` | Stop verification theater and repeated work |
 | Knowledge | `adr` `postmortem` `review-finding` `gotcha` `preference` | Outlive the plan |
+| Pending | `idea` | Something you want to do some day, kept until it is taken up or dropped |
 
 Which kinds [promotion](#promotion) will sweep as a class is a set of its own and
 is deliberately not this group; any record still promotes by id.
@@ -175,8 +176,20 @@ accident, while `--kind` is a closed set the validator enforces — and the loop
 writes a `decision` at every objective's close, so a preference would be a needle
 in that haystack.
 
-It is the kind written [without a plan](#records-the-repository-owns), which is
+It is a kind written [without a plan](#records-the-repository-owns), which is
 also where the convention for reading two contradictory ones lives.
+
+`idea` is something you want to do some day, noted in one line with no planning
+behind it: a title and, if you want one, a body — no priority, no due date, no
+draft and no criteria. It lives in the log of the repository it is about, or in
+the user log when it is about none, and it is listed under **Ideas** in
+[what is waiting on you](#what-is-waiting-on-you-across-every-log) until some
+record `answers` it — the objective that takes it up, or a `decision` that drops
+it. That is the rule `open-question` already follows, so closing one needed no
+new edge type and no new state. It was [widened into version 3](#the-versions) in
+place, after `preference`; it is not anchored, because it is about work that does
+not exist yet, and it is not in the set `promote --kind` sweeps, because an idea
+about no repository in particular is written to the user log directly.
 
 There used to be a `unit` as well, for a piece of work under an objective, and
 removing it is what [schema version 3](#changing-the-schema) is. An objective may
@@ -193,9 +206,10 @@ repository itself, and they are written with **no `--plan`** and no
 validator — `origin.plan` is `omitempty` and no version's rule set has ever
 looked at it, so all three live here rather than in a refusal.
 
-**Which kinds are written without a plan.** `preference` is the one, today. The
-test is whether the record would still be true after every objective in the plan
-directory is closed and forgotten: a preference would, a decision taken under an
+**Which kinds are written without a plan.** `preference` and `idea` are the two,
+today. The test is whether the record would still be true after every objective in
+the plan directory is closed and forgotten: a preference would, and so would an
+idea, which by definition came out of no objective; a decision taken under an
 objective would not. Nothing stops another kind from being written this way, and
 nothing should — an `open-question` about the repository as a whole is the
 obvious next candidate — but a record that *could* name the objective it came out
@@ -851,6 +865,9 @@ Waiting for you to start it (9)
 Set aside (2)
   ai-kit             Make the record schema evolvable  (01KZ34725V37YX845RTVPC7N0E)
 
+Ideas (1)
+  user               A digest of pending items every morning  (01M3KACFKX3YRCQZB4Q2A72Z8M)
+
 Nothing waiting (19 logs)
   be-bm-fix-orders, be-cashout-co, be-deadletter, be-fix-logs, ...
 ```
@@ -926,6 +943,19 @@ is waiting for you to start it, `separated` is set aside, and `blocked` sits und
 the record it waits on, named: the title comes from the `blocked` edge's target,
 so two objectives held up by the same question read as one wait rather than two.
 Terminal objectives are absent, and so is anything superseded or answered.
+
+**Ideas are listed beside the work, and counted apart from it.** Every `idea` no
+record `answers` is listed under **Ideas** with the name of the log holding it and
+its id, the user log included; one that something answers — wherever that answer
+was written — is gone from the list. An idea is named once by its id alone, the
+first log holding it owning the line, because a promoted idea is one record in two
+logs rather than two ideas. A log whose only open record is an idea is not counted
+under *Nothing waiting*, and ideas are not in the closing rate: they are not
+questions, and a rate that means something today would stop meaning it. The
+`--all` JSON carries the same list as a top-level `ideas` array, each element
+`{"root", "repo", "id", "title"}`: `repo` is the log's name as the text prints it,
+and `root` is that log's working tree, empty for the user log. The single-log
+report gains no key.
 
 **It creates nothing.** Every other read resolves its location and creates
 `.ai-kit/` on the way past; this one takes its paths out of the store, and
@@ -1016,7 +1046,7 @@ rather than passed over in silence.
 |---|---|---|
 | 1 | eleven kinds; `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
 | 2 | eleven kinds; `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
-| 3 | thirteen kinds; `scope` and the edge types are version 2's; entries may carry `anchors` | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis`, `gotcha` and then `preference`, and the optional `anchors` field arrived the same way — with one rule that tightens: a `gotcha` without one is refused |
+| 3 | fourteen kinds; `scope` and the edge types are version 2's; entries may carry `anchors` | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis`, `gotcha`, `preference` and then `idea`, and the optional `anchors` field arrived the same way — with one rule that tightens: a `gotcha` without one is refused |
 
 **Version 3 is the current version, and dropping the `unit` kind is what the bump
 bought.** `entryKindsV3` started as version 1's eleven without it — the two kinds
@@ -1044,7 +1074,7 @@ where that value is valid. Not a byte of them was rewritten, and no legacy value
 entered the current validator.
 
 **The kinds widened afterwards, and stayed inside version 3.** `entryKindsV3`
-gained `hypothesis`, then `gotcha`, then `preference`, appended to the map
+gained `hypothesis`, then `gotcha`, then `preference`, then `idea`, appended to the map
 literal, with `CurrentSchemaVersion` left at 3 — the same move version 2 made
 with the state edges, for the same reason: widening makes no record already
 written illegal, so a bump would protect nothing. `entryKindsV1` gained none of
@@ -1052,7 +1082,7 @@ them, so an entry declaring version 1 or 2 with one of those kinds is refused by
 the rules it declares, which is what says the widening happened inside one
 version rather than everywhere at once. What it costs is the same false alarm the
 rule above names: a binary built before this reports `kind: unknown` where it
-would have reported an honest `unjudged`. Three widenings do not add up to a
+would have reported an honest `unjudged`. Four widenings do not add up to a
 bump: the direction is what decides, not the count.
 
 `preference` needed nothing else from the schema. It is not added to
@@ -1603,6 +1633,10 @@ under different tags is invisible to whoever finds the mistake.
 - `preference` clears them a third time, is absent from `anchored_kinds`, and is
   written with no `--anchor` where an unanchored `gotcha` is still refused. Three
   widenings still do not add up to a bump.
+- `idea` is advertised by `memory kinds` and counted in version 3's widenings, so
+  four of them still leave the version at 3; an answered idea is gone from the
+  Ideas section while an unanswered one in the user log is listed with its log's
+  name and id.
 - Anchors survive a round trip through the log field for field, on a record
   carrying two of them, and the log still sweeps clean afterwards.
 - `add --kind gotcha` with no anchor is refused on the `anchors` field, the
