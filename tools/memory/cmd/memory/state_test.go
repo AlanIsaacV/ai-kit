@@ -354,11 +354,12 @@ func TestCurrentOverObjectivesReturnsEveryOpenOne(t *testing.T) {
 		}
 	}
 
-	// Marking the leaf met drops the leaf and only the leaf.
+	// Marking the only leaf met drops it, and the two parents it leaves with
+	// nothing outstanding read met and drop with it.
 	mustLink(t, r, "met", leaf, decision)
 	got = readQuery(t, r, "query", "--plan", "demo", "--kind", "objective", "--current")
-	if got.Count != 2 || contains(ids(got), leaf) {
-		t.Fatalf("only the met objective should have gone: %v", ids(got))
+	if got.Count != 0 {
+		t.Fatalf("the met leaf and the parents derived met from it should have gone: %v", ids(got))
 	}
 
 	// `separated` is open. The work continues; it continues elsewhere.

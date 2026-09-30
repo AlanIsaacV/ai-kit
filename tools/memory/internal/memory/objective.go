@@ -25,7 +25,8 @@ import (
 // ------------------------------------------------------------------ state ---
 
 // State is the resolved state of a record: what the state edges pointing out of
-// it add up to, rather than a field anything stores.
+// it add up to, or for a parent what its children's add up to, rather than a
+// field anything stores.
 //
 // It is a type of its own rather than an EdgeType because one of its values is
 // not an edge and never can be. `planned` is the *absence* of every state edge,
@@ -102,11 +103,24 @@ func ResolveState(edges []*Edge, id string) State {
 }
 
 func ResolveStateEdge(edges []*Edge, id string) (State, *Edge) {
-	state := StatePlanned
-	var winner *Edge
-	var best time.Time
-	bestSeq := 0
-	found := false
+	r := resolveOwn(edges, id, nil)
+	return r.state, r.edge
+}
+
+const StateFromChildren = "children"
+
+type resolution struct {
+	state State
+	edge  *Edge
+	from  string
+	at    time.Time
+	seq   int
+}
+
+func (r resolution) dated() bool { return r.edge != nil || r.from != "" }
+
+func resolveOwn(edges []*Edge, id string, released func(*Edge) bool) resolution {
+	r := resolution{state: StatePlanned}
 	for seq, e := range edges {
 		if e.From != id {
 			continue
@@ -115,13 +129,16 @@ func ResolveStateEdge(edges []*Edge, id string) (State, *Edge) {
 		if !isTransition {
 			continue
 		}
-		at := parseAt(e.At)
-		if found && !beats(at, seq, best, bestSeq) {
+		if released != nil && released(e) {
 			continue
 		}
-		state, winner, best, bestSeq, found = s, e, at, seq, true
+		at := parseAt(e.At)
+		if r.edge != nil && !beats(at, seq, r.at, r.seq) {
+			continue
+		}
+		r = resolution{state: s, edge: e, at: at, seq: seq}
 	}
-	return state, winner
+	return r
 }
 
 // beats reports whether a challenger displaces the best record seen so far,
@@ -210,6 +227,7 @@ type Tree struct {
 	superseded map[string]bool
 	answered   map[string]bool
 	settled    map[string]bool
+	resolved   map[string]resolution
 	touched    map[string]activity
 	anomalies  []Anomaly
 }
@@ -237,6 +255,7 @@ func NewTreeIn(lines, store []Line) *Tree {
 		superseded: SupersededIDs(edges),
 		answered:   AnsweredIDs(edges),
 		settled:    SettledIDs(edges),
+		resolved:   map[string]resolution{},
 		touched:    map[string]activity{},
 	}
 	reachable := Entries(store)
@@ -388,9 +407,91 @@ func (t *Tree) OpenIdeas() []*Entry {
 func (t *Tree) Anomalies() []Anomaly { return t.anomalies }
 
 // State is the resolved state of any record in the log, objective or not.
-func (t *Tree) State(id string) State { return ResolveState(t.edges, id) }
+func (t *Tree) State(id string) State { return t.resolve(id).state }
 
-func (t *Tree) StateEdge(id string) (State, *Edge) { return ResolveStateEdge(t.edges, id) }
+func (t *Tree) StateEdge(id string) (State, *Edge) {
+	r := t.resolve(id)
+	return r.state, r.edge
+}
+
+func (t *Tree) StateFrom(id string) string { return t.resolve(id).from }
+
+func (t *Tree) resolve(id string) resolution {
+	if r, done := t.resolved[id]; done {
+		return r
+	}
+	r := resolveOwn(t.edges, id, t.releasedBlock)
+	if derived, ok := t.derivedMet(id, r); ok {
+		r = derived
+	}
+	t.resolved[id] = r
+	return r
+}
+
+func (t *Tree) releasedBlock(e *Edge) bool {
+	if e.Type != EdgeBlocked || !t.answered[e.To] {
+		return false
+	}
+	target := t.allEntries[e.To]
+	return target != nil && target.Kind == KindOpenQuestion
+}
+
+func (t *Tree) derivedMet(id string, own resolution) (resolution, bool) {
+	if own.state == StateMet || len(t.children[id]) == 0 || t.onCycle(id) {
+		return resolution{}, false
+	}
+	c := t.Completion(id)
+	if len(c.CountedDone) == 0 || len(c.Outstanding) > 0 {
+		return resolution{}, false
+	}
+	var last resolution
+	found := false
+	for _, child := range t.children[id] {
+		at, seq, ok := t.closedAt(child)
+		if !ok || (found && !beats(at, seq, last.at, last.seq)) {
+			continue
+		}
+		last.at, last.seq, found = at, seq, true
+	}
+	if own.edge != nil && (!found || beats(own.at, own.seq, last.at, last.seq)) {
+		return resolution{}, false
+	}
+	return resolution{state: StateMet, from: StateFromChildren, at: last.at, seq: last.seq}, true
+}
+
+func (t *Tree) closedAt(id string) (time.Time, int, bool) {
+	var at time.Time
+	seq, found := 0, false
+	if r := t.resolve(id); r.dated() {
+		at, seq, found = r.at, r.seq, true
+	}
+	if !t.superseded[id] {
+		return at, seq, found
+	}
+	for i, e := range t.edges {
+		if e.Type != EdgeSupersedes || e.To != id {
+			continue
+		}
+		if a := parseAt(e.At); !found || beats(a, i, at, seq) {
+			at, seq, found = a, i, true
+		}
+	}
+	return at, seq, found
+}
+
+func (t *Tree) onCycle(id string) bool {
+	seen := map[string]bool{}
+	for cur, ok := t.parent[id]; ok; cur, ok = t.parent[cur] {
+		if cur == id {
+			return true
+		}
+		if seen[cur] {
+			return false
+		}
+		seen[cur] = true
+	}
+	return false
+}
 
 // Parent is the objective this one derives from, or "" for a root.
 //
@@ -725,6 +826,7 @@ type ObjectiveState struct {
 	Title              string       `json:"title"`
 	Plan               string       `json:"plan,omitempty"`
 	State              State        `json:"state"`
+	StateFrom          string       `json:"state_from,omitempty"`
 	Open               bool         `json:"open"`
 	Depth              int          `json:"depth"`
 	Parent             string       `json:"parent,omitempty"`
@@ -741,13 +843,14 @@ type ObjectiveState struct {
 // report looks like a bug in the tool or a missing record; an objective listed
 // with the reason it was set aside is an answer.
 type ExcludedObjective struct {
-	Repo   string `json:"repo,omitempty"`
-	Root   string `json:"root,omitempty"`
-	ID     string `json:"id"`
-	Slug   string `json:"slug"`
-	Title  string `json:"title"`
-	State  State  `json:"state"`
-	Reason string `json:"reason"`
+	Repo      string `json:"repo,omitempty"`
+	Root      string `json:"root,omitempty"`
+	ID        string `json:"id"`
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	State     State  `json:"state"`
+	StateFrom string `json:"state_from,omitempty"`
+	Reason    string `json:"reason"`
 }
 
 // StateReport is what `memory state` answers with: every live objective, what
@@ -786,13 +889,14 @@ func (t *Tree) Report() StateReport {
 				reason = "superseded"
 			}
 			rep.Excluded = append(rep.Excluded, ExcludedObjective{
-				ID: o.ID, Slug: o.Slug, Title: o.Title, State: state, Reason: reason,
+				ID: o.ID, Slug: o.Slug, Title: o.Title, State: state, StateFrom: t.StateFrom(o.ID), Reason: reason,
 			})
 			continue
 		}
 		rep.Objectives = append(rep.Objectives, ObjectiveState{
 			ID: o.ID, Slug: o.Slug, Title: o.Title, Plan: planOf(o),
 			State:              state,
+			StateFrom:          t.StateFrom(o.ID),
 			Open:               state.Open(),
 			Depth:              t.Depth(o.ID),
 			Parent:             t.Parent(o.ID),

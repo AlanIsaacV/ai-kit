@@ -241,8 +241,10 @@ Then decide what the write is, from their words and the draft's
   edge to what is still owed: to the remaining `open-question` with `memory link`
   after the batch, or, when what is owed is a landing condition no question names
   yet, to a new `open-question` on a second line of the same batch. Answering a
-  blocking question does not unblock anything by itself, and an objective left
-  blocked on an answered question reads as waiting on nothing.
+  blocking question releases the block by itself: without the fresh edge the
+  objective falls back to the state it had before it was blocked — waiting for
+  you to start it if it had been approved, waiting for your approval if it never
+  was — not on what is still owed.
 - **It failed.** The `decision` answers the question with the failure, and the
   objective gets a fresh `blocked` edge to a new `open-question` naming what failed,
   on the second line of the same batch. The objective stays open and the listing now

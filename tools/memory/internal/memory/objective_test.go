@@ -99,6 +99,35 @@ func TestOnlyEdgesLeavingARecordDecideItsState(t *testing.T) {
 	}
 }
 
+func TestABlockOnAnAnsweredQuestionFallsBackToThePriorState(t *testing.T) {
+	approved := objective(t, "Approved, then blocked on a question")
+	fresh := objective(t, "Blocked on a question before anything else")
+	held := objective(t, "Blocked on a decision")
+	decision := entry(t, KindDecision, "The decision behind it", "auth")
+	question := entry(t, KindOpenQuestion, "What was holding it up", "auth")
+	answer := entry(t, KindDecision, "The answer to it", "auth")
+	approval := edgeAt(EdgeApprovedForExecution, approved.ID, decision.ID, "2026-08-01T10:00:00Z")
+
+	tree := NewTree(logOf([]*Entry{approved, fresh, held, decision, question, answer}, []*Edge{
+		approval,
+		edgeAt(EdgeBlocked, approved.ID, question.ID, "2026-08-02T10:00:00Z"),
+		edgeAt(EdgeBlocked, fresh.ID, question.ID, "2026-08-02T10:00:00Z"),
+		edgeAt(EdgeBlocked, held.ID, decision.ID, "2026-08-02T10:00:00Z"),
+		edgeAt(EdgeAnswers, answer.ID, question.ID, "2026-08-03T10:00:00Z"),
+		edgeAt(EdgeAnswers, answer.ID, decision.ID, "2026-08-03T10:00:00Z"),
+	}))
+
+	if state, edge := tree.StateEdge(approved.ID); state != StateApprovedForExecution || edge != approval {
+		t.Errorf("the answered block stops counting and the approval under it answers, got %q from %+v", state, edge)
+	}
+	if got := tree.State(fresh.ID); got != StatePlanned {
+		t.Errorf("with no earlier state edge the objective falls back to planned, got %q", got)
+	}
+	if got := tree.State(held.ID); got != StateBlocked {
+		t.Errorf("a block on a decision is unchanged, got %q", got)
+	}
+}
+
 // Open is met and cancelled inverted, and `separated` sitting on the open side
 // is the decision worth pinning down: the work continues, so the objective is
 // still a candidate for --current.
@@ -327,6 +356,76 @@ func TestCompletionCountsMetAndSupersededAndNotCancelledOrSeparated(t *testing.T
 		if strings.Join(sortedCopy(got[bucket]), ",") != strings.Join(sortedCopy(ids), ",") {
 			t.Errorf("%s: want %v, got %v", bucket, ids, got[bucket])
 		}
+	}
+}
+
+func TestAParentWithNothingOutstandingAndOneChildDoneReadsMet(t *testing.T) {
+	grandparent := objective(t, "The grandparent")
+	parent := objective(t, "The parent")
+	met := objective(t, "Met")
+	cancelled := objective(t, "Cancelled")
+	abandoned := objective(t, "A parent whose children were all dropped")
+	dropped := objective(t, "Dropped")
+	moved := objective(t, "Moved elsewhere")
+	decision := entry(t, KindDecision, "The decision behind the states", "auth")
+
+	tree := NewTree(logOf([]*Entry{grandparent, parent, met, cancelled, abandoned, dropped, moved, decision}, []*Edge{
+		derivesFrom(parent, grandparent), derivesFrom(met, parent), derivesFrom(cancelled, parent),
+		derivesFrom(dropped, abandoned), derivesFrom(moved, abandoned),
+		edgeAt(EdgeMet, met.ID, decision.ID, "2026-08-03T11:00:00Z"),
+		edgeAt(EdgeCancelled, cancelled.ID, decision.ID, "2026-08-03T12:00:00Z"),
+		edgeAt(EdgeCancelled, dropped.ID, decision.ID, "2026-08-03T11:00:00Z"),
+		edgeAt(EdgeSeparated, moved.ID, decision.ID, "2026-08-03T11:00:00Z"),
+	}))
+
+	if got := tree.State(parent.ID); got != StateMet {
+		t.Fatalf("one child met and the other cancelled leaves nothing outstanding, so the parent reads met; got %q", got)
+	}
+	if got := tree.StateFrom(parent.ID); got != StateFromChildren {
+		t.Errorf("the parent's met is derived and has to say so, got %q", got)
+	}
+	if got := tree.Completion(grandparent.ID).CountedDone; len(got) != 1 || got[0] != parent.ID {
+		t.Errorf("the grandparent counts its derived-met child as done, got %v", got)
+	}
+	if got := tree.State(grandparent.ID); got != StateMet {
+		t.Errorf("the derivation climbs the tree, got %q", got)
+	}
+	if got := tree.State(abandoned.ID); got != StatePlanned {
+		t.Errorf("children that were all cancelled or separated derive nothing, got %q", got)
+	}
+	if got := tree.StateFrom(abandoned.ID); got != "" {
+		t.Errorf("a state nothing derived carries no marker, got %q", got)
+	}
+
+	for _, o := range tree.Report().Objectives {
+		if o.ID == parent.ID && (o.State != StateMet || o.Open || o.StateFrom != StateFromChildren) {
+			t.Errorf("the report reads the derived state: %+v", o)
+		}
+	}
+}
+
+func TestALaterStateEdgeOfTheParentsOwnBeatsTheDerivedOne(t *testing.T) {
+	parent := objective(t, "A parent with criteria of its own")
+	child := objective(t, "Its only child")
+	decision := entry(t, KindDecision, "The decision behind the states", "auth")
+	all := []*Entry{parent, child, decision}
+	edges := []*Edge{
+		derivesFrom(child, parent),
+		edgeAt(EdgeApprovedForExecution, parent.ID, decision.ID, "2026-08-03T10:00:00Z"),
+		edgeAt(EdgeMet, child.ID, decision.ID, "2026-08-03T11:00:00Z"),
+	}
+
+	if got := NewTree(logOf(all, edges)).State(parent.ID); got != StateMet {
+		t.Fatalf("an own edge older than the child's close loses to the derived met, got %q", got)
+	}
+
+	edges = append(edges, edgeAt(EdgeApprovedForExecution, parent.ID, decision.ID, "2026-08-03T12:00:00Z"))
+	tree := NewTree(logOf(all, edges))
+	if got := tree.State(parent.ID); got != StateApprovedForExecution {
+		t.Fatalf("an own edge written after the child closed keeps the parent open, got %q", got)
+	}
+	if got := tree.StateFrom(parent.ID); got != "" {
+		t.Errorf("the state is the parent's own and carries no marker, got %q", got)
 	}
 }
 
@@ -569,13 +668,8 @@ func TestQueryCurrentDropsOnlyTerminalObjectives(t *testing.T) {
 
 	edges = append(edges, edgeAt(EdgeMet, leaf.ID, decision.ID, "2026-08-04T10:00:00Z"))
 	res = QueryIn(logOf(all, edges), logOf(all, edges), Filter{Kinds: []Kind{KindObjective}, CurrentOnly: true})
-	if res.Count != 2 {
-		t.Fatalf("marking the leaf met drops the leaf and only the leaf: %d", res.Count)
-	}
-	for _, r := range res.Records {
-		if r.ID == leaf.ID {
-			t.Error("the met objective is still being returned")
-		}
+	if res.Count != 0 {
+		t.Fatalf("marking the only leaf met leaves nothing outstanding, so its parents read met and drop with it: %d", res.Count)
 	}
 }
 

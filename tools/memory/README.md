@@ -692,6 +692,35 @@ And one honest limit: **returning to bare `planned` is not expressible.**
 In practice nothing wants to: a record leaves `approved_for_execution` for
 `blocked` or `cancelled`, not for `planned`.
 
+### Two states read off the graph rather than the edge
+
+The rule above is what a record's own edges say. Two shapes of the graph change
+the answer, and both are derived on the read path — nothing is written, and the
+edges on disk stay exactly as they were:
+
+- **A parent whose children are settled reads `met`.** An objective with at
+  least one child that counts as done (`met`, or superseded) and none
+  outstanding resolves to `met`, and `memory state` marks it with
+  `"state_from": "children"`. Children that are all `cancelled` or `separated`
+  derive nothing. A state edge of the parent's own written after its last
+  child's closing edge — later by `at`, ties to the later line — wins over the
+  derived `met`: that is how a parent with criteria of its own ("two weeks of
+  use") stays open. An own edge written before the children closed loses to it.
+  The derivation climbs the tree, so a grandparent counts a derived-`met` child
+  as done and may derive `met` in turn. An objective on a cycle derives nothing.
+- **A block on an answered question stops counting.** A `blocked` edge whose
+  target is an `open-question` some record `answers` is left out, and the
+  objective resolves from its other state edges — the `approved_for_execution`
+  it had before the block, typically, or `planned` when it has none. This is
+  the one way a record reads `planned` again: not by an edge asserting it, but
+  by the only edge that moved it being released. A block on a `decision` is
+  unchanged.
+
+The derivation lives where state is resolved, so every reader follows it: the
+report's `state` and `open`, the ledger under `--text`, `--current` (a derived
+`met` is terminal and drops out), the current objective, a parent's completion
+and blocked-by-an-open-child.
+
 `memory state` is what computes it. `edges` still reports the edges themselves —
 deliberately, since listing relations is a different question from resolving one
 record's state.
@@ -1721,7 +1750,9 @@ under different tags is invisible to whoever finds the mistake.
   terminates within a deadline the test enforces, reports both anomalies, uses
   the first parent edge in the file, and `validate` still reports `ok`.
 - `--current` over objectives returns every open one, a chain of three included,
-  and drops one the moment it is `met`; every other kind's `--current` drops what
+  and drops one the moment it is `met` — marking the only leaf of that chain
+  `met` drops the two parents it leaves with nothing outstanding as well; every
+  other kind's `--current` drops what
   a `supersedes` or an `answers` edge settles and nothing else, and gets no
   `current_objective` field at all.
 - A `decision` in one repository's log and an `open-question` in another are each
@@ -1759,6 +1790,16 @@ under different tags is invisible to whoever finds the mistake.
   swapping their two entries swaps the answer while the edge points the same way.
 - A parent's tally counts `met` and superseded children as done, leaves
   `cancelled` and `separated` out, and reports the rest outstanding.
+- A parent with one child `met`, another `cancelled` and no state edge of its own
+  resolves to `met` with `state_from: children`, and its own parent counts it as
+  done and reads `met` too; a parent whose children are all `cancelled` or
+  `separated` stays `planned`. An `approved_for_execution` of the parent's own
+  written after its child's `met` keeps it `approved_for_execution`, and one
+  written before does not.
+- An objective approved and then blocked on an open question that something
+  `answers` resolves to `approved_for_execution`, the approval edge its winner;
+  one blocked on such a question with no earlier edge resolves to `planned`; one
+  blocked on a `decision` stays `blocked` even when an `answers` edge names it.
 - `state --all --id`, run from one repository for an objective recorded in
   another, reports it with `root` set to the other repository's working tree; each
   current objective under `--all` names the root of its own log, and `state` over
