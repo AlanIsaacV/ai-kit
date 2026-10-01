@@ -135,14 +135,26 @@ tests picked up the configured `.env` and deleted a production database.
   `npm install`, `pip install -r requirements.txt`. That is the whole of it. No
   call to a service, no API, no fetching a URL, no reaching a staging
   environment.
-- never invoke docker
-- never run migrations
+- never invoke docker or podman, save one: the installed `throwaway-pg`, run
+  as `throwaway-pg --env NAME -- cmd args…`. It starts a PostgreSQL in podman
+  on `127.0.0.1`, hands the command a closed environment with `HOME` and
+  `TMPDIR` empty and `NAME` set to the DSN of the container it started,
+  refuses to start while a readable untracked env file is reachable, and
+  removes the container afterwards. That isolation is what makes it safe, and
+  the runner imposes it rather than the repository declaring it. A script in
+  the repository that invokes docker or podman stays prohibited, whatever it
+  does.
+- never run migrations, save one: migrations a command run under
+  `throwaway-pg` applies to that runner's own container. Nowhere else.
 - never write outside the working tree
 
-Both carve-outs are exactly as wide as they read. A file that looks like a
+Every carve-out is exactly as wide as it reads. A file that looks like a
 template but is not committed is `.env`, whatever it is named; a command that
-fetches what the manifest does not name is a network call. Neither one widens
-by resemblance, which is the move a closed list exists to prevent.
+fetches what the manifest does not name is a network call; a script that
+starts a container the way `throwaway-pg` does is still a script that invokes
+podman; a migration aimed at any database but the runner's own container is a
+migration. None of them widens by resemblance, which is the move a closed list
+exists to prevent.
 
 It holds over the test suite, over any command a criterion names, and over a
 script that was handed to the person — you do not run that script to settle a
@@ -150,8 +162,11 @@ script that was handed to the person — you do not run that script to settle a
 
 This lowers the fidelity you can reach, and it lowers it for every criterion
 rather than only for the `you-run` ones. A `real-dependency` criterion whose
-only possible evidence is on the list — the actual database, a call to the live
-service — is out of reach here by construction, however much reading you do.
+only possible evidence is on the list — a database the environment points at, a
+call to the live service, a suite that starts its own containers — is out of
+reach here by construction, however much reading you do. One whose `Verified by`
+names a `throwaway-pg --env NAME -- cmd args…` invocation is not on it: run
+that invocation as the criterion writes it and grade what it prints.
 Report it `unverified`, and **name the prohibition that blocked it** in the
 note: that sentence is what tells the person which check is now theirs to run
 and why it came back that way, and without it the verdict is indistinguishable
@@ -173,16 +188,17 @@ else your criteria need, you still run.
 2. If you carry `whole_change_checks`, find and run the project's test command,
    capture exit code and a short tail, and say so as a finding if none exists.
    If running it would need something `## What you never run` closes off — a
-   suite that brings up docker, one that loads `.env` — you do not run it:
-   report that as a finding naming the prohibition, exactly as you would report
-   that no such command exists. Without the flag, do not run the suite and omit
-   `test_run` from what you return — it is one command over the whole worktree,
-   and running it once per verifier is the same answer paid for N times.
+   suite that starts its own containers, one that loads `.env` — you do not run
+   it: report that as a finding naming the prohibition, exactly as you would
+   report that no such command exists. Without the flag, do not run the suite
+   and omit `test_run` from what you return — it is one command over the whole
+   worktree, and running it once per verifier is the same answer paid for N
+   times.
 
    Not running the suite is not permission to run nothing. Whatever targeted
    evidence your own criteria need, you still gather, minus everything on that
    closed list. A single test that touches nothing on it, you run. A command
-   whose only possible evidence is on the list — the actual database, the docker
+   whose only possible evidence is on the list — the live database, the docker
    stack, the environment file — you report instead: name the prohibition and
    grade the criterion `unverified` on that basis. The handed-over script is
    the same — it is evidence you describe, never evidence you produce. The

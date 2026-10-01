@@ -137,7 +137,15 @@ That is not licence to expand scope. Say it, do not silently fix it.
    - it runs from one command the repository already exposes — `make test`,
      `npm test`, `go test ./...`; a command that is there already, not one you
      add so the check has something to run under;
-   - it needs no docker;
+   - it needs no docker and no podman, save a PostgreSQL the installed
+     `throwaway-pg` starts for it. Such a check meets this condition only when
+     the criterion's `Verified by` names the invocation that runs it —
+     `throwaway-pg --env NAME -- cmd args…`, `NAME` the variable the code reads
+     its DSN from and `cmd` the repository's own command — because the runner,
+     not the repository, is what keeps the check away from a configured
+     database. A check that starts its own containers, or goes through a
+     script of the repository's that does, fails this condition however it is
+     wired;
    - it needs no network connection;
    - it reads no `.env` and no other environment file.
 
@@ -153,11 +161,12 @@ That is not licence to expand scope. Say it, do not silently fix it.
    belongs to the person, because they are the only one who can see what the
    thing is pointed at.
 
-   The same holds for a criterion the draft says needs a real dependency: build
-   what can actually be exercised and hand it over, rather than satisfying the
-   criterion with a fake and moving on. If you cannot do even that, say so in
-   `concerns`. A green test over a mocked database is worse than no test: it
-   costs the same and it buys false confidence.
+   The same holds for a criterion the draft says needs a real dependency that
+   `throwaway-pg` cannot provide: build what can actually be exercised and hand
+   it over, rather than satisfying the criterion with a fake and moving on. If
+   you cannot do even that, say so in `concerns`. A green test over a mocked
+   database is worse than no test: it costs the same and it buys false
+   confidence.
 8. **Never run any of these.** The list is closed, and it is a list rather than
    a principle because a principle was what was in force when a service running
    integration tests picked up the configured `.env` and deleted this author's
@@ -172,14 +181,26 @@ That is not licence to expand scope. Say it, do not silently fix it.
      `npm install`, `pip install -r requirements.txt`. That is the whole of
      it. No call to a service, no API, no fetching a URL, no reaching a
      staging environment.
-   - never invoke docker
-   - never run migrations
+   - never invoke docker or podman, save one: the installed `throwaway-pg`, run
+     as `throwaway-pg --env NAME -- cmd args…`. It starts a PostgreSQL in podman
+     on `127.0.0.1`, hands the command a closed environment with `HOME` and
+     `TMPDIR` empty and `NAME` set to the DSN of the container it started,
+     refuses to start while a readable untracked env file is reachable, and
+     removes the container afterwards. That isolation is what makes it safe, and
+     the runner imposes it rather than the repository declaring it. A script in
+     the repository that invokes docker or podman stays prohibited, whatever it
+     does.
+   - never run migrations, save one: migrations a command run under
+     `throwaway-pg` applies to that runner's own container. Nowhere else.
    - never write outside the working tree
 
-   Both carve-outs are exactly as wide as they read. A file that looks like a
+   Every carve-out is exactly as wide as it reads. A file that looks like a
    template but is not committed is `.env`, whatever it is named; a command that
-   fetches what the manifest does not name is a network call. Neither one widens
-   by resemblance, which is the move a closed list exists to prevent.
+   fetches what the manifest does not name is a network call; a script that
+   starts a container the way `throwaway-pg` does is still a script that invokes
+   podman; a migration aimed at any database but the runner's own container is a
+   migration. None of them widens by resemblance, which is the move a closed list
+   exists to prevent.
 
 9. **No commits, no pushes, no changes under `docs/`.**
 

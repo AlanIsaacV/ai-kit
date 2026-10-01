@@ -707,7 +707,7 @@ discovered later.
 `you-run` is the fifth value and the only one that names whose turn it is, and
 which criteria get it is a mechanical test rather than a judgment about how
 risky the check feels. Read the check against `agents/verify.md`'s closed list
-of what no agent ever runs: a criterion whose check lands on that list — a real
+of what no agent ever runs: a criterion whose check lands on that list — a live
 database, a queue, a call over the network — is written `you-run` here, because
 no agent is going to execute it and any other fidelity written on it comes back
 `unverified` by construction. `implement` then leaves a runnable script and
@@ -717,10 +717,23 @@ neither, `verify` reports it handed over instead of ever reporting it `met`, and
 `real-dependency` instead it buys an `unverified` that reads as *the agent could
 not manage it*, which is a different sentence from *this one is yours*.
 
+One hit on that list is not the user's. A check whose only hit is a PostgreSQL
+that the installed `throwaway-pg` can provide — a fresh database on loopback,
+migrated by the check itself if it needs to be — is written `real-dependency`,
+and its `Verified by` names the invocation that runs it,
+`throwaway-pg --env NAME -- cmd args…`, with `NAME` the variable the code reads
+its DSN from and `cmd` the command that exercises it. The list carves that
+runner out for every agent, so the check is one they run and grade rather than
+one they hand over. Every other check that lands on the list is still
+`you-run`: a deploy, a remote system, the user's account or session,
+production, and a suite that starts its own containers, which the runner does
+not wrap. A check with a second hit beside the PostgreSQL is `you-run` too,
+because the runner removes one hit and leaves the other standing.
+
 So `real-dependency` is what is left for a check that reaches something real the
 agent may still touch — the working tree's own filesystem, a process it starts
-itself — where the bar is above a double and still reachable by whoever
-verifies.
+itself, a PostgreSQL `throwaway-pg` starts and removes — where the bar is above a
+double and still reachable by whoever verifies.
 
 **The criteria say whether it works. `## Landing condition` says where it has to
 be for that to matter**, and it is a closed set of five:
