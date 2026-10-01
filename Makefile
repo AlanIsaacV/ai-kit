@@ -4,8 +4,6 @@ REPO := $(CURDIR)
 BIN := $(REPO)/bin/memory
 BIN_DIR := $(HOME)/.local/bin
 BIN_LINK := $(BIN_DIR)/memory
-RUNNER := $(REPO)/tools/throwaway-pg/throwaway-pg
-RUNNER_LINK := $(BIN_DIR)/throwaway-pg
 SKILLS_DIR := $(HOME)/.claude/skills
 SKILL_LINK := $(SKILLS_DIR)/ai-kit
 CODEX_SKILLS_DIR := $(HOME)/.agents/skills
@@ -17,16 +15,14 @@ CODEX_AGENT_BUILD_DIR := $(REPO)/bin/codex-agents
 build:
 	go build -C tools/memory -o "$(BIN)" ./cmd/memory
 
-# Nothing here depends on build: the check reads text files, runs throwaway-pg
-# against a fake podman, and installs nothing, so it runs on a clone with no Go
-# toolchain on it.
+# Nothing here depends on build: the check reads text files and installs
+# nothing, so it runs on a clone with no Go toolchain on it.
 check:
 	"$(REPO)/scripts/check-frontmatter"
 	"$(REPO)/scripts/check-surface-adoption"
-	"$(REPO)/tools/throwaway-pg/test_throwaway_pg.py"
 
 doctor check-install:
-	@"$(REPO)/scripts/check-install" --repo "$(REPO)" --bin "$(BIN)" --bin-link "$(BIN_LINK)" --runner "$(RUNNER)" --runner-link "$(RUNNER_LINK)" --claude-link "$(SKILL_LINK)" --skills-dir "$(CODEX_SKILLS_DIR)" --agents-dir "$(CODEX_AGENTS_DIR)" --build-dir "$(CODEX_AGENT_BUILD_DIR)"
+	@"$(REPO)/scripts/check-install" --repo "$(REPO)" --bin "$(BIN)" --bin-link "$(BIN_LINK)" --claude-link "$(SKILL_LINK)" --skills-dir "$(CODEX_SKILLS_DIR)" --agents-dir "$(CODEX_AGENTS_DIR)" --build-dir "$(CODEX_AGENT_BUILD_DIR)"
 
 install: build
 	@mkdir -p "$(BIN_DIR)" "$(SKILLS_DIR)" "$(CODEX_SKILLS_DIR)"
@@ -61,7 +57,6 @@ install: build
 	  fi; \
 	}; \
 	link "$(BIN_LINK)" "$(BIN)"; \
-	link "$(RUNNER_LINK)" "$(RUNNER)"; \
 	link "$(SKILL_LINK)" "$(REPO)"; \
 	for skill in "$(REPO)"/skills/*/; do \
 	  [ -f "$$skill/SKILL.md" ] || continue; \

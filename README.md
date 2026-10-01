@@ -29,11 +29,11 @@ green while the real thing broke on deploy. Here criteria are approved by the
 user before implementation and frozen; each one declares the evidence fidelity
 it demands; and a criterion needing a real database cannot be reported as met
 on the strength of a mock. One of those fidelities, `you-run`, is yours: a check
-that must not run unattended — the integration test that reaches a real database
-is also the one that can delete it — is handed over as a script plus written
-instructions the agent never executes, and comes back as a handoff rather than
-as something the agent failed at. Verification runs in a different subagent than
-implementation.
+that must not run unattended — the integration test that reaches a database
+configured in the environment or an env file is also the one that can delete
+it — is handed over as a script plus written instructions the agent never
+executes, and comes back as a handoff rather than as something the agent failed
+at. Verification runs in a different subagent than implementation.
 
 ## Parts
 
@@ -49,7 +49,6 @@ skills/bootstrap  give an unseen repo a README.md and a CLAUDE.md in one invocat
 skills/prefer  record why this repo chose what it chose, and carry it to the next one
 agents/        explore · implement · verify · review · evaluate · record
 tools/memory   the append-only knowledge log everything writes to
-tools/throwaway-pg  run one command against a PostgreSQL it starts and removes
 ```
 
 `plan` runs once per objective, including each one opened underneath another.
@@ -118,7 +117,6 @@ pointing back at the clone it was run from:
 ~/.claude/skills/ai-kit          ->  <clone>
 ~/.agents/skills/ai-kit-<name>   ->  <clone>/skills/<name>
 ~/.codex/agents/ai-kit-<role>.toml -> <clone>/bin/codex-agents/ai-kit-<role>.toml
-~/.local/bin/throwaway-pg        ->  <clone>/tools/throwaway-pg/throwaway-pg
 ```
 
 The first is what lets the skills call `memory` by name instead of carrying a
@@ -132,9 +130,7 @@ you delete by hand. The fourth installs all six native Codex roles, named
 `ai-kit-evaluate` and `ai-kit-record`. Their generated TOML wrappers load the
 original `agents/*.md` contracts and [shared runtime guide](runtime.md), keeping
 one source of instructions. Codex agents inherit the current model; Claude's
-agents declare no model and run on the session's model. The fifth puts the
-PostgreSQL runner on PATH under the one name `verify` and `implement` may use to
-reach podman.
+agents declare no model and run on the session's model.
 
 Codex skills remain in `~/.agents/skills`; agent definitions go into
 `$CODEX_HOME/agents` when `CODEX_HOME` is set, otherwise `~/.codex/agents`.
@@ -153,8 +149,8 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Restart the host from a terminal with that PATH. A running Codex session may
-retain an older shell environment. `make doctor` exits nonzero when `memory` or
-`throwaway-pg` does not resolve to this installation, a link is missing or broken, or a
+retain an older shell environment. `make doctor` exits nonzero when `memory`
+does not resolve to this installation, a link is missing or broken, or a
 generated agent definition needs rebuilding. It reports the repair command.
 It checks local installation files and PATH; it does not invoke an AI model.
 
@@ -183,12 +179,7 @@ installed skills or invoke `$ai-kit:plan` / `$ai-kit:work`; the native agent nam
 use hyphens instead of colons. Both hosts load the same skill files, including
 the runtime guide that maps skill transitions, questions and delegation.
 
-The repository ships two executable tools: `memory`, and `throwaway-pg`, which
-runs one command against a PostgreSQL it starts in podman on loopback and removes
-when the command ends. The command sees only the runner's own DSN, a closed list
-of variables and an empty `HOME`, and the runner refuses to start when an
-untracked env file is readable from where it runs. It never pulls an image. The
-repository bundles no MCP server.
+The repository ships one executable tool, `memory`. It bundles no MCP server.
 The optional codebase graph tools mentioned by `explore` require a separately
 configured MCP server; the agent falls back to searching files when those tools
 are unavailable.
@@ -213,8 +204,5 @@ skill from its enumeration while leaving it invocable by name. Nothing errors, s
 short of reading a live session's skill list there is no witness — which is how
 one wrapped line survived four commits, two installs and a verification pass.
 
-`make check` also runs the tests of `tools/throwaway-pg`, against a fake
-`podman` placed first on PATH, so no container is started.
-
-It needs Python 3, a POSIX shell and git, and nothing else — no Go build and no
-podman, so it runs on a clone that was never installed.
+It needs Python 3 and nothing else — no Go build, so it runs on a clone that was
+never installed.
