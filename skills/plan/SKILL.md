@@ -705,11 +705,20 @@ just has to be a choice made in the open, now, rather than a convenience
 discovered later.
 
 `you-run` is the fifth value and the only one that names whose turn it is, and
-which criteria get it is a mechanical test rather than a judgment about how
-risky the check feels. Read the check against `agents/verify.md`'s closed list
-of what no agent ever runs: a criterion whose check lands on that list — a live
-database, a queue, a call over the network — is written `you-run` here, because
-no agent is going to execute it and any other fidelity written on it comes back
+it is written for two kinds of check and no others: one that needs the user's
+access — their account, their session, credentials only they hold — and one that
+touches production — a deploy, a remote system, gcloud or any cloud resource, a
+database or endpoint configured in the environment or in an env file. Every
+other check is the agents' to run, under
+`## What you run, and what you never run` in `agents/verify.md`: a suite, a
+container or a compose stack the run starts itself, a migration into one of
+those, an install inside the agent's own account. A check whose reach cannot be
+established as limited to what the run started is not a third kind but the
+second: what it might reach includes a database or endpoint configured in the
+environment, so it is written as one that touches production.
+Which criteria get the value is read off the check rather than off how risky it
+feels, and a criterion that gets it is written `you-run` here, because no agent
+is going to execute it and any other fidelity written on it comes back
 `unverified` by construction. `implement` then leaves a runnable script and
 written instructions in `.ai-kit/plans/<slug>/manual-checks.md` and runs
 neither, `verify` reports it handed over instead of ever reporting it `met`, and
@@ -717,23 +726,10 @@ neither, `verify` reports it handed over instead of ever reporting it `met`, and
 `real-dependency` instead it buys an `unverified` that reads as *the agent could
 not manage it*, which is a different sentence from *this one is yours*.
 
-One hit on that list is not the user's. A check whose only hit is a PostgreSQL
-that the installed `throwaway-pg` can provide — a fresh database on loopback,
-migrated by the check itself if it needs to be — is written `real-dependency`,
-and its `Verified by` names the invocation that runs it,
-`throwaway-pg --env NAME -- cmd args…`, with `NAME` the variable the code reads
-its DSN from and `cmd` the command that exercises it. The list carves that
-runner out for every agent, so the check is one they run and grade rather than
-one they hand over. Every other check that lands on the list is still
-`you-run`: a deploy, a remote system, the user's account or session,
-production, and a suite that starts its own containers, which the runner does
-not wrap. A check with a second hit beside the PostgreSQL is `you-run` too,
-because the runner removes one hit and leaves the other standing.
-
 So `real-dependency` is what is left for a check that reaches something real the
-agent may still touch — the working tree's own filesystem, a process it starts
-itself, a PostgreSQL `throwaway-pg` starts and removes — where the bar is above a
-double and still reachable by whoever verifies.
+agent may still touch — the working tree's own filesystem, a process or a
+container the run starts itself — where the bar is above a double and still
+reachable by whoever verifies.
 
 **The criteria say whether it works. `## Landing condition` says where it has to
 be for that to matter**, and it is a closed set of five:
@@ -756,9 +752,9 @@ never arrives visible while it is still one objective old rather than three week
 old. A draft written before this section existed carries none, and absent reads
 as `worktree`, which is the behaviour those objectives already had.
 
-`agents/implement.md` rule 9 prohibits commits and pushes, so **anything above
-`worktree` is a check no agent is ever going to run** — which by the mechanical
-test two paragraphs up makes it a criterion with `fidelity required: you-run` and
+`agents/implement.md` rule 9 prohibits commits and pushes, and no agent in the
+loop makes either, so **anything above `worktree` is a check no agent is ever
+going to run** — which makes it a criterion with `fidelity required: you-run` and
 nothing else. That is not a second mechanism bolted on: it is the same handover,
 the same `manual-checks.md`, the same `handed-over` verdict, and the same hold on
 the close. Write it as one criterion phrased as the observation rather than the

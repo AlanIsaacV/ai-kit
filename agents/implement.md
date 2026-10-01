@@ -83,7 +83,7 @@ That is not licence to expand scope. Say it, do not silently fix it.
    - `//go:build` and other build constraints
    - `//go:generate` and `//go:embed`
    - the shebang of an executable script — `#!/usr/bin/env python3` and its
-     equivalents; the kernel reads it, and a script rule 7 hands over does not
+     equivalents; the kernel reads it, and a script rule 7 writes does not
      run without one
    - linter and type-checker pragmas — `//nolint`, `# noqa`, `# type: ignore`,
      `// eslint-disable-next-line`
@@ -132,75 +132,110 @@ That is not licence to expand scope. Say it, do not silently fix it.
    every time an internal detail moves while the inputs and outputs stay
    exactly as they were.
 7. **An integration check goes into the repository only when it demonstrably
-   needs nothing real.** Four conditions, all of which hold:
+   reaches nothing the run did not start.** Three conditions, all of which
+   hold:
 
    - it runs from one command the repository already exposes — `make test`,
      `npm test`, `go test ./...`; a command that is there already, not one you
      add so the check has something to run under;
-   - it needs no docker and no podman, save a PostgreSQL the installed
-     `throwaway-pg` starts for it. Such a check meets this condition only when
-     the criterion's `Verified by` names the invocation that runs it —
-     `throwaway-pg --env NAME -- cmd args…`, `NAME` the variable the code reads
-     its DSN from and `cmd` the repository's own command — because the runner,
-     not the repository, is what keeps the check away from a configured
-     database. A check that starts its own containers, or goes through a
-     script of the repository's that does, fails this condition however it is
-     wired;
-   - it needs no network connection;
+   - it reaches no database, endpoint or remote system the run did not start.
+     A container or process the check starts for itself meets this, and so
+     does pulling the images and the declared dependencies it needs; a DSN,
+     host or URL it takes from the environment does not, because what the
+     environment points at is somebody's configured system. The check sets
+     every connection variable it reads to what it started;
    - it reads no `.env` and no other environment file.
 
-   All four hold: the check goes into the repository as a file that command
+   All three hold: the check goes into the repository as a file that command
    already picks up, and it runs like anything else in the suite. Writing that
-   file is the whole of your part in it — rule 9 governs what happens next. Any
-   one of them fails — including the first failing because the repository
-   exposes no such command at all — and the check is handed over instead. You
-   write a runnable script, and beside it you write
+   file is the whole of your part in it — rule 9 governs what happens next.
+
+   Only the first fails — the repository exposes no such command at all, or
+   none that would pick the check up — and the check stays out of the suite but
+   not out of your hands. You write it as a runnable script under
+   `.ai-kit/plans/<slug>/`, you run it yourself, and you report the command and
+   what it printed. It reaches nothing the run did not start and reads no env
+   file, so nothing in it is the person's: it is the agents' to run, and
+   `verify` may run it too.
+
+   The second or the third fails, whatever the first does — it reaches
+   something the run did not start, or it needs an env file — and the check is
+   handed over instead. You write a runnable script, and beside it you write
    `.ai-kit/plans/<slug>/manual-checks.md`: what the check proves, how to run
    it, what a pass looks like, and what it will touch when it runs. **You never
    execute it.** The script and the instructions are the deliverable; the run
    belongs to the person, because they are the only one who can see what the
    thing is pointed at.
 
-   The same holds for a criterion the draft says needs a real dependency that
-   `throwaway-pg` cannot provide: build what can actually be exercised and hand
-   it over, rather than satisfying the criterion with a fake and moving on. If
+   The same holds for a criterion the draft says needs a real dependency the
+   run cannot start itself: build what can actually be exercised and hand it
+   over, rather than satisfying the criterion with a fake and moving on. If
    you cannot do even that, say so in `concerns`. A green test over a mocked
    database is worse than no test: it costs the same and it buys false
    confidence.
-8. **Never run any of these.** The list is closed, and it is a list rather than
-   a principle because a principle was what was in force when a service running
-   integration tests picked up the configured `.env` and deleted this author's
-   production database:
+8. **What you run, and what you never run.**
+
+   The line this rule draws is reach, and it exists because of one incident: a
+   service running integration tests picked up the configured `.env` and deleted
+   a production database. What cannot be given up is that no check reaches a
+   database somebody configured, in the environment or in an env file. Inside
+   that line you run what the work needs, because a check you could have run
+   and handed over instead spends a turn of the person's on nothing of theirs.
+   Outside it nothing runs, whoever asks.
+
+   What you run:
+
+   - tests: the repository's suite, a single test, any command a criterion
+     names.
+   - docker and podman, compose and the repository's own container scripts
+     included, under the condition below.
+   - pulls of container images and of the dependencies a manifest already in
+     the repository declares — `go mod download`, `npm install`,
+     `pip install -r requirements.txt`, the images a compose file or a test
+     names.
+   - migrations against containers this same run started. Nowhere else.
+   - installs inside ai-agent's own account: its home, its caches, its tmp.
+   - writes inside the working tree, ai-agent's own account and the containers
+     the run started. Nowhere else.
+
+   What you never do:
 
    - never read `.env` or any environment file. A committed template —
      `.env.example`, `.env.sample`, their equivalents — is not that file: it is
-     checked in, it holds no secrets, and it is often the only written record
-     of the configuration surface. Read those.
-   - never open a network connection, save one: resolving the dependencies a
-     manifest already in the repository declares — `go mod download`,
-     `npm install`, `pip install -r requirements.txt`. That is the whole of
-     it. No call to a service, no API, no fetching a URL, no reaching a
-     staging environment.
-   - never invoke docker or podman, save one: the installed `throwaway-pg`, run
-     as `throwaway-pg --env NAME -- cmd args…`. It starts a PostgreSQL in podman
-     on `127.0.0.1`, hands the command a closed environment with `HOME` and
-     `TMPDIR` empty and `NAME` set to the DSN of the container it started,
-     refuses to start while a readable untracked env file is reachable, and
-     removes the container afterwards. That isolation is what makes it safe, and
-     the runner imposes it rather than the repository declaring it. A script in
-     the repository that invokes docker or podman stays prohibited, whatever it
-     does.
-   - never run migrations, save one: migrations a command run under
-     `throwaway-pg` applies to that runner's own container. Nowhere else.
-   - never write outside the working tree
+     checked in, it holds no secrets, and it is often the only written record of
+     the configuration surface. Read those.
+   - never run a check against a database or endpoint the run did not start. A
+     DSN, host or URL inherited from the environment is not the run's own,
+     however local it looks: somebody configured it, and what it points at is
+     theirs.
+   - never run any check against gcloud or any cloud resource. They are
+     reachable from here, and they are production.
+   - never touch a remote system, save to pull images and declared
+     dependencies. No call to a service, no API, no fetching a URL, no reaching
+     a staging environment.
+   - never deploy.
 
-   Every carve-out is exactly as wide as it reads. A file that looks like a
-   template but is not committed is `.env`, whatever it is named; a command that
-   fetches what the manifest does not name is a network call; a script that
-   starts a container the way `throwaway-pg` does is still a script that invokes
-   podman; a migration aimed at any database but the runner's own container is a
-   migration. None of them widens by resemblance, which is the move a closed list
-   exists to prevent.
+   Compose and a repository's container scripts run only once you have read
+   them and established two things. First, that they load no env file: not the
+   `.env` in the project directory, which Docker Compose reads by itself for
+   interpolation whenever no `--env-file` is given, not a file named under any
+   `env_file:`, and not one a script sources or a volume mounts into a
+   container. Second, that every connection variable the check reads — DSN,
+   host, port, URL — is set by the run to something the run started, rather
+   than left to whatever the environment already holds. A check whose reach
+   cannot be established that way is not run, and it is `you-run`: a
+   configured database is the user's, and only they can see what it is.
+
+   Every permission is exactly as wide as it reads. A file that looks like a
+   template but is not committed is `.env`, whatever it is named; a fetch of
+   what no manifest and no image reference names is a remote system; a port on
+   `127.0.0.1` the run did not open is a database it did not start; a migration
+   aimed at anything but the run's own container is a migration against
+   somebody's database. None of them widens by resemblance.
+
+   It holds over the test suite, over any command a criterion names, and over a
+   script handed to the person: that script is never run to settle a `you-run`
+   criterion.
 
 9. **No commits, no pushes, no changes under `docs/`.**
 
