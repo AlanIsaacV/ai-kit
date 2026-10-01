@@ -11,11 +11,11 @@ from install_support import agent_definitions, link_problem
 
 def main():
     parser = argparse.ArgumentParser()
-    for option in ("repo", "bin", "bin-link", "claude-link", "skills-dir", "agents-dir", "build-dir"):
+    for option in ("repo", "bin", "bin-link", "runner", "runner-link", "claude-link", "skills-dir", "agents-dir", "build-dir"):
         parser.add_argument(f"--{option}", type=Path, required=True)
     args = parser.parse_args()
     failures = []
-    links = [(args.bin_link, args.bin), (args.claude_link, args.repo)]
+    links = [(args.bin_link, args.bin), (args.runner_link, args.runner), (args.claude_link, args.repo)]
     for skill in sorted((args.repo / "skills").glob("*/SKILL.md")):
         links.append((args.skills_dir / f"ai-kit-{skill.parent.name}", skill.parent))
     try:
@@ -37,24 +37,28 @@ def main():
             failures.append(problem)
     if not args.bin.is_file() or not os.access(args.bin, os.X_OK):
         failures.append(f"{args.bin}: memory binary is missing or not executable")
+    if not args.runner.is_file() or not os.access(args.runner, os.X_OK):
+        failures.append(f"{args.runner}: throwaway-pg runner is missing or not executable")
     for required in (args.repo / "runtime.md", args.repo / ".claude-plugin" / "plugin.json"):
         if not required.is_file():
             failures.append(f"{required}: required runtime or plugin file is missing")
-    command = shutil.which("memory")
-    if command is None:
-        failures.append(f"memory is not on PATH; add {args.bin_link.parent} to your shell PATH")
-    else:
+    for name, installed, link in (("memory", args.bin, args.bin_link), ("throwaway-pg", args.runner, args.runner_link)):
+        command = shutil.which(name)
+        if command is None:
+            failures.append(f"{name} is not on PATH; add {link.parent} to your shell PATH")
+            continue
         try:
-            if Path(command).resolve(strict=True) != args.bin.resolve(strict=True):
-                failures.append(f"PATH resolves memory to {command}, not this installation; place {args.bin_link.parent} first on PATH")
+            if Path(command).resolve(strict=True) != installed.resolve(strict=True):
+                failures.append(f"PATH resolves {name} to {command}, not this installation; place {link.parent} first on PATH")
         except (OSError, RuntimeError) as error:
-            failures.append(f"cannot resolve memory on PATH: {error}")
+            failures.append(f"cannot resolve {name} on PATH: {error}")
+    command = shutil.which("memory")
     for failure in failures:
         print(f"error: {failure}", file=sys.stderr)
     if failures:
         print("Repair installation files with make install using the same directory overrides; preserve or move any conflicting real files first. Apply any PATH fix above, then rerun make doctor.", file=sys.stderr)
         return 1
-    print(f"Installation healthy: memory, Claude plugin, {len(links) - len(definitions) - 2} Codex skills and {len(definitions)} Codex agents; memory resolves to {command}.")
+    print(f"Installation healthy: memory, throwaway-pg, Claude plugin, {len(links) - len(definitions) - 3} Codex skills and {len(definitions)} Codex agents; memory resolves to {command}.")
     return 0
 
 
