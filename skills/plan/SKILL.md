@@ -53,9 +53,9 @@ child is worth opening, which is the only thing the descent needs from you.
      feedback opens a new one. Those are the cheapest things to correct and the
      most expensive ones to find buried in a long draft.
    - **The four-line card** step 6 puts above the link: the premise, what
-     follows if it is false, what this does not do, and what it costs. It is a
-     fixed form rather than a summary — those four and no fifth — and **it never
-     carries a criterion**. Approving the card is agreeing to fund the
+     follows if it is false, what this does not do, and the level it was given.
+     It is a fixed form rather than a summary — those four and no fifth — and
+     **it never carries a criterion**. Approving the card is agreeing to fund the
      objective; approving the criteria is something only reading them can do,
      and the card is built out of four things that are not criteria precisely so
      the first can never be mistaken for the second.
@@ -354,10 +354,12 @@ Then ask, in two halves that stay distinguishable:
 
 This round covers the assumptions, the open questions, **the premise** — step 5's
 first beat, which goes here rather than in the file because it is the largest
-judgment call in the draft and words are the cheapest place to correct it — and
-**the budget**, which is one closed question among the batched ones and is the
-user's number rather than yours. Not
-the objective, not the constraints, not the criteria, not what is out of scope —
+judgment call in the draft and words are the cheapest place to correct it — and,
+when the objective looks executable, **the level**, which is one closed question
+among the batched ones, offers the three levels step 5 defines with their
+descriptions as the options, and is the user's pick rather than yours. When it
+looks like a parent the level stays out of the round, because a parent declares
+none. Not the objective, not the constraints, not the criteria, not what is out of scope —
 those are what the draft is for, and reading them back in chat is how the file
 stops being read.
 
@@ -416,9 +418,8 @@ five:
 - **It fits one session with room to spare.** Context that fills up is context
   that starts forgetting the objective, which is the failure this whole shape
   exists to avoid. When in doubt, split. This part asks whether one session can
-  *hold* it and nothing else — whether it is worth that much is `## Budget`
-  below, a different question whose unit is not context and whose answer is not
-  yours.
+  *hold* it and nothing else — how much of it goes in is `## Level` below, a
+  different question whose unit is not context and whose answer is not yours.
 - **It is worth doing on its own.** If it only makes sense once a sibling
   objective lands, either merge them or do that one first.
 - **It names what it does not cover.** Two or three non-goals. This is the
@@ -579,10 +580,10 @@ returned when you ran it here, or `the first cut itself` on a `first` cut, or
 <`first` or `iteration`. On a first cut, one line per thing you moved out of the
 criteria to get there — prose, not records, and not promises.>
 
-## Budget
-<What the user said this objective is worth, in their own words — "medio día",
-"un par de horas". Their number and never yours. `work` says so when the turn
-passes it, in passing, and never stops for it.>
+## Level
+<One of `1 — Validar` | `2 — Sólido` | `3 — Completo`, exactly as the user picked
+it in step 4's round. Their pick and never yours. On level 1, one line after it
+per thing left out of this objective — prose, not records.>
 
 ## Landing condition
 <One of `worktree` | `committed` | `merged` | `deployed` | `user-saw-it`, and who
@@ -625,7 +626,7 @@ Every section the loop reads is in there, so nothing downstream has to add one:
 `verify` opens the file, grades `## Acceptance criteria` and checks the changed
 files against `## Out of scope`; `record` reads `## Landing condition` at the
 close; `work`'s step 5 reads `## Premise` before it launches anything and copies
-`## Budget` into the freeze at its step 4; `implement` and `review` read the
+the `## Level` line into the freeze at its step 4; `implement` and `review` read the
 whole thing.
 `work` extends the sections around the criteria as it goes and leaves the
 criteria themselves alone. A parent's `## Findings` is what step 8 hands down to
@@ -672,30 +673,69 @@ than decided quietly: `first` trades internal verification for external, and
 `iteration` is where the ladder below earns what it costs. The user is the one
 who knows whether anybody is waiting to use this.
 
-**Then ask what it is worth, and write their answer in their words under
-`## Budget`.** "Medio día", "un par de horas", "un día y no más" — a human
-number, because what is being bounded is somebody's patience and not a context
-window. The sizing test asks whether one session can hold this; the budget asks
-whether it is worth a session, and an objective can pass the first and fail the
-second without either answer being wrong.
+**Then ask how much of the objective goes in, and write the answer under
+`## Level`.** That is the decision the user actually makes when they size a piece
+of work: not how long it should take, but whether this is a quick thing to
+validate, something solid, or the complete job. What a level contains is what
+they are choosing between, so the contents of each level are written here once
+and shown as the option itself rather than improvised per question. There is no
+time anywhere in it: no hours, no reference duration per level, nothing for
+`work` to compare the clock against, because a duration is hard to estimate and
+is not what the user decides.
 
-**You do not get to pick the number.** Rule 6 forbids inventing one and this is
-the case it exists for: the budget is the user's tolerance for this particular
-objective, and an agent's guess at it becomes a number that gets compared against
-reality later as though somebody had meant it. It goes into step 4's round beside
-the premise, or it is one line asked here when that round has already run.
+There are exactly three levels, and each one contains the one before it:
 
-**The comparison survives the session for free, and nothing new is recorded to
-make it.** `work` copies the line into the freeze `decision` at its step 4; that
-decision is stamped, its `approved_for_execution` edge is stamped, and the edge
-that closes the objective is stamped too. So every objective that ever closed
-already carries both ends of its own elapsed time, and "did any of these budgets
-mean anything" is a question the log answers by being read rather than one that
-needs a record written at the close.
+- **1 — Validar.** The main path, end to end, in one shape. The criteria cover
+  that path and nothing else, and it is proven by using it — running the path the
+  way somebody would, not by testing its parts. No edge cases, no unit tests, no
+  cleanup. What was left out is named, one line each, under `## Level` after the
+  level itself: prose, not records, for the same reason a first cut's deferrals
+  are.
+- **2 — Sólido.** Level 1, plus the error paths and the edge cases that will
+  realistically happen, a test for each business rule the user names — this is
+  the level where the unit-test ask below runs — and `real-dependency` fidelity on
+  the main path's criterion.
+- **3 — Completo.** Level 2, plus migrating the existing uses of whatever this
+  changes, the documentation, retiring what it replaces, and robustness past the
+  cases level 2 judged realistic.
 
-**A parent declares none.** It spans sessions and carries no freeze, so there is
-no clock to run against it; what bounds a parent is each of its children
-declaring one.
+**The level decides which criteria get written, and that is all it decides.**
+Level 1 writes criteria for the main path and authorizes no unit test. Level 2
+adds a criterion per error path and edge case it took in, and the criteria the
+unit-test ask produces. Level 3 adds a criterion for each existing use migrated,
+for the documentation, and for what is retired. Every level iterates until its
+criteria are met — verification, rework and review run the same at level 1 as at
+level 3 — so the level never buys or limits retries; a level 1 objective that
+takes four rounds to get its main path green takes four rounds.
+
+**The level is the user's pick, never yours.** Rule 6 forbids inventing it and
+this is the case it exists for: an agent's guess at how much goes in becomes a
+scope the criteria are then written against, as though somebody had chosen it. It
+is one closed question in step 4's batched `AskUserQuestion` round, beside the
+premise, and its options are the three levels with these descriptions, verbatim:
+
+| Option | Description |
+|---|---|
+| `1 — Validar` | El camino principal de punta a punta, en una sola forma. Los criterios cubren solo ese camino y se prueba usándolo. Sin casos borde, sin tests unitarios, sin limpieza. Lo que queda afuera se nombra. |
+| `2 — Sólido` | Todo lo del nivel 1, más los caminos de error y los casos borde que van a pasar de verdad, tests para las reglas de negocio que vos nombres, y la dependencia real en el camino principal. |
+| `3 — Completo` | Todo lo del nivel 2, más migrar los usos existentes, documentación, retirar lo que esto reemplaza, y robustez. |
+
+When step 4's round already ran without it — the objective looked like a parent
+then, and only this step found it executable — it is one closed question asked
+here, with the same three options, and it is still never yours to pick.
+
+Write the option the user picked under `## Level` exactly as its label reads.
+`work` copies that line into the freeze `decision` at its step 4, which is what
+keeps the scope the criteria were written for on the record beside them.
+
+`## Cut` and `## Level` answer different questions and neither replaces the
+other: the cut says whether this is the first thing anybody uses or an
+improvement on something already in use, and the level says how much of this
+objective goes into it.
+
+**A parent declares no level.** It is not what gets built and it carries no
+freeze; what goes in is decided on each executable child, which declares its
+own.
 
 **The fidelity line on each criterion is the load-bearing part.** It is decided
 here, with the user, before anyone has an interest in the answer. Naming one
@@ -788,6 +828,11 @@ the ones that earn it. What they keep becomes a criterion; what they do not gets
 no test, and that is the intended outcome rather than a gap for somebody to fill
 in later. A draft that names none is an ordinary draft, not an oversight.
 
+**The ask runs at levels 2 and 3, and at level 1 it does not run at all.** A
+level 1 objective authorizes no unit test: its main path is proven by using it,
+and that is the whole of what the user picked. At levels 2 and 3 the ask runs
+exactly as above.
+
 Two sections carry most of the value. **Assumptions** is what makes "don't
 assume anything" auditable instead of aspirational. **Out of scope** is what
 stops the work from quietly growing — it is worth pushing for two or three
@@ -817,7 +862,7 @@ section that already holds it rather than composed:
 > to check and we are betting on it>
 > **No hace** — <two or three, from `## Out of scope` and from what `## Cut`
 > moved out on a first cut>
-> **Cuesta** — <`## Budget`, in their own words>
+> **Nivel** — <`## Level`, the line the user picked>
 
 **The card never carries a criterion.** Not one, not paraphrased, not folded into
 the *no hace* line. A criterion on the card is a criterion approved in chat,
@@ -840,7 +885,7 @@ fidelity each one demands are still the thing to read:
 > edites.
 
 **A parent objective gets no card.** Nothing is being funded: a parent is not
-what gets built, it declares no budget, and its criteria are met by its children
+what gets built, it declares no level, and its criteria are met by its children
 closing rather than by anybody executing it. Four lines summarising a draft
 nobody is about to run is the summary rule 3 forbids, with no decision bought for
 it. There is nothing to verify yet either, so the scope and the judgment calls
