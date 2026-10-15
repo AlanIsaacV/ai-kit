@@ -1,6 +1,6 @@
 ---
 name: record
-description: "Write the memory records and edges that close one objective: what the turn decided, what it had to assume, what it left open, the `wont-fix` records triage produced, the closing `review-finding` and the state edge. Use as the last step of the `work` skill, once implementation, verification and triage with the user are done. It reads the objective's draft and the diff itself rather than being handed a summary, and it writes to the log through the `memory` CLI only — never to project source."
+description: "Write the memory records and edges that close one objective: what the turn decided, what it had to assume, what it left open, the `wont-fix` records triage produced, the closing `review-finding` and the state edge, and — when a close that is not `blocked` leaves an ancestor whose draft declares a landing with nothing outstanding — the `blocked` that keeps that ancestor waiting on its landing. Use as the last step of the `work` skill, once implementation, verification and triage with the user are done. It reads the objective's draft and the diff itself rather than being handed a summary, and it writes to the log through the `memory` CLI only — never to project source."
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -36,7 +36,10 @@ source, no `docs/`, no commits, no subagents.
   any acceptance criterion the user **dropped**, quoted with their reason — the
   one input that makes the graded list shorter than the approved one. It carries the
   objective's own open records this turn settled too, each with the record's id
-  and what settled it, which is what tells you to write the `answers` edge.
+  and what settled it, which is what tells you to write the `answers` edge. When
+  `work` performed the landing itself at the close — a local install inside its
+  own account — it carries what was run and what came back, which the closing
+  record says beside the criteria.
 - `closing_state` — `met`, `blocked`, `cancelled` or `separated`: which state
   edge to write.
   The orchestrator decided this with the user; you write it, you do not choose it.
@@ -93,9 +96,9 @@ An `existing_closing_record` holding a real id means a previous run of you alrea
 wrote records and the orchestrator read the log back and found something absent.
 Write **only what `missing` names**. Do not write a second closing record and do
 not re-write the records the first run landed: point the state edge at
-`existing_closing_record` and stop there. The log is append-only, so a duplicate
-closing record cannot be taken back, and two of them is worse than the missing
-edge you were relaunched to fix.
+`existing_closing_record`, and write nothing else of this close's own. The log is
+append-only, so a duplicate closing record cannot be taken back, and two of them
+is worse than the missing edge you were relaunched to fix.
 
 An edge on its own is not a batch line — every batch line is a record — so this is
 the one case that goes through `link`, with both ids taken from your inputs:
@@ -103,6 +106,11 @@ the one case that goes through `link`, with both ids taken from your inputs:
 ```bash
 memory link --type met --from <objective_id> --to <existing_closing_record>
 ```
+
+When the edge that landed this way is any state but `blocked`, the walk up to the
+ancestor that lands still follows it, exactly as below: it reads the log as it
+now stands, so an ancestor an earlier run already blocked reads `blocked` and
+stops it before anything is written twice.
 
 ## Read the artifacts yourself
 
@@ -180,9 +188,11 @@ in:
 ```
 
 **Every `decision`, `assumption` and `open-question` you write for this close
-carries that `derives_from` edge to `objective_id`, and there is no exception.**
-It is what makes "what did this objective leave open" a question the log answers
-on its own, instead of a claim this subagent makes about its own work — and it is
+carries that `derives_from` edge to `objective_id`, with one exception:** the
+landing question that "After the close: the ancestor that lands" writes derives
+from the ancestor and only from it, because the debt it names is the ancestor's.
+The edge is what makes "what did this objective leave open" a question the log
+answers on its own, instead of a claim this subagent makes about its own work — and it is
 the only reason `work` can read the still-open list back out of the log at the
 close rather than take your report for it. The id is already in your inputs, so
 the edge costs you a key on a line you were writing anyway; a record that goes in
@@ -405,10 +415,107 @@ on disk.
   the whole list back out of `memory state` afterwards, and the objective is
   blocked once however many things it waits on.
 
-  A `blocked` close counts toward no parent, the same as `cancelled` and
+  A `blocked` close counts toward no parent as done, the same as `cancelled` and
   `separated`, and for a different reason: not that the work went elsewhere but
-  that it is not finished. Do not soften it in the closing record's body — the
-  reason the objective is waiting is the most useful sentence on it.
+  that it is not finished. Only `blocked` holds the parent open; `cancelled` and
+  `separated` do not, which is why the walk below runs after them. Do not soften
+  it in the closing record's body — the reason the objective is waiting is the
+  most useful sentence on it.
+
+## After the close: the ancestor that lands
+
+A tree of slices arrives through one objective, usually the parent: its draft
+declares the commit, merge or deploy once for everything underneath it, and its
+children declare `worktree` and close `met` on green. `memory state` derives that
+parent `met` the moment its last child closes, and it reads no draft to do it —
+so left alone, a tree whose deploy never happened reads finished. When this
+close's batch went in and the state it wrote is anything but `blocked`, walk up
+and block the ancestor that has not arrived. `cancelled` and `separated` are not
+counted toward the parent, but they are not outstanding either: a parent whose
+last open child closes `cancelled` or `separated` derives `met` all the same, as
+long as one child counts as done. A `blocked` child stays in the parent's
+`completion.outstanding`, so after a `blocked` close there is nothing to walk.
+
+**This is a write of its own, after the close's batch has landed, never a line of
+`close.jsonl`.** A parent's own state edge beats the derived `met` only when it is
+later than its last child's closing edge, and this close's batch is where that
+last closing edge is written. One write after it is later by construction.
+
+Start from this objective's parent:
+
+```bash
+memory state --id <objective_id> --all
+```
+
+The entry's `parent` is the first ancestor. No `parent` means this objective is a
+root, and there is nothing to walk. For each ancestor, starting there:
+
+```bash
+memory state --id <ancestor-id> --all
+```
+
+An ancestor is read any further only when its entry has nothing in
+`completion.outstanding` and reads `state` `met` with `state_from` `children`.
+Anything else stops the walk with nothing written: an outstanding child means the tree
+is not done, and a state of its own later than its children — a `met` somebody
+wrote, a `blocked` an earlier close already put there — means somebody already
+said where it stands.
+
+Open its draft the way `work`'s step 3 finds one, with `root` and `slug` out of
+that same entry pasted in literally:
+
+```bash
+sh -c 'for p in <root>/.ai-kit/plans/<slug>/draft-objective.md <root>/plans/<slug>/draft-objective.md; do
+  [ -f "$p" ] && { echo "$p"; exit 0; }
+done; exit 1'
+```
+
+Read `## Landing condition` out of the path it prints. Absent or `worktree`, this
+ancestor arrives wherever its children did: take its own `parent` and repeat from
+the `state` read above, and stop at the root. Exit 1 — no draft — stops the walk
+with nothing written and goes in `not_recorded` naming the ancestor: a landing
+nobody can read is not one to block on, and not one to walk past either.
+
+**Above `worktree`, this is the ancestor that lands, and the walk ends here.**
+Look in that entry's `open_records` for an `open-question` titled "The landing
+condition has not happened: …".
+
+None there: write one line, to a file of its own beside that ancestor's draft
+named `landing-from-<objective_id>.jsonl`, with whatever writes files — the same
+way as `close.jsonl`:
+
+```jsonl
+{"kind":"open-question","title":"The landing condition has not happened: <the condition, as that ancestor's draft states it>","body":"The draft requires <condition>. It arrives on <the ancestor's title>, not on its children: its children are closed, the last of them <objective_id>, and nothing has <committed | merged | deployed> it. This is the tree's condition of arrival, not a check that fell short.","about":["<the ancestor's areas>"],"edges":[{"type":"derives_from","to":"<ancestor-id>"},{"type":"blocked","from":"<ancestor-id>"}]}
+```
+
+```bash
+memory add --dir <root> --plan <plan> --batch "<the directory the draft is in>/landing-from-<objective_id>.jsonl"
+```
+
+`<root>` and `<plan>` are the ancestor's, out of its entry, so the question goes
+into the ancestor's own log and tree. It derives from the ancestor and not from
+this objective — the line carries that one `derives_from` and no second one to
+`objective_id`, whatever the close's rule above says of its own records — and
+that is the point of it: the debt is the ancestor's, the
+ancestor's `open_records` are where it is read back, and the decision that closes
+it — written through `inbox` when the user says it happened — answers it on the
+ancestor. `blocked` accepts an `open-question` or a `decision`, and both ends of
+the edge are on that one line.
+
+One already there: an earlier close blocked this ancestor on it, and a child that
+closed later — this one — put a newer derived `met` over that block. Do not write
+a second question. Block the ancestor on the one it has:
+
+```bash
+memory link --dir <root> --type blocked --from <ancestor-id> --to <that question's id>
+```
+
+Either way, `memory state --id <ancestor-id> --all` afterwards reads `blocked`, and
+that read is how you know it landed rather than the exit code alone. The question
+goes in `records` and the edge in `edges`, with the ancestor's id as its `from` —
+which is how `work` tells the ancestor apart from this objective's own state edge
+and names it to the user. A walk that stopped before an ancestor that lands
+writes nothing and reports nothing.
 
 ## The postmortem, when there is a hypothesis to derive one from
 
@@ -573,6 +680,10 @@ A single JSON object at the end of your final message:
   "validate": {"ok": true}
 }
 ```
+
+The walk up to the ancestor that lands reports through the same fields: its
+question in `records`, its `blocked` edge in `edges` with the ancestor's id as
+`from`. Nothing is added for a walk that wrote nothing.
 
 `status: partial` is the honest answer when some records landed and an edge did
 not. Saying so is worth more than a clean-looking report, because the orchestrator

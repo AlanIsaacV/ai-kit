@@ -126,13 +126,18 @@ something the next turn pays rather than something the last turn recorded.
 
 **Name every blocked objective in this tree before step 2 chooses anything**, one
 line each, with what it waits on. The ask is short because there are only ever
-three answers: they ran it and it passed, they ran it and it failed, or it is not
-going to be run. The first closes that objective `met` this turn, before a new one
+three answers: they ran it or landed it and it held, it failed, or it is not
+going to happen. The first closes that objective `met` this turn, before a new one
 starts; the second is a fix; the third is a `wont-fix` in their own words and then
 the close.
 
-> Antes de elegir: `<title>` quedó bloqueado esperando `<lo que falta correr>`.
-> ¿Lo corriste, falló, o no se va a correr?
+That `met` goes through `inbox`'s close, which quotes the user, answers the
+question and then runs the walk `record` runs to block the ancestor that lands —
+not a raw `memory link`, for the reason step 9 sends an objective with a parent
+there. A root, with no parent, may take the raw link step 9 shows.
+
+> Antes de elegir: `<title>` quedó bloqueado esperando `<lo que falta correr o
+> desplegar>`. ¿Lo corriste o lo desplegaste, falló, o no se va a hacer?
 
 **Nothing forces them to pay it now.** "Later" leaves the objective blocked and
 this turn goes on to something else. What changed is that the debt was named
@@ -1089,6 +1094,16 @@ open and the ask coming back at the top of the next turn, which is what step 1's
 ledger is for. Seven of these in a row closed `met` because the default in this
 round was to carry on; the default is now that the objective waits.
 
+**The landing condition is not asked about here.** It is not a criterion — `plan`
+does not write it as one and `verify` never grades it — and nobody commits,
+merges or deploys code that a fix from this round, or review's second round, may
+still change. It is step 9's: checked once, at the close, when the code is
+settled. The handover above is for the `you-run` criteria that are genuinely
+the person's — an access check, a look at production. A draft frozen before the
+landing left the criteria, and still carrying it as a `you-run` criterion, is
+the one exception: that criterion is frozen, so it goes through the handover
+like any other.
+
 Take "not worth it" seriously. A verification pass that keeps raising scenarios
 the user knows cannot happen burns time and trains everyone to skim the
 findings. When they say a risk is not real — the gateway serializes it, the
@@ -1114,6 +1129,34 @@ and **this thread writes none of them.** You have been holding the objective, th
 diff and verification's report since the session started, and the tail of that
 turn is the worst place left to be composing titles and choosing `--about` tags.
 That is the whole reason this step delegates.
+
+**First, the landing — checked here and only here.** Triage is done and no fix
+is pending, so the code is settled, which is the only moment a landing makes
+sense. Read `## Landing condition` in the draft. Absent or `worktree`, there is
+nothing to check and the close goes on. Above `worktree`, it goes one of two
+ways, and neither asks the user anything.
+
+**The draft names the agent as who does it, and the act stays inside the agent's
+own account: this thread performs it, now.** That is a local install —
+`make install` from this clone, a link into the agent's own home — and its check,
+when the condition names one, such as `make doctor` coming back green. Read the target
+before running it, the way `agents/implement.md` rule 8 reads a compose file:
+what it writes is inside the working tree or the agent's own account, it reaches
+nothing remote beyond pulling what a manifest declares, and it reads no env file.
+Running an install is not writing code, so rule 2 is not broken by it. What it
+returns decides the close: it went through and the check is green, and the
+landing has happened — `met` stays available, and what was run and what came back
+travels to `record` in `triage_outcome`; it failed, and that is a fix, the same
+as a criterion that came back `not-met`, and the turn goes back to one rather than
+on to the close. `committed` and `merged` never take this branch whoever the
+draft names, because no agent commits or pushes — `agents/implement.md` rule 9 —
+and neither does anything that reaches production or a remote system.
+
+**Otherwise, and it has not happened, it is stated and not asked.** No question
+and nothing waiting on an answer: `closing_state` is `blocked`, `record` writes
+the question that names the landing and points the edge at it, and the close
+message carries one line saying what it waits on, with the command that closes it
+once it has happened — both below, under the `blocked` close.
 
 Before the handoff, read what this objective has left open:
 
@@ -1152,7 +1195,7 @@ objective_id: <the executable objective's id>
 plan_slug: <tree-slug>
 verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON — empty when step 7 did not run>
-triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; each criterion the user dropped, quoted from the draft, with their reason in their own words; and each open record above that this turn settled, with its id and what settled it>
+triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; each criterion the user dropped, quoted from the draft, with their reason in their own words; each open record above that this turn settled, with its id and what settled it; and, when this step performed the landing, what it ran and what came back>
 closing_state: <met | blocked | cancelled | separated>
 confirmed_hypothesis:
 on_demand_kinds:
@@ -1248,11 +1291,13 @@ this step. That is a verdict and not a state, and it is not the `blocked` below.
 things put it there, and both resolve the same way:
 
 - a criterion still `handed-over` after step 8's round, and
-- a `## Landing condition` above `worktree` that has not happened yet.
+- a `## Landing condition` above `worktree` that has not happened yet — the one
+  the landing check above stated rather than performed.
 
 Either one and `closing_state` is `blocked`, pointing at the `open-question` that
 names what is unrun — the same pair step 5 already writes for an external wall,
-and `record` already writes that question for a handover nobody reported on.
+and `record` already writes that question for a handover nobody reported on and
+for a landing that has not happened.
 
 `blocked` is an **open** state in this log rather than a closing one, which is
 what makes this a pause and not a failure: the objective keeps its approval, it
@@ -1262,8 +1307,23 @@ sequence the log resolves to `met`, and `memory state --text` lists it under
 listing is the ledger step 1 reads at the top of the next turn, which is when this
 gets paid. Nothing in the CLI changes for any of it.
 
-Say it in one line, as a pause rather than an apology, and **hand over the
-command that closes it**:
+Say it in one line, as a pause rather than an apology and never as a question,
+and **hand over what closes it**. Which one depends on whether the objective has
+a `parent`.
+
+It has one: the close goes through `inbox`, because a `met` on this objective can
+be the last close its parent was waiting on, and `inbox` follows its close with
+the walk `record` runs to block the ancestor that lands. A raw `memory link`
+runs no walk, and a parent whose deploy never happened would read `met` derived
+from its children:
+
+> El objetivo queda `blocked` esperando `<el chequeo o el aterrizaje>`. El código
+> está hecho y verificado en todo lo demás. Cuando lo corras o lo despliegues y
+> esté bien, cerralo con `inbox` — "lo desplegué y funciona" alcanza, no hace
+> falta abrir una sesión para esto.
+
+It has none — a root, with no ancestor to block — and the command that closes it
+is the whole handover:
 
 > El objetivo queda `blocked` esperando `<el chequeo o el aterrizaje>`. El código
 > está hecho y verificado en todo lo demás. Cuando lo corras o lo despliegues y
@@ -1274,23 +1334,23 @@ command that closes it**:
 > ```
 
 **When `## Premise` names the cut itself as its falsifier, that landing is the
-premise's verdict and not only the criterion's**, so ask for the answer that
-matters in the same breath:
+premise's verdict as well as the objective's arrival**, so name the other answer
+in the same breath:
 
 > Y si cuando lo despliegues resulta que la premisa era falsa — que no le sirve a
 > nadie, que no era esto lo que hacía falta — no lo cierres `met`. Decímelo y lo
 > cerramos `cancelled`, que es el resultado más barato que puede tener esto.
 
-Both ids are in your hand already: the objective's, and the closing
+For a root, both ids are in your hand already: the objective's, and the closing
 `review-finding` the subagent just wrote. **Paste them in literally.** A command
 with angle brackets left in it is a command somebody opens a session to get
 filled in, which is the entire cost this branch exists to remove.
 
 **Reopening a session to say "it worked" is waste, and this is what removes it.**
 The debt is real and it holds the objective open, but paying it is one append to
-the log by the person who already ran the check — not a turn that reloads the
-tree, re-reads the draft, re-reads the log and spends a whole context to write a
-single edge. Step 1's ledger is for the checks they never got to, not for the
+the log (one sentence to `inbox`, or one `link` for a root) by the person who
+already ran the check — not a turn that reloads the tree, re-reads the draft,
+re-reads the log and spends a whole context to write a single edge. Step 1's ledger is for the checks they never got to, not for the
 ones they did.
 
 #### Confirm the close landed, do not trust the report
@@ -1360,6 +1420,32 @@ Report the buckets as they come back, without tidying them. `state` also returns
 child can be off the blocking list and still sit in `outstanding`. Show both and
 ask the user. A disagreement there is a real question about what counts as done,
 not something to settle on the objective's behalf.
+
+**An ancestor this close left waiting on its landing gets one line of its own.**
+Any close but `blocked` can leave one there: a parent whose last open child
+closes `cancelled` or `separated` derives `met` from the children it counts as
+done just as it does after a `met`, and `record` walks up after all three.
+When the parent has nothing outstanding and its draft declares a landing above
+`worktree`, `record` blocked it on "The landing condition has not happened: …"
+instead of leaving it to read derived `met` — or blocked a further ancestor, when
+the parent declares no landing and itself counted as done. Which one is in
+`record`'s `edges`: the `blocked` edge whose `from` is not this objective. The
+parent's state above says `blocked` when it was the parent; for a further
+ancestor, `memory state --id <that ancestor's id>`. Say it in one line, naming
+the condition as that ancestor's draft states it, and hand over the close the way
+the `blocked` close above does:
+
+> `<título del ancestro>` queda `blocked` esperando `<el aterrizaje, como lo dice
+> su draft>`: sus hijos están cerrados. Cuando haya pasado, decíselo a `inbox` —
+> "lo desplegué y funciona" alcanza — y lo cierra desde ahí, sin abrir una sesión.
+
+`inbox` is the door because the ancestor has no closing record of its own to
+point a `met` at: it writes the `decision` quoting the user, answering the
+question and carrying the ancestor's `met`, in one write. A
+`memory link --type met --from <the ancestor's id>` to a record of their own that
+says it happened closes it as well, when that ancestor is a root: a raw `link`
+runs no walk, so one with a parent of its own goes through `inbox`. Nothing is asked here either — the children are done and
+the tree is waiting on an act that is not this session's.
 
 A root objective has no parent to look up. Point `--id` at the objective you just
 closed instead and report its own tally, so the turn still ends by saying what is

@@ -1,6 +1,6 @@
 ---
 name: inbox
-description: "Say what is waiting on the user across every repository on this host, and let them act on it from here without opening a session in that repository. Lists it with `memory state --all --text` — the objectives waiting on their approval, the ones blocked on a question, the ones waiting to be started, and the Ideas section — exactly as the CLI prints it, inventing no class of its own. Explains any one item from its draft, its `manual-checks.md` and its open records. Closes a handed-over check from the user's own sentence: finds the objective, shows which handed-over questions that sentence settles and what state it will write, and on their go writes one `decision` quoting them into that objective's own log — `met` when it worked, a fresh `blocked` on a new question when it failed, `cancelled` when they drop it, `separated` when it is not for now. Notes an idea in one line into the repository they name, or into the user log when they name none, and drops one with a `decision` that answers it. Use when somebody wants to know what they owe, or to report what happened with something they owed. Triggers on: 'qué tengo pendiente', 'qué me está esperando', 'qué hay pendiente', 'qué me falta cerrar', 'lo desplegué y funciona', 'ya lo probé y anda', 'lo corrí y falló', 'eso ya no va', 'eso para más adelante', 'idea:', 'anotá esta idea', 'descartá esa idea', 'what is waiting on me', 'what do I have pending', 'I deployed it and it works', 'I ran the check and it passed', 'it failed', 'drop that one', 'not now', 'note this idea', 'drop that idea'. It never writes a word the user did not say, never runs a handed-over check itself and never approves an objective for execution — that is `work`'s, in the repository the objective lives in."
+description: "Say what is waiting on the user across every repository on this host, and let them act on it from here without opening a session in that repository. Lists it with `memory state --all --text` — the objectives waiting on their approval, the ones blocked on a question, the ones waiting to be started, and the Ideas section — exactly as the CLI prints it, inventing no class of its own. Explains any one item from its draft, its `manual-checks.md` and its open records. Closes a handed-over check, or a landing that has not happened on an executable objective or on the parent a tree of slices lands through, from the user's own sentence: finds the objective, shows which owed questions that sentence settles and what state it will write, and on their go writes one `decision` quoting them into that objective's own log — `met` when it worked, a fresh `blocked` on a new question when it failed, `cancelled` when they drop it, `separated` when it is not for now. Notes an idea in one line into the repository they name, or into the user log when they name none, and drops one with a `decision` that answers it. Use when somebody wants to know what they owe, or to report what happened with something they owed. Triggers on: 'qué tengo pendiente', 'qué me está esperando', 'qué hay pendiente', 'qué me falta cerrar', 'lo desplegué y funciona', 'ya lo probé y anda', 'lo corrí y falló', 'eso ya no va', 'eso para más adelante', 'idea:', 'anotá esta idea', 'descartá esa idea', 'what is waiting on me', 'what do I have pending', 'I deployed it and it works', 'I ran the check and it passed', 'it failed', 'drop that one', 'not now', 'note this idea', 'drop that idea'. It never writes a word the user did not say, never runs a handed-over check itself and never approves an objective for execution — that is `work`'s, in the repository the objective lives in."
 ---
 
 # inbox
@@ -17,13 +17,18 @@ and neither is the state of the work — the log already holds that, and
 goes missing is **a cheap place to close what is genuinely theirs**, and **a place
 for an idea at all**.
 
-A check `verify` handed over, or the deploy a `deployed` landing condition asks
-for, holds its objective open until somebody reports the result. Reported inside
-the session that left it, that is one line. Reported a week later it means finding
-that session, which nobody does, so the objective sits `blocked` long after the
-thing it waits on went fine. This skill is the other place to say it: one sentence,
-here, and the close is written into that objective's own log with the sentence
-quoted on it.
+A check `verify` handed over, or the commit, merge or deploy a `## Landing
+condition` declares, holds its objective open until somebody reports the result.
+The landing is never a criterion and nobody grades it: it waits on an executable
+objective that `work` closed `blocked` because it had not happened, or on the
+parent a tree of slices lands through, which is blocked on it when the parent's
+last open child closes in any state but `blocked` — by `record` when `work`
+closes that child, by this skill when the user closes it here. Reported inside
+the session that left it, that
+is one line. Reported a week later it means finding that session, which nobody
+does, so the objective sits `blocked` long after the thing it waits on went fine.
+This skill is the other place to say it: one sentence, here, and the close is
+written into that objective's own log with the sentence quoted on it.
 
 And a thought about something to do some day has had nowhere to go but an
 objective, which means planning it. An `idea` is one line in a log, listed beside
@@ -32,9 +37,9 @@ everything else that waits, until an objective takes it up or a decision drops i
 There is **no state above `met` here, and no queue of things delivered but not yet
 confirmed.** `met` means whatever the objective's `## Landing condition` declared.
 Where the user wanted the deploy on the record, the landing condition already put
-it there as a handover this skill can close; where they did not, there is nothing
-for them to come back and confirm, and a list of such things would fill with
-records that are almost all already deployed or already dead.
+it there as an open question this skill can close; where they did not, there is
+nothing for them to come back and confirm, and a list of such things would fill
+with records that are almost all already deployed or already dead.
 
 ## Hard rules
 
@@ -132,9 +137,12 @@ what happened with one, drop one or set it aside, note an idea. Do not re-sort i
 do not collapse **Nothing waiting**, and do not annotate an item with anything the
 listing does not carry.
 
-**Blocked on a question or a decision** is where handed-over checks show up:
-each group is headed by the record the objectives under it wait on, which for a
-handover is the `open-question` `record` wrote when nobody reported the result.
+**Blocked on a question or a decision** is where handed-over checks and landings
+show up: each group is headed by the record the objectives under it wait on,
+which for a handover is the `open-question` `record` wrote when nobody reported
+the result, and for a landing the one titled "The landing condition has not
+happened: …" — headed the same way whether the objective under it is an
+executable one or a parent whose children have all closed.
 **Ideas** lists every idea no record answers, each with the name of the log it
 lives in — `user` for the user log — and its id.
 
@@ -174,8 +182,11 @@ Then explain it from those three sources and nothing else, saying which one each
 part came from:
 
 - **From the draft**: what it is for (`## What I understood`, `## Deliverable`),
-  what `met` means for it (`## Landing condition`), and which acceptance criteria
-  carry `you-run` — those are the ones handed to the user.
+  what `met` means for it (`## Landing condition`, which is never one of the
+  criteria and is owed on its own), and which acceptance criteria carry `you-run`
+  — those are the ones handed to the user. A parent's draft has `## Success
+  criteria` instead, with no fidelity on any of them, so a parent hands nothing
+  over through its criteria: its landing is the one thing it can be waiting on.
 - **From `manual-checks.md`**, when there is one: what each check proves, how to
   run it, what a pass looks like, and what it touches when it runs. Read out, never
   run (rule 4).
@@ -184,16 +195,19 @@ part came from:
   asked — an objective can carry twenty, and none of them is something the user owes.
 
 What cannot be established from those — no draft, no instructions where a
-criterion says there should be some — is said as a gap, in one line. A `blocked`
-objective with no `manual-checks.md` beside its draft is worth naming, because it
-means the user was handed a check with nothing written down about how to run it.
+criterion says there should be some — is said as a gap, in one line. An objective
+blocked on a handed-over criterion with no `manual-checks.md` beside its draft is
+worth naming, because it means the user was handed a check with nothing written
+down about how to run it. One blocked on its landing alone — an executable
+objective or a parent — has no instructions to miss: the `## Landing condition`
+is the whole of what it owes.
 
 When the user then asks how something in that repository works — the route the
 policy gates, what the harness actually sends — that is `ask`: invoke it through
 the Skill tool (`ai-kit:ask`), with the question and `<root>` as the repository
 it is pointed at. Not before they ask.
 
-### 3 — Close a handover from the user's words
+### 3 — Close a handover or a landing from the user's words
 
 #### Resolve the objective
 
@@ -209,18 +223,25 @@ confirmed on its own.
 
 An objective that is waiting on approval or waiting to be started has handed
 nothing over: its criteria have not been run by anybody. Say so, and point at
-`work` in `<root>` — this skill does not close work that never ran.
+`work` in `<root>` — this skill does not close work that never ran. A parent with
+a child still open is not waiting on its landing yet: it is blocked on the
+landing only when its last open child closes in any state but `blocked`, by
+`record` or by this skill's own close, so there is no question for the user's
+words to answer. Say so, and write nothing.
 
 #### Read what it still owes
 
 Read it as step 2 does — `memory state --all --id <objective-id>`, then its draft
-and its `manual-checks.md` — and keep `root`, `slug`, `plan` and `state` in hand.
-Then pick out of `open_records` the **handed-over questions**: the one the
-objective is blocked on, and any other `open-question` naming a handed-over
+and its `manual-checks.md` when it has one — and keep `root`, `slug`, `plan` and
+`state` in hand. Then pick out of `open_records` the **owed questions**: the one
+the objective is blocked on, and any other `open-question` naming a handed-over
 criterion or the landing condition — `record` titles them "Nobody reported a
 result for the handed-over criterion: …" and "The landing condition has not
-happened: …". Assumptions and questions about design are not handovers and this
-skill does not touch them.
+happened: …". The landing question is not a handed-over criterion and stands on
+its own. On a parent it is the only owed question there is, and it derives from
+the parent itself, so the parent's `open_records` carry it exactly as an
+executable objective's do. Assumptions and questions about design are not owed
+and this skill does not touch them.
 
 Of those, keep the ones the user's sentence actually speaks to. "Desplegué la
 policy de rutas y anda" settles a deploy; it does not settle a browser test the
@@ -230,7 +251,7 @@ cover, ask rather than rounding up.
 Then decide what the write is, from their words and the draft's
 `## Landing condition`:
 
-- **It worked, and nothing the objective owes is left.** Every handed-over question
+- **It worked, and nothing the objective owes is left.** Every owed question
   is among the ones their words settle, and the landing condition has happened —
   in their words, or already when the work was delivered. One `decision` quoting them, an
   `answers` edge on each question, and `met`.
@@ -244,7 +265,9 @@ Then decide what the write is, from their words and the draft's
   blocking question releases the block by itself: without the fresh edge the
   objective falls back to the state it had before it was blocked — waiting for
   you to start it if it had been approved, waiting for your approval if it never
-  was — not on what is still owed.
+  was — not on what is still owed. A parent falls back further: with the block
+  released and its children all closed, it reads `met` derived from them, so the
+  fresh edge is what keeps a parent waiting on the rest of its landing.
 - **It failed.** The `decision` answers the question with the failure, and the
   objective gets a fresh `blocked` edge to a new `open-question` naming what failed,
   on the second line of the same batch. The objective stays open and the listing now
@@ -263,7 +286,14 @@ In the user's language, before any file exists:
 > Con tus palabras: "<their sentence, verbatim>". ¿Lo escribo?
 
 For a failure, the line says `blocked` and names the new question's title. For
-something still owed, it names what the objective will be left blocked on. Nothing
+something still owed, it names what the objective will be left blocked on. When
+the write is `met`, `cancelled` or `separated` and the objective has a `parent`,
+one more line says what follows it:
+
+> Después sigo hacia arriba: si era el último hijo abierto de un padre que aterriza
+> con un commit, merge o deploy, lo dejo bloqueado en eso.
+
+Nothing
 is written until they say go; a correction — the wrong question, a check they did
 not mean — changes the list and gets shown again.
 
@@ -285,11 +315,16 @@ It worked, nothing left:
 One `answers` edge per settled question. When something is still owed, the same
 line without the `met` edge and with `Outcome:` saying what is left.
 
+The same line closes a parent's landing, with the parent's id as `<objective-id>`
+and the landing question `record` wrote on it as `<question-id>`. Its `met` edge
+is written after the last child closed, so `memory state` reads it as the
+parent's own state rather than one derived from its children.
+
 It failed:
 
 ```jsonl
 {"kind":"decision","title":"Handover reported failed: <the check>, <how it failed>","body":"The user's words: \"<verbatim>\"\nSettles: <each question id and title> — it was run, and it failed.\nOutcome: blocked on the open question naming the failure.","about":["handover","<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"answers","to":"<question-id>"}]}
-{"kind":"open-question","title":"<the check> failed when the user ran it: <the failure, in one line>","body":"Reported through inbox: \"<verbatim>\"\nThe check: <the criterion or landing condition, as the draft states it>; instructions at <the manual-checks.md path>.\nWhat it needs is a fix, then a run.","about":["handover","<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"blocked","from":"<objective-id>"}]}
+{"kind":"open-question","title":"<the check> failed when the user ran it: <the failure, in one line>","body":"Reported through inbox: \"<verbatim>\"\nThe check: <the criterion or landing condition, as the draft states it>; instructions at <the manual-checks.md path, or none for a landing>.\nWhat it needs is a fix, then a run.","about":["handover","<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"blocked","from":"<objective-id>"}]}
 ```
 
 `answers` and `derives_from` are spelled `"to"` because this line's record is
@@ -330,6 +365,35 @@ what is still open on it. The assumptions `plan` recorded stay listed after a
 An objective that still reads as it did before, after an exit 0, is a close that
 did not land: say so with what the command printed, and write nothing more.
 
+#### Then the ancestor that lands
+
+A close written here can be the last one a tree was waiting on. When this batch
+wrote `met`, `cancelled` or `separated` and the read-back shows it, the objective
+may have been the last open child of a parent whose draft declares a landing, and
+`memory state` derives that parent `met` the moment it is, reading no draft.
+`record` walks up after every close that is not `blocked` for exactly this; a
+close written here goes through no `record`, so this skill runs the same walk. A
+batch that left the objective `blocked` — a failure, or something still owed —
+keeps it outstanding on its parent, and there is nothing to walk.
+
+Follow "After the close: the ancestor that lands" in `agents/record.md`, resolved
+against the ai-kit clone as the runtime reference says, with the objective this
+batch just closed as its `<objective_id>`. It holds here as written: the same
+draft lookup, the same one line in `landing-from-<objective-id>.jsonl` beside the
+ancestor's draft — written with the file-writing tool, rule 8 — the same
+`memory add --dir <root> --plan <plan> --batch …` with the ancestor's own `root`
+and `plan`, and the same rule that an ancestor already carrying a "The landing
+condition has not happened: …" question is blocked on that one with
+`memory link --dir <root>` rather than given a second. That question quotes
+nobody and settles nothing; it is the consequence of the close the user already
+said go to, announced in the line shown before it.
+
+Add to the one line of the read-back the ancestor the walk left `blocked`, by log,
+title and id, and the condition it now waits on, read from its own
+`memory state --all --id <ancestor-id>` rather than from the exit status. A walk
+that stopped before any ancestor that lands wrote nothing and adds nothing to the
+line; one that stopped on an ancestor with no draft says so, naming it.
+
 ### 4 — Dropped, or not now
 
 "Eso ya no va" — the objective is not going to happen — closes `cancelled`.
@@ -342,11 +406,11 @@ exactly as step 3 does, and both are one line written to the same place:
 {"kind":"decision","title":"Set aside for now: <objective title>","body":"The user's words: \"<verbatim>\"\nOutcome: separated.","about":["<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"separated","from":"<objective-id>"}]}
 ```
 
-One of those lines, never both. A dropped objective's handed-over questions will
-never be run, and its decision answers each of them, one `answers` edge apiece;
+One of those lines, never both. A dropped objective's owed questions will never
+be settled, and its decision answers each of them, one `answers` edge apiece;
 a set-aside objective's questions stay open, because the work they wait on is
 still coming. Then the same `memory add --dir <root> --plan <plan> --batch …`,
-and the same read-back.
+the same read-back, and the same walk to the ancestor that lands.
 
 ### 5 — Note an idea
 
@@ -421,8 +485,8 @@ has taken it up.
 - **Written where it belongs.** An objective's close into its own log and plan, an
   idea into the log it names; this session's repository is not a default.
 - **`met` is what the landing condition said.** No state above it, no queue of
-  things to confirm; a deploy is on the record only where the objective asked for
-  it.
+  things to confirm; a deploy is on the record only where the objective, or the
+  parent its slices land through, asked for it.
 - **Read back, not reported.** An exit status says the write was accepted; `state`
   says what the objective is now.
 - **Explaining is reading.** The draft, the instructions and the records answer
