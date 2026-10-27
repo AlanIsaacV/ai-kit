@@ -326,13 +326,15 @@ Provenance is a closed set of three values, and each one means exactly what it
 says:
 
 - **`you chose this`** — the user picked it, in this conversation, when asked
-  about *this* decision.
+  about *this* decision, or let stand the single-level line step 4 put to them as
+  their pick (the exception under step 4's labeling).
 - **`their words`** — it is in something they said or wrote, close enough that
   they would recognize it as theirs.
 - **`my call`** — you decided it. This is the default, and it stays the default
   for every assumption nobody has looked at yet.
 
-Answering a nearby question never promotes an assumption to `you chose this`, and
+Answering a nearby question never promotes an assumption to `you chose this` —
+the single-level line under step 4's labeling is the one stated exception — and
 answering a multiple-choice question that happens to touch the same area does not
 either — an option they picked answers the question you asked, not everything you
 decided around it. This repo has the failure on disk:
@@ -349,15 +351,20 @@ Then ask, in two halves that stay distinguishable:
   and it cannot carry "you missed an entire area", so ask for both in words:
 
 > Arriba están las suposiciones numeradas. Corregime cualquiera por número —
-> decime cómo va en realidad — y decime qué falta que no esté en la lista.
+> decime cómo va en realidad — y decime qué falta que no esté en la lista. Si
+> alguna opción de nivel nombra un test que no querés, tachalo o corregilo acá.
 > Todavía no escribí nada, así que corregir acá no cuesta nada.
 
 This round covers the assumptions, the open questions, **the premise** — step 5's
 first beat, which goes here rather than in the file because it is the largest
 judgment call in the draft and words are the cheapest place to correct it — and,
 when the objective looks executable, **the level**, which is one closed question
-among the batched ones, offers the three levels step 5 defines with their
-descriptions as the options, and is the user's pick rather than yours. When it
+among the batched ones, offers the levels step 5 defines with each description
+written for this objective — the unit tests of levels 2 and 3 named in it, for
+the open ask to strike or correct — and is the user's pick rather than yours. When step 5's rules
+leave only level 1 to offer there is no question to ask, and the level goes in
+this round as one more numbered line with its reason, corrected by number like
+any assumption. When it
 looks like a parent the level stays out of the round, because a parent declares
 none. Not the objective, not the constraints, not the criteria, not what is out of scope —
 those are what the draft is for, and reading them back in chat is how the file
@@ -366,7 +373,9 @@ stops being read.
 Then update the labels from what they answered, and only from that. An assumption
 they corrected in words becomes `their words`; one they chose between, in a
 question that was about that assumption, becomes `you chose this`; one they did not
-touch keeps `my call`, however obvious it looks to you.
+touch keeps `my call`, however obvious it looks to you. The one exception is the
+level line put in this round when only level 1 is offered: it was put to them as
+their pick, so left standing it is `you chose this`.
 
 ### 5 — Decide whether this objective is executable, then write the draft
 
@@ -582,7 +591,8 @@ criteria to get there — prose, not records, and not promises.>
 
 ## Level
 <One of `1 — Validar` | `2 — Sólido` | `3 — Completo`, exactly as the user picked
-it in step 4's round. Their pick and never yours. On level 1, one line after it
+it in step 4's round, or as they let it stand there when it was the only level
+offered. Their pick and never yours. On level 1, one line after it
 per thing left out of this objective — prose, not records.>
 
 ## Landing condition
@@ -681,8 +691,10 @@ who knows whether anybody is waiting to use this.
 `## Level`.** That is the decision the user actually makes when they size a piece
 of work: not how long it should take, but whether this is a quick thing to
 validate, something solid, or the complete job. What a level contains is what
-they are choosing between, so the contents of each level are written here once
-and shown as the option itself rather than improvised per question. There is no
+they are choosing between, so what each level is gets defined here once and what
+it contains for this objective is written as the option itself: a description
+that fits every objective describes none of them, and a choice between generic
+texts is a choice between labels. There is no
 time anywhere in it: no hours, no reference duration per level, nothing for
 `work` to compare the clock against, because a duration is hard to estimate and
 is not what the user decides.
@@ -696,18 +708,29 @@ There are exactly three levels, and each one contains the one before it:
   level itself: prose, not records, for the same reason a first cut's deferrals
   are.
 - **2 — Sólido.** Level 1, plus the error paths and the edge cases that will
-  realistically happen, a test for each business rule the user names — this is
-  the level where the unit-test ask below runs — and `real-dependency` fidelity on
-  the main path's criterion.
-- **3 — Completo.** Level 2, plus migrating the existing uses of whatever this
-  changes, the documentation, retiring what it replaces, and robustness past the
-  cases level 2 judged realistic.
+  realistically happen, a test for each business rule its description names —
+  the only way a unit test is authorized, below — and `real-dependency` fidelity
+  on the main path's criterion.
+- **3 — Completo.** Level 2, plus what surrounds the change beyond its own path:
+  migrating the existing uses of whatever this changes, the documentation,
+  robustness past the cases level 2 judged realistic, and retiring what it
+  replaces only when it replaces something.
 
 **The level decides which criteria get written, and that is all it decides.**
 Level 1 writes criteria for the main path and authorizes no unit test. Level 2
-adds a criterion per error path and edge case it took in, and the criteria the
-unit-test ask produces. Level 3 adds a criterion for each existing use migrated,
-for the documentation, and for what is retired. Every level iterates until its
+adds a criterion per error path and edge case it took in and one per business
+rule its description names. Level 3 adds a criterion
+for each existing use migrated, for the documentation, and for what is retired
+when something is. What the criteria cover, item for item, is the picked level's
+description read together with those of every level offered below it, each as
+amended by what the user struck or corrected in that round's open ask: picking 3
+covers level 1's main path, level 2's items and level 3's own, and a test struck
+from the description that named it stays struck. Each item named there gets its
+criterion — except the raise to `real-dependency`, carried as the fidelity on the
+main path's criterion rather than as a criterion of its own — and nothing not
+named gets one, because the user chose that text and not the definition behind
+it.
+Every level iterates until its
 criteria are met — verification, rework and review run the same at level 1 as at
 level 3 — so the level never buys or limits retries; a level 1 objective that
 takes four rounds to get its main path green takes four rounds.
@@ -716,19 +739,42 @@ takes four rounds to get its main path green takes four rounds.
 this is the case it exists for: an agent's guess at how much goes in becomes a
 scope the criteria are then written against, as though somebody had chosen it. It
 is one closed question in step 4's batched `AskUserQuestion` round, beside the
-premise, and its options are the three levels with these descriptions, verbatim:
+premise. Each option keeps its label and gets a description written for this
+objective, in Spanish and short enough to read inside the question, naming its
+concrete items: the path level 1 runs end to end; the error paths and edge cases
+level 2 adds, each business-rule test by its rule
+(`test para: rechazar una transferencia que sobregira la cuenta`), and raising the
+main path's criterion to `real-dependency`; the existing uses level 3 moves, its
+documentation, and what it retires if this replaces anything. Level 1's
+description is always the main path end to end and nothing else — a level 1
+widened until the levels above it look small is the level chosen for the user by
+another route.
 
-| Option | Description |
-|---|---|
-| `1 — Validar` | El camino principal de punta a punta, en una sola forma. Los criterios cubren solo ese camino y se prueba usándolo. Sin casos borde, sin tests unitarios, sin limpieza. Lo que queda afuera se nombra. |
-| `2 — Sólido` | Todo lo del nivel 1, más los caminos de error y los casos borde que van a pasar de verdad, tests para las reglas de negocio que vos nombres, y la dependencia real en el camino principal. |
-| `3 — Completo` | Todo lo del nivel 2, más migrar los usos existentes, documentación, retirar lo que esto reemplaza, y robustez. |
+**A level that adds nothing concrete over the one below is not offered.** Each
+level is compared against the highest level offered below it, so when 2 adds
+nothing and 3 does, the options are 1 and 3 and level 3's description names
+everything it adds over level 1. When the items it would add come out empty
+here — nothing realistically fails that level 1 does not already exercise, no
+rule worth a test, no raise to `real-dependency`, no use to migrate, nothing
+replaced — offering it is offering the level below under another name. Leave it out, and say in the
+question why it is missing (`3 — Completo no se ofrece: no hay usos que migrar ni
+nada que retirar`). When only level 1 remains there is no question, since a
+closed question needs two options and one is an announcement: the level goes in
+step 4's round as a numbered line with its reason —
+`Nivel 1 — 2 y 3 no agregan nada: la prueba es el deploy` — and the user corrects
+it there by number. It is stated in the open before anything is written, which
+is what keeps it their pick rather than yours, and left standing its provenance
+is `you chose this`, the exception step 4's labeling names.
 
 When step 4's round already ran without it — the objective looked like a parent
 then, and only this step found it executable — it is one closed question asked
-here, with the same three options, and it is still never yours to pick.
+here under the same rules — followed, when the offered levels name tests, by the
+open ask's test line in words, so one can still be struck — or, when only level 1
+remains, that line and its reason put to the user in words, and it is still never
+yours to pick.
 
-Write the option the user picked under `## Level` exactly as its label reads.
+Write the level the user picked, or let stand, under `## Level` exactly as its
+label reads.
 `work` copies that line into the freeze `decision` at its step 4, which is what
 keeps the scope the criteria were written for on the record beside them.
 
@@ -839,17 +885,16 @@ it covers. The naming is the whole of the condition — "the module is tested"
 authorizes nothing, "a transfer that would overdraw the source account is
 rejected" authorizes exactly one test and says what it asserts.
 
-**That is not a call to make on your own while writing the draft.** Ask, in the
-round this step already has with the user: name the rules you believe are worth
-a test of their own, say what each would cost to get wrong, and let them keep
-the ones that earn it. What they keep becomes a criterion; what they do not gets
-no test, and that is the intended outcome rather than a gap for somebody to fill
-in later. A draft that names none is an ordinary draft, not an oversight.
-
-**The ask runs at levels 2 and 3, and at level 1 it does not run at all.** A
-level 1 objective authorizes no unit test: its main path is proven by using it,
-and that is the whole of what the user picked. At levels 2 and 3 the ask runs
-exactly as above.
+**That is not a call to make on your own, and it is not a separate ask.** The
+rules worth a test of their own are named, one by one, in step 4's round in the
+description of the level that adds them — level 2's in level 2's, inherited by
+level 3 — so the user weighs them as part of what each level contains, and that
+round's open ask is where they strike or correct one in words. Each test left in
+what the picked level covers becomes a criterion naming its rule; one struck gets no test, which is the intended outcome rather than a gap
+for somebody to fill in later. A description that names none, and the draft that
+follows from it, is ordinary rather than an oversight. At level 1 there is none:
+its main path is proven by using it, and that is the whole of what the user
+picked.
 
 Two sections carry most of the value. **Assumptions** is what makes "don't
 assume anything" auditable instead of aspirational. **Out of scope** is what
@@ -880,7 +925,8 @@ section that already holds it rather than composed:
 > to check and we are betting on it>
 > **No hace** — <two or three, from `## Out of scope` and from what `## Cut`
 > moved out on a first cut>
-> **Nivel** — <`## Level`, the line the user picked>
+> **Nivel** — <`## Level`, the line the user picked, or let stand when it was
+> the only level offered>
 
 **The card never carries a criterion.** Not one, not paraphrased, not folded into
 the *no hace* line. A criterion on the card is a criterion approved in chat,

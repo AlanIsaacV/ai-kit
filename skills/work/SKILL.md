@@ -538,8 +538,8 @@ Level: <the `## Level` line from the draft>" \
 
 **The level goes in this body because what was approved includes how much of the
 objective it is for.** `plan` wrote the criteria from it — the main path alone,
-the paths that will realistically fail as well, or the whole thing with what it
-replaces retired — so a criterion list read later without its level reads as
+the paths that will realistically fail as well, or the whole thing with what
+surrounds it — so a criterion list read later without its level reads as
 either too thin or too much. It is recorded here and compared against nothing:
 the level decides what went into the criteria, and meeting them is iterating at
 every level. Leave the line out entirely when the draft declares no `## Level` —
