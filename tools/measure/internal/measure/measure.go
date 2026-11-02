@@ -51,6 +51,10 @@ type runResult struct {
 	dir      string
 	ignored  int
 	samples  []sample
+
+	attribution        runAttribution
+	attributionFound   bool
+	attributionIgnored int
 }
 
 func Run(ctx context.Context, opts Options) (Report, error) {
@@ -131,7 +135,11 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 			if result.failed {
 				fmt.Fprintf(progress, "failed (exit %d) in %s\n", result.exitCode, elapsed)
 			} else {
-				fmt.Fprintf(progress, "ok in %s, %d metrics\n", elapsed, len(result.samples))
+				fmt.Fprintf(progress, "ok in %s, %d metrics", elapsed, len(result.samples))
+				if result.attributionFound {
+					fmt.Fprintf(progress, ", %s", attributionFile)
+				}
+				fmt.Fprintln(progress)
 			}
 			runs = append(runs, result)
 		}
@@ -317,6 +325,11 @@ func runRecipe(ctx context.Context, entry, dir, code, runDir string, env []strin
 		return runResult{}, err
 	}
 	result.samples, result.ignored = samples, ignored
+	attribution, attributionIgnored, found, err := parseAttribution(filepath.Join(out, attributionFile))
+	if err != nil {
+		return runResult{}, err
+	}
+	result.attribution, result.attributionIgnored, result.attributionFound = attribution, attributionIgnored, found
 	return result, nil
 }
 

@@ -24,6 +24,9 @@ type Report struct {
 	Ignored    SideCounts  `json:"ignored_lines"`
 	FailedRuns []FailedRun `json:"failed_runs"`
 	Metrics    []Metric    `json:"metrics"`
+
+	AttributionIgnored *SideCounts   `json:"ignored_attribution_lines,omitempty"`
+	Attribution        []Attribution `json:"attribution,omitempty"`
 }
 
 type Ref struct {
@@ -86,6 +89,12 @@ func buildReport(opts Options, top, recipe, results, baseCommit, headCommit stri
 			return &c.Head
 		}
 		*counts(&report.Ignored) += run.ignored
+		if run.attributionFound {
+			if report.AttributionIgnored == nil {
+				report.AttributionIgnored = &SideCounts{}
+			}
+			*counts(report.AttributionIgnored) += run.attributionIgnored
+		}
 		if run.failed {
 			*counts(&report.Failed)++
 			stderr := filepath.Join(run.dir, "stderr.log")
@@ -133,6 +142,7 @@ func buildReport(opts Options, top, recipe, results, baseCommit, headCommit stri
 		}
 		report.Metrics = append(report.Metrics, m)
 	}
+	report.Attribution = buildAttribution(runs)
 	return report
 }
 
@@ -190,8 +200,10 @@ func EncodeText(w io.Writer, r Report) error {
 	b.WriteString("\n")
 	if len(r.Metrics) == 0 {
 		b.WriteString("no metrics from any completed run\n")
-		_, err := io.WriteString(w, b.String())
-		return err
+		if _, err := io.WriteString(w, b.String()); err != nil {
+			return err
+		}
+		return encodeAttribution(w, r)
 	}
 	if _, err := io.WriteString(w, b.String()); err != nil {
 		return err
@@ -208,7 +220,10 @@ func EncodeText(w io.Writer, r Report) error {
 			median(m.Base), span(m.Base), median(m.Head), span(m.Head),
 			signed(m.Delta), percent(m.DeltaPercent), noise)
 	}
-	return table.Flush()
+	if err := table.Flush(); err != nil {
+		return err
+	}
+	return encodeAttribution(w, r)
 }
 
 func median(s *Stats) string {

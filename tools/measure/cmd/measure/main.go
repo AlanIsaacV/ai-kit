@@ -33,6 +33,11 @@ recipe prints one JSON metric per line on stdout. For every probe and metric it
 prints median, min and max per side, the delta of medians, and whether the two
 ranges overlap. The report holds no verdict.
 
+A recipe may also write <out>/attribution.jsonl, one JSON object per line with
+probe, source, key, value and unit. For every probe and source it prints, per
+side, each key's median share of the probe's time across the runs that wrote
+it, ranked; --json holds the full ranking under "attribution".
+
 Exit 0 whenever a report was printed, whatever it says, failed runs included.
 Non-zero on a usage or an input error, or when a signal stopped the run.
 `

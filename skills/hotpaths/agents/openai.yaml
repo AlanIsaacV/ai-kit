@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rank the Hot Paths"
+  short_description: "Rank a service's hot paths by measured share and price each fix"
+  default_prompt: "Use $ai-kit:hotpaths to rank this service's hot paths at HEAD and say which optimisations pay."
