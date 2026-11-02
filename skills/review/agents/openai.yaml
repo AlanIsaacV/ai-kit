@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review by Rules"
+  short_description: "Show the rules a change assumes, on one screen"
+  default_prompt: "Use $ai-kit:review to show the rules this branch assumes, ranked by criticality."
