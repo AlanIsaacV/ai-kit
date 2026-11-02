@@ -1,6 +1,6 @@
 ---
 name: plan
-description: "Author an objective before any code is written — explore the problem, clarify what is genuinely ambiguous, weigh the real options with the user, and produce a reviewable draft, with acceptance criteria and the fidelity each one demands, that they can read in full and correct. Use this whenever the user describes something they want built, changed, migrated or fixed and the shape of the work is not already settled between you. Use it again at any depth: opening a more specific objective underneath one that already exists is this skill's job, and it will keep descending until it reaches one a single session can deliver. Triggers on: 'plan this', 'planeá esto', 'quiero hacer X', 'necesito implementar', 'how should we approach', 'armemos un plan', 'ayudame a pensar', 'vamos a refactorizar', 'necesito migrar', 'quiero agregar la feature', 'me gustaría que el sistema haga X', 'esto es más grande de lo que pensábamos', 'abramos algo más chico debajo', 'define the acceptance criteria'. Use it for small work too — a two-file fix gets the same structure, just one objective instead of a tree, so never skip it because the task looks small. To move an objective that already exists and already carries fidelity-annotated criteria forward, use the `work` skill instead; `plan` authors, `work` executes. When what arrived is a symptom whose cause nobody has established, this skill invokes `debug` before writing any criterion, and authors against what it finds."
+description: "Author an objective before any code is written — explore the problem, open with a prose proposal that weighs the real options with the user, clarify what is genuinely ambiguous, and write a draft whose acceptance criteria, with the fidelity each one demands, they see verbatim in the conversation and correct there before approving. Use this whenever the user describes something they want built, changed, migrated or fixed and the shape of the work is not already settled between you. Use it again at any depth: opening a more specific objective underneath one that already exists is this skill's job, and it will keep descending until it reaches one a single session can deliver. Triggers on: 'plan this', 'planeá esto', 'quiero hacer X', 'necesito implementar', 'how should we approach', 'armemos un plan', 'ayudame a pensar', 'vamos a refactorizar', 'necesito migrar', 'quiero agregar la feature', 'me gustaría que el sistema haga X', 'esto es más grande de lo que pensábamos', 'abramos algo más chico debajo', 'define the acceptance criteria'. Use it for small work too — a two-file fix gets the same structure, just one objective instead of a tree, so never skip it because the task looks small. To move an objective that already exists and already carries fidelity-annotated criteria forward, use the `work` skill instead; `plan` authors, `work` executes. When what arrived is a symptom whose cause nobody has established, this skill invokes `debug` before writing any criterion, and authors against what it finds."
 ---
 
 # plan
@@ -43,28 +43,27 @@ child is worth opening, which is the only thing the descent needs from you.
    written. The draft has a section for them. An assumption you make silently is
    the exact mechanism by which what you build diverges from what was wanted,
    and it is invisible until it is expensive.
-3. **The draft is the readback for the objective, the constraints and the
-   criteria.** Do not restate those in chat and ask "does this look right?" —
-   the user needs to read the detail, not your summary of it. Point them at the
-   file. There are two exceptions and both are scoped by content, never by
-   timing:
-   - **Your judgment calls and the still-open questions** go in front of the
-     user in chat — step 4's round, whenever it runs, including when step 6's
-     feedback opens a new one. Those are the cheapest things to correct and the
-     most expensive ones to find buried in a long draft.
-   - **The four-line card** step 6 puts above the link: the premise, what
-     follows if it is false, what this does not do, and the level it was given.
-     It is a fixed form rather than a summary — those four and no fifth — and
-     **it never carries a criterion**. Approving the card is agreeing to fund the
-     objective; approving the criteria is something only reading them can do,
-     and the card is built out of four things that are not criteria precisely so
-     the first can never be mistaken for the second.
+3. **The user decides on the real text, never on a headline.** Being shown only a
+   summary is how a plan gets approved that nobody actually read, so step 6's
+   message carries the objective, what is out of scope and the criteria
+   themselves. That chat copy is lifted verbatim from the draft rather than
+   composed, except for the one consequence step 6 has you select, which holds no
+   graded text: a composed version is a second text to keep aligned by hand, and
+   what got approved would stop being what gets graded. The draft stays the graded
+   artifact, and `verify` reads it rather than the conversation. **Your judgment
+   calls and the still-open questions** go in front of the user earlier, in step
+   4's round, whenever it runs, including when step 6's feedback opens a new one.
+   Those are the cheapest things to correct and the most expensive ones to find
+   buried in a long draft.
 4. **A library version, an SDK shape or a provider API is resolved, never
    recalled.** Your training data lags releases. If the plan turns on an external
    dependency, look it up — `context7` if available, otherwise the pinned source
    in the dependency tree, otherwise the web — and cite what you used.
 5. **Conversation in the user's language; everything written to disk in
-   English.**
+   English.** Two things cross that line on purpose, because each is a copy and a
+   translation would be a second text: `## Request` holds what the user said in
+   the words they said it, and step 6's message shows the draft's text as it
+   stands.
 6. **Never invent a path, a name or a number.** If you need one and cannot
    derive it, that is a question or an assumption, and both have a home.
 7. **Never write a state edge.** A `planned` objective is one with no state edge
@@ -124,10 +123,12 @@ Three cases, and between them they are the whole placement decision:
 - **The request is that those frozen criteria are *wrong*** — this is not the
   case above and it is not refused. It is a **supersede**, and it is yours:
   write a new objective with the criteria the user actually wants, and in step 7
-  link it with `--type supersedes` to the objective it replaces. Editing frozen
-  criteria in place is what this refuses; replacing them with a record that says
-  so is authorship. `work`'s gate routes feedback that touches a criterion here
-  on purpose, so this is the case arriving from there.
+  link it with `--type supersedes` to the objective it replaces. When the new one
+  is a root, its `## Request` holds what the user said when replacing it, in this
+  conversation, verbatim, not the request of the objective it replaces. Editing
+  frozen criteria in place is what this refuses; replacing them with a record that
+  says so is authorship. `work`'s gate routes feedback that touches a criterion
+  here on purpose, so this is the case arriving from there.
 
 The line between the last two is "run this" versus "these criteria are wrong".
 The first goes to `work` untouched. The second never gets applied by the thread
@@ -159,8 +160,8 @@ same exploration twice.
 #### When the cause is not established, `debug` runs first
 
 This is the check to make here, with `explore`'s findings in hand and before step
-2 asks anything, because it is the last cheap moment: from step 5 onward you are
-writing criteria, and criteria written against a cause nobody has established
+2 proposes anything, because it is the last cheap moment: from step 5 onward you
+are writing criteria, and criteria written against a cause nobody has established
 freeze a guess into the thing every later step is graded against.
 
 The test is narrow, and it is **not** "the request mentions a bug":
@@ -230,31 +231,16 @@ Only the *immediate* parent is shown. Walking the chain all the way up turns
 context into a wall of text nobody reads, which comes to the same thing as
 showing none of it.
 
-### 2 — Ask only what is genuinely ambiguous
+### 2 — Open with a proposal, then stop
 
-Ask when the answer changes what gets built:
+With `explore`'s findings in hand, and before anything closed, put a proposal in
+front of the user in prose: what would get built, in what form, how that improves
+on today, and the real options with a recommendation. A plan opens a discussion.
+A closed question asked first gets accepted without anybody having seen the whole
+idea, which is how an objective ends up approved and not understood.
 
-- the outcome is clear but the surface is not — which endpoints, which screens
-- two or more reasonable approaches lead to materially different work
-- an unresolved decision sits underneath everything else — data model,
-  ownership boundary, sync vs async
-- there is no way to tell when this is done
-
-Ask those in one `AskUserQuestion` call, multiple choice where the options are
-discrete. Do not ask a question whose every answer leads to the same next step.
-
-One answer sends you backwards rather than forwards: **"we don't actually know
-why it does that."** An unknown cause surfaces here at least as often as it does
-in step 1, because it is a question's answer more often than it is a request's
-wording. Go back to step 1's `debug` check with it — the criteria have not been
-written yet, and that is the only reason this is still cheap.
-
-Everything you did **not** ask — every judgment call you made to keep moving —
-goes on the table in step 4 and then in the draft under Assumptions. That is the
-trade: you get to keep moving without interrogating the user, and in exchange
-nothing you decided stays invisible.
-
-### 3 — Put the real options on the table
+It runs every time, and it is short when the shape is clear: arriving from `work`
+or from `debug` makes it shorter, never absent.
 
 When there is more than one reasonable way to do this, say so with the
 tradeoffs and a recommendation. Two or three options, each with what it costs
@@ -310,11 +296,42 @@ reason to present fewer options or to present one as already settled. And when t
 round concludes that the recorded choice is itself wrong, it does not get corrected
 here — step 7 says where a choice that outlives this tree belongs.
 
+**Then stop and wait for the reply.** No closed question goes out before it. What
+comes back settles the shape or changes it, and a reply that changes it gets a
+revised proposal and another stop rather than a question about a shape nobody
+agreed to.
+
+### 3 — Ask only what is genuinely ambiguous
+
+What the reply to the proposal settled is not asked again. Ask when the answer to
+what is still open changes what gets built:
+
+- the outcome is clear but the surface is not — which endpoints, which screens
+- two or more reasonable approaches the reply left open lead to materially
+  different work
+- an unresolved decision sits underneath everything else — data model,
+  ownership boundary, sync vs async
+- there is no way to tell when this is done
+
+Ask those in one `AskUserQuestion` call, multiple choice where the options are
+discrete. Do not ask a question whose every answer leads to the same next step.
+
+One answer sends you backwards rather than forwards: **"we don't actually know
+why it does that."** An unknown cause surfaces here at least as often as it does
+in step 1, because it is a question's answer more often than it is a request's
+wording. Go back to step 1's `debug` check with it — the criteria have not been
+written yet, and that is the only reason this is still cheap.
+
+Everything you did **not** ask — every judgment call you made to keep moving —
+goes on the table in step 4 and then in the draft under Assumptions. That is the
+trade: you get to keep moving without interrogating the user, and in exchange
+nothing you decided stays invisible.
+
 ### 4 — Check your judgment calls before any file exists
 
 Nothing is written yet, and that is what makes this round cheap. The same content
-inside a 300-line draft costs the user a full read and costs you a full rewrite,
-so the decisions that are still soft get looked at here instead.
+inside a written draft costs you a full rewrite and the user another approval, so
+the decisions that are still soft get looked at here instead.
 
 Give every judgment call you made as **numbered prose, one line each** — what you
 decided, the alternative it displaced, and where the decision came from:
@@ -358,17 +375,19 @@ Then ask, in two halves that stay distinguishable:
 This round covers the assumptions, the open questions, **the premise** — step 5's
 first beat, which goes here rather than in the file because it is the largest
 judgment call in the draft and words are the cheapest place to correct it — and,
-when the objective looks executable, **the level**, which is one closed question
-among the batched ones, offers the levels step 5 defines with each description
-written for this objective — the unit tests of levels 2 and 3 named in it, for
-the open ask to strike or correct — and is the user's pick rather than yours. When step 5's rules
-leave only level 1 to offer there is no question to ask, and the level goes in
-this round as one more numbered line with its reason, corrected by number like
-any assumption. When it
-looks like a parent the level stays out of the round, because a parent declares
-none. Not the objective, not the constraints, not the criteria, not what is out of scope —
-those are what the draft is for, and reading them back in chat is how the file
-stops being read.
+when the objective looks executable, **what looks irreversible** and **the level**.
+What looks irreversible is one more numbered line per candidate, read against the
+test step 5 defines, or one line saying nothing passes it. It is corrected by
+number like any assumption, and confirming an item is step 6's. The level is one
+closed question among the batched ones, offers the levels step 5 defines with each
+description written for this objective — the unit tests of levels 2 and 3 named in
+it, for the open ask to strike or correct — and is the user's pick rather than
+yours. When step 5's rules leave only level 1 to offer there is no question to ask,
+and the level goes in this round as one more numbered line with its reason,
+corrected by number like any assumption. When the objective looks like a parent
+both stay out of the round, because a parent declares neither. Not the objective,
+not the constraints, not the criteria, not what is out of scope — those get written
+next, and they reach the user in step 6's message, lifted verbatim from the draft.
 
 Then update the labels from what they answered, and only from that. An assumption
 they corrected in words becomes `their words`; one they chose between, in a
@@ -514,6 +533,10 @@ and a `for` loop written this way is not something every shell parses.
 ```markdown
 # Objective: <one line>
 
+## Request
+<Root objective only; a child leaves this section out. What the user said, verbatim
+and in their language, quoted rather than restated.>
+
 ## What I understood
 <The problem in your words, with enough detail that a wrong reading is
 obvious to the user. Not a restatement of their sentence.>
@@ -570,6 +593,10 @@ sketch to steer by, not a contract. Say so in one line.>
 ```markdown
 # Objective: <one line>
 
+## Request
+<Root objective only; a child leaves this section out. What the user said, verbatim
+and in their language, quoted rather than restated.>
+
 ## What I understood
 <The problem in your words, with enough detail that a wrong reading is
 obvious to the user. Not a restatement of their sentence.>
@@ -594,6 +621,11 @@ criteria to get there — prose, not records, and not promises.>
 it in step 4's round, or as they let it stand there when it was the only level
 offered. Their pick and never yours. On level 1, one line after it
 per thing left out of this objective — prose, not records.>
+
+## Irreversible
+<If this goes wrong, does reverting and fixing leave something that cannot be
+reconstructed? `none`, or a list with one line per item: what the change does and
+what could not be reconstructed.>
 
 ## Landing condition
 <One of `worktree` | `committed` | `merged` | `deployed` | `user-saw-it`, and who
@@ -640,8 +672,9 @@ files against `## Out of scope`; `work`'s step 9 reads `## Landing condition` at
 the close, after everything that grades the criteria is done, and `record` reads
 an ancestor's when a close leaves that ancestor with nothing outstanding;
 `work`'s step 5 reads `## Premise` before it launches anything and copies the
-`## Level` line into the freeze at its step 4; `implement` and `review` read the
-whole thing.
+`## Level` line into the freeze at its step 4, with the confirmation of
+`## Irreversible` beside it; on the last pass of its step 8 it reads the root's
+`## Request`; `implement` and `review` read the whole thing.
 `work` extends the sections around the criteria as it goes and leaves the
 criteria themselves alone. A parent's `## Findings` is what step 8 hands down to
 the child's `explore`, which is why the anchors go in the file instead of being
@@ -787,6 +820,22 @@ objective goes into it.
 freeze; what goes in is decided on each executable child, which declares its
 own.
 
+**Then read what the change does, and write it under `## Irreversible`.** The test
+is one question: if this goes wrong, does reverting and fixing leave something that
+cannot be reconstructed? It is read off what the change does, not off how risky it
+feels. Deleted or overwritten data, a movement of money, something sent outward and
+a contract others already consume all pass it. A feature writing data that can be
+recomputed does not, however much it writes. Level 3's *migrating* is a different
+word: it means moving existing uses, and it says nothing about this test.
+
+Write `none`, or a list with one line per item. The candidates went through step
+4's round; when that round ran with the objective looking like a parent, they are
+put to the user in words here, before the section is written. Each item listed is
+confirmed in step 6's gate, as its own question.
+
+**A parent declares no `## Irreversible`**, for the same reason it declares no
+level: it is not what gets built, and each executable child declares its own.
+
 **The fidelity line on each criterion is the load-bearing part.** It is decided
 here, with the user, before anyone has an interest in the answer. Naming one
 above `mocked` is what makes it impossible for verification to later report the
@@ -901,67 +950,68 @@ assume anything" auditable instead of aspirational. **Out of scope** is what
 stops the work from quietly growing — it is worth pushing for two or three
 entries even when the user shrugs.
 
-### 6 — Hand the draft over and wait
+### 6 — Show the objective in chat and wait
 
-This is the only time anybody asks the user to read these criteria. `work` does
-not ask again, so what they let through here is what gets built and graded.
+This is where the user reads these criteria, and what they let through here is
+what gets built and graded. When `work` runs in this same turn it does not show
+them again; its earlier-session gate is the case where they are shown once more.
 
-**An executable objective goes over with a four-line card on top of the link.**
-It exists so that *no* costs sixty seconds instead of a full read: the four lines
-are the bet, and somebody who is going to kill this objective can kill it without
-opening the file. A *yes* buys nothing here and is not meant to — the criteria
-still have to be read, in the file, before anything gets built. So the card saves
-the whole read on every objective that should not exist and costs four lines on
-every one that should, inside a message that was going out anyway. That is why it
-adds no round: it is not a stage, it is the top of the one message this step
-already sends.
+**An executable objective goes over as one message, lifted verbatim from the
+draft.** Each part is copied from the section that holds it, which is rule 3, so
+what the user approves is the text `verify` grades. Nothing in it is composed, with
+one exception: `Si es falsa` lifts the `Falsified by:` line and then names which of
+three fixed consequences follows. That choice is the only clause you select, and it
+holds no graded text. The message is the read, and it asks nobody to open the file.
 
-The form is fixed and the four lines are always these four, each lifted from the
-section that already holds it rather than composed:
+The form is fixed, and the parts are always these, in this order:
 
 > **Premisa** — <`## Premise`, the claim in its one line>
 > **Si es falsa** — <the `Falsified by:` line and what follows from it: there is
 > no objective at all, or the first cut is what will tell us, or nobody is going
 > to check and we are betting on it>
-> **No hace** — <two or three, from `## Out of scope` and from what `## Cut`
-> moved out on a first cut>
 > **Nivel** — <`## Level`, the line the user picked, or let stand when it was
-> the only level offered>
+> the only level offered, and the lines under it naming what was left out>
+> **Irreversible** — <`## Irreversible`, `none` or its list>
+>
+> **Entregable** — <`## Deliverable`, or `## Objective` when that is the heading
+> the draft carries>
+>
+> **Fuera de alcance**
+> <`## Out of scope`, and on a first cut what `## Cut` moved out>
+>
+> **Criterios de aceptación**
+> <`## Acceptance criteria`, each criterion with its `Verified by` and its fidelity>
+>
+> El draft quedó en `.ai-kit/plans/<slug>/draft-objective.md`, y lo de arriba es
+> copia textual, así que no hace falta abrirlo. Estos criterios y la fidelidad que
+> pide cada uno son los únicos contra los que se va a verificar después, y no se
+> cambian una vez que arrancamos. Contame por chat qué está mal, o decime que va —
+> el archivo lo reescribo yo con lo que me digas, no hace falta que lo edites.
 
-**The card never carries a criterion.** Not one, not paraphrased, not folded into
-the *no hace* line. A criterion on the card is a criterion approved in chat,
-which is the whole of what rule 3 forbids and the one thing that cannot be
-allowed to happen at a glance: the criteria are what `verify` grades and what
-nobody may change once execution starts. The four lines are made of the four
-things that are not criteria for exactly that reason — the card cannot stand in
-for the criteria because it structurally does not contain them. A fifth line is
-the same failure arriving by growth, so there is no fifth line.
+**Each item under `## Irreversible` is then asked as its own question, in this same
+gate.** Right after the message, in `AskUserQuestion`: one question per item, naming
+the item in the question, never one question covering the list. `none` asks nothing.
 
-Then the link, and the read the card does not replace — the criteria and the
-fidelity each one demands are still the thing to read:
+> ¿Confirmás esto, sabiendo que si sale mal, revertir y arreglar no lo reconstruye?
+> <the item, as it reads under `## Irreversible`>
 
-> Escribí el objetivo en `.ai-kit/plans/<slug>/draft-objective.md`. Leelo entero
-> — sobre todo los **criterios de aceptación** y la fidelidad que pide cada uno,
-> porque son los únicos contra los que se va a verificar después y no se cambian
-> una vez que arrancamos. Después mirá **Assumptions I made** y **What I don't
-> know**, que es donde está lo que decidí sin preguntarte. Contame por chat qué
-> está mal — el archivo lo reescribo yo con lo que me digas, no hace falta que lo
-> edites.
+It is confirmed once, at approval. Approving the objective means every item as the
+draft now states it got its own yes, and a *no* is feedback on the draft like any
+other, handled below. `work` writes the confirmed items at its step 4, on an
+`Irreversible:` line beside `Level:` in the freeze, which puts the confirmation on
+the record.
 
-**A parent objective gets no card.** Nothing is being funded: a parent is not
-what gets built, it declares no level, and its criteria are met by its children
-closing rather than by anybody executing it. Four lines summarising a draft
-nobody is about to run is the summary rule 3 forbids, with no decision bought for
-it. There is nothing to verify yet either, so the scope and the judgment calls
-are what matter:
+**A parent objective goes over without that message.** Nothing is being built: a
+parent declares no level and no `## Irreversible`, and its criteria are met by its
+children closing rather than by anybody executing it. There is nothing to verify
+yet either, so the scope and the judgment calls are what matter:
 
-> Escribí el objetivo en `.ai-kit/plans/<slug>/draft-objective.md`. Abrilo y
-> leelo entero — sobre todo **Assumptions I made** y **What I don't know**, que es
-> donde está lo que decidí sin preguntarte. Contame por chat qué está mal — el
-> archivo lo reescribo yo con lo que me digas, no hace falta que lo edites.
+> Escribí el objetivo en `.ai-kit/plans/<slug>/draft-objective.md`. Lo que decidí
+> sin preguntarte es lo que ya vimos en las suposiciones numeradas. Contame por
+> chat qué está mal — el archivo lo reescribo yo con lo que me digas, no hace falta
+> que lo edites.
 
-Then stop. Do not proceed on silence, and do not re-explain the draft's
-contents in chat — that defeats the point of having written it.
+Then stop. Do not proceed on silence.
 
 Feedback comes back in chat, and applying it is yours. When it introduces a
 judgment call the round never covered — a new decision, an alternative you had not
@@ -972,20 +1022,18 @@ here than it did before the file existed.
 
 Then rewrite the **whole file**, not the parts that changed. A draft patched in
 place becomes a collage where the corrections no longer agree with the paragraphs
-around them. Afterwards, name the sections that moved and stop there:
+around them. Afterwards, name the sections that moved:
 
 > Reescribí el archivo. Cambiaron **Assumptions I made**, **Out of scope** y el
 > criterio 3.
 
-Naming a section is an index, not a summary — the content still has to be read in
-the file. Saying what those sections now say is the chat summary hard rule 3
-forbids, so do not do it: no "ahora dice que…", no paraphrase of the new criterion,
-no diff in prose.
+That line is an index of what moved. Whatever of those sections goes in chat beside
+it is lifted verbatim, under rule 3: a paraphrase of a criterion is a second text.
 
 ### 7 — Commit it to memory
 
-Only once the user approves. The draft is a negotiating surface; memory is the
-record.
+Only once the user approves. The conversation is where the text got negotiated,
+the draft is what it settled on, and memory is the record.
 
 `--plan` names the **objective tree**, not this objective. For a child, take it
 from the parent's own record — `origin.plan`, which `state` reports as `plan` —
@@ -1039,7 +1087,7 @@ First, `<root>/.ai-kit/plans/<objective-slug>/objective.jsonl`, holding exactly 
 line — the objective and nothing else:
 
 ```jsonl
-{"kind":"objective","slug":"<the slug you derived in step 5>","title":"<objective one-liner>","body":"<Objective or Deliverable + Constraints + Out of scope + the criteria as written>","about":["<area>","<area>"],"edges":[{"type":"derives_from","to":"<parent-objective-id>"}]}
+{"kind":"objective","slug":"<the slug you derived in step 5>","title":"<objective one-liner>","body":"<on a root, ## Request verbatim + Objective or Deliverable + Constraints + Out of scope + the criteria as written>","about":["<area>","<area>"],"edges":[{"type":"derives_from","to":"<parent-objective-id>"}]}
 ```
 
 ```bash
@@ -1173,8 +1221,8 @@ what was actually appended, and `.ai-kit/` is already out of git.
 recorded and point at the next step:
 
 > Objetivo registrado (`<id>`), con N suposiciones y M preguntas abiertas. Los
-> criterios ya los aprobaste, así que `work` arranca directo: implementa,
-> verifica contra esos criterios y te trae el resultado.
+> criterios ya los aprobaste acá en el chat, así que `work` arranca directo:
+> implementa, verifica contra esos criterios y te trae el resultado.
 
 If they want to start now, continue into `work` in this same session. The
 criteria they just read are the ones it runs against, and it does not make them
@@ -1188,8 +1236,9 @@ one of its children right now, in this same conversation:
 
 The user picks; never pick silently among several. Then go back to step 1 for
 that child, with the objective you just recorded as its parent, and do the whole
-thing again: place it, look, ask what is genuinely ambiguous about *it*, put your
-judgment calls on the table, write its draft, hand it over, record it with
+thing again: place it, look, propose it and wait for the reply, ask what is
+genuinely ambiguous about *it*, put your judgment calls on the table, write its
+draft, show it in chat for approval, record it with
 `derives_from`. Stop descending at the first objective that passes all five parts
 of step 5's test — that one is what goes to `work`.
 
@@ -1247,13 +1296,16 @@ all.
   checked against it, so it is worth the turn it costs to write properly.
 - **Write what you assumed, ask what you cannot assume.** Interrogating the
   user is not rigor; recording your judgment calls is.
-- **The detail goes in the file, not in the chat.** Being shown only the
-  headline is how a plan gets approved that nobody actually read.
+- **The user decides on the real text.** Being shown only the headline is how a
+  plan gets approved that nobody actually read, so the approval message lifts the
+  text from the draft verbatim, and the draft is what gets graded.
 - **Orientation is a sketch, not a contract.** The moment it hardens into a
   phase list with contents, changing course starts costing more than it should.
 - **Stop at the handoff.** Planning that slides into implementing is planning
   nobody got to review.
 - **Descending is cheap; detail written too early is not.** One record and one
   edge open a child, and the parent is still there afterwards.
-- **The criteria get read once, here.** Everything downstream treats them as
-  settled, which is exactly why this is the step that cannot be rushed.
+- **The criteria get read here.** When `work` runs in this same turn it does not
+  show them again, and its earlier-session gate is the case where they are shown
+  once more. Everything downstream treats them as settled, which is exactly why
+  this is the step that cannot be rushed.

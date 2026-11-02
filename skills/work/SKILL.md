@@ -57,7 +57,9 @@ run, and invoke `plan` for the one that is.
    the subagent, and this thread's job afterwards is to read the log back and
    confirm it landed.
 7. **Conversation in the user's language; everything written to disk in
-   English.**
+   English.** One thing crosses that line on purpose: step 4's gate message shows
+   the draft's text as it stands, because a translation would be a second text
+   beside the one `verify` grades.
 
 ## The memory log
 
@@ -426,9 +428,9 @@ Do not fill it in from here. **Invoke the `plan` skill in this same
 conversation**: the Skill tool, skill `plan`, or `ai-kit:plan` where the plugin
 namespace is in play. Tell it which objective you are on and what this turn needs
 from it. It places the objective in the tree, applies the five-part sizing test,
-writes the criteria with the fidelity each one demands, has the user read and
-correct them, records the objective and links it to its parent. Then re-read the
-draft it wrote and come back to this check.
+writes the criteria with the fidelity each one demands, shows them to the user in
+chat and takes their corrections, records the objective and links it to its
+parent. Then re-read the draft it wrote and come back to this check.
 
 The same call, for the same reason, when this turn discovered an objective that
 was not there before, or when the one you are on is plainly larger than one
@@ -448,25 +450,29 @@ objective instead. Extending the draft in place is for the sections around it.
 
 ### 4 — Gate
 
-**When `plan` ran in this turn, the gate already happened.** The user read those
-criteria and the fidelity each one demands in `plan`'s own gate, minutes ago, in
-this conversation, and corrected them there. Do not put the same text in front of
-them a second time: asking somebody to re-read what they just approved is how
-they learn to skim the one artifact this entire loop depends on them reading. Say
-that is why, and go straight to the freeze:
+**When `plan` ran in this turn, the gate already happened.** The user saw those
+criteria and the fidelity each one demands in this conversation, in `plan`'s own
+gate, minutes ago; they corrected them there and confirmed there each item
+`## Irreversible` declares. The same text does not need a second showing: walking
+somebody back through what they just approved is how they learn to skim the one
+approval this entire loop depends on. Say that is why, and go straight to the
+freeze:
 
-> Los criterios que acabás de aprobar en el draft son los que se congelan — no te
-> los hago leer de nuevo. Arranco con eso.
+> Los criterios que acabás de aprobar acá arriba son los que se congelan — no te
+> los repito. Arranco con eso.
 
 **When the criteria were approved in an earlier session** and nothing has frozen
-them yet, this is where rule 3's hard stop happens:
+them yet, this is where rule 3's hard stop happens. The approval is in another
+session, so the text comes to this one: one message, lifted verbatim from the
+draft and not summarized, with what `plan`'s approval message shows — the premise,
+the level, `## Irreversible`, the Objective or Deliverable, Out of scope, and each
+criterion with its fidelity — ending in:
 
-> El objetivo está en `<la ruta del draft que encontraste>`. Leelo
-> entero — sobre todo los **criterios de aceptación** y la fidelidad que pide
-> cada uno, porque son los únicos contra los que se va a verificar después y no
-> se pueden cambiar una vez que arrancamos. Decime por chat qué cambiarías y
-> decime cuando arrancamos. Si lo que cambia es un criterio, lo pasamos de vuelta
-> por `plan`: desde acá no los toco.
+> Esto es lo que se va a congelar. Los **criterios de aceptación** y la fidelidad
+> que pide cada uno son los únicos contra los que se va a verificar después, y no
+> se pueden cambiar una vez que arrancamos. Decime qué cambiarías y decime cuando
+> arrancamos. Si lo que cambia es un criterio, lo pasamos de vuelta por `plan`:
+> desde acá no los toco.
 
 Stop, and wait for their words. Feedback comes in chat — there is one correction
 channel, because two of them is how the file and the conversation drift apart.
@@ -532,7 +538,8 @@ memory add --plan <tree-slug> --kind decision \
   --title "Approved for execution: <short name>" \
   --body "<the acceptance criteria as approved, each with its required fidelity>
 
-Level: <the `## Level` line from the draft>" \
+Level: <the `## Level` line from the draft>
+Irreversible: <what the draft's Irreversible section declares: none, or each item as it names it>" \
   --about <areas>
 ```
 
@@ -544,6 +551,16 @@ either too thin or too much. It is recorded here and compared against nothing:
 the level decides what went into the criteria, and meeting them is iterating at
 every level. Leave the line out entirely when the draft declares no `## Level` —
 a parent, or any draft written before that section existed.
+
+**What cannot be undone goes in this body because approving it is a separate act
+from approving the criteria.** The user confirmed each item by name in `plan`'s
+gate, and the draft that names them stays editable — so the freeze copies what
+`## Irreversible` declares, and that is where the confirmation stays on the record.
+It is recorded here and compared against nothing, the same as the level. A draft
+that declares `none` is written as `Irreversible: none`, because a line left out
+cannot be told apart from a draft that predates the section. Leave the line out
+only when the draft has no `## Irreversible` section at all, which is why it stays
+out on a parent.
 
 ```bash
 memory link --type approved_for_execution --from <objective-id> \
@@ -1120,6 +1137,68 @@ fact is worth much less to the session that finds it.
 Before raising anything in a future turn, check `--kind wont-fix` for that
 area. Re-raising something already dismissed is exactly the waste this record
 exists to prevent.
+
+#### On the last pass, set the request beside what was delivered
+
+Once a pass leaves nothing to fix, and before step 9, compare what this turn
+delivered with what the tree was opened for. It runs on that pass and no earlier,
+because a fix still pending changes what would be reported; it runs here and not
+after the close, because once `record` has written the close nothing delivered can
+still be aligned. It runs whatever the cut.
+
+Reach the tree's root objective the way `record` walks up to an ancestor. Start
+from this one:
+
+```bash
+memory state --id <objective-id> --all
+```
+
+The entry's `parent` is the next objective up. No `parent` means that entry is the
+root objective, so an objective with no parent compares against its own
+`## Request`. Otherwise take the id in `parent` and read that one the same way,
+until an entry comes back without one:
+
+```bash
+memory state --id <ancestor-id> --all
+```
+
+An answer with no entry in `objectives`, and the objective under `excluded`, means
+the walk reached a superseded objective: the comparison does not run, and nothing
+stops before step 9.
+
+Open the root objective's draft the way step 3 finds one, with `root` and `slug`
+out of that entry pasted in literally. `root` there is the repository's path, not
+the root objective:
+
+```bash
+sh -c 'for p in <root>/.ai-kit/plans/<slug>/draft-objective.md <root>/plans/<slug>/draft-objective.md; do
+  [ -f "$p" ] && { echo "$p"; exit 0; }
+done; exit 1'
+```
+
+No draft, or a draft with no `## Request`, and there is no comparison to state:
+nothing stops, and step 9 follows. With one, say in chat what was asked, what is
+left and whether this path still serves it, with the reason:
+
+> Antes de cerrar, lo que pediste fue: <el pedido, citado de `## Request`>. De eso
+> queda <lo que todavía no está entregado>. Este camino <sigue sirviendo a eso / ya
+> no le sirve>, porque <la razón>.
+
+Quote the request rather than restating it: a restatement is this thread's reading
+of it, and that reading is the thing being put to the test. What was delivered is
+what verification graded and this round left standing, so this needs no new read
+of the change. What is left is whatever of the request this close does not
+deliver. On a tree, the root objective's `completion` in the entry above says which
+children are closed, as of before this close: the branch this turn ran still sits
+in `outstanding` there.
+
+**Then stop and wait for the reply.** Step 9 starts after it: a comparison the turn
+runs straight past leaves the user nothing to judge.
+
+**This is the thread that built the work reporting on it, so it sets the two side
+by side and the user judges.** It refuses nothing, and what they answer goes
+through the options this step already has. The comparison itself writes nothing:
+no record, no edge, no field in step 9's handoff.
 
 ### 9 — Close the objective, then look up at its parent
 
