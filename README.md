@@ -49,6 +49,7 @@ skills/bootstrap  give an unseen repo a README.md and a CLAUDE.md in one invocat
 skills/prefer  record why this repo chose what it chose, and carry it to the next one
 agents/        explore · implement · verify · review · evaluate · record
 tools/memory   the append-only knowledge log everything writes to
+tools/evidence  facts on what one change introduces: secrets, advisories, workflow lines
 ```
 
 `plan` runs once per objective, including each one opened underneath another.
@@ -109,14 +110,15 @@ make install
 make doctor
 ```
 
-That builds the log CLI to `bin/memory` and then makes symlinks, all of them
-pointing back at the clone it was run from:
+That builds the log CLI to `bin/memory` and the evidence CLI to `bin/evidence`, and
+then makes symlinks, all of them pointing back at the clone it was run from:
 
 ```
 ~/.local/bin/memory              ->  <clone>/bin/memory
 ~/.claude/skills/ai-kit          ->  <clone>
 ~/.agents/skills/ai-kit-<name>   ->  <clone>/skills/<name>
 ~/.codex/agents/ai-kit-<role>.toml -> <clone>/bin/codex-agents/ai-kit-<role>.toml
+~/.local/bin/evidence            ->  <clone>/bin/evidence
 ```
 
 The first is what lets the skills call `memory` by name instead of carrying a
@@ -130,7 +132,8 @@ you delete by hand. The fourth installs all six native Codex roles, named
 `ai-kit-evaluate` and `ai-kit-record`. Their generated TOML wrappers load the
 original `agents/*.md` contracts and [shared runtime guide](runtime.md), keeping
 one source of instructions. Codex agents inherit the current model; Claude's
-agents declare no model and run on the session's model.
+agents declare no model and run on the session's model. The fifth puts `evidence`
+on PATH for `review`, which calls it by name the way the skills call `memory`.
 
 Codex skills remain in `~/.agents/skills`; agent definitions go into
 `$CODEX_HOME/agents` when `CODEX_HOME` is set, otherwise `~/.codex/agents`.
@@ -149,8 +152,8 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Restart the host from a terminal with that PATH. A running Codex session may
-retain an older shell environment. `make doctor` exits nonzero when `memory`
-does not resolve to this installation, a link is missing or broken, or a
+retain an older shell environment. `make doctor` exits nonzero when `memory` or
+`evidence` does not resolve to this installation, a link is missing or broken, or a
 generated agent definition needs rebuilding. It reports the repair command.
 It checks local installation files and PATH; it does not invoke an AI model.
 
@@ -179,7 +182,10 @@ installed skills or invoke `$ai-kit:plan` / `$ai-kit:work`; the native agent nam
 use hyphens instead of colons. Both hosts load the same skill files, including
 the runtime guide that maps skill transitions, questions and delegation.
 
-The repository ships one executable tool, `memory`. It bundles no MCP server.
+The repository ships two executable tools: `memory`, and `evidence`, which prints
+one JSON report on what a change introduces. `evidence` installs no scanner: it runs
+`gitleaks`, `osv-scanner` and `govulncheck` when they are there, and reports a check
+as not run when they are not. The repository bundles no MCP server.
 The optional codebase graph tools mentioned by `explore` require a separately
 configured MCP server; the agent falls back to searching files when those tools
 are unavailable.

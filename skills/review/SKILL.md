@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Put one change in front of the person who has to decide on it, as rules instead of lines: at most ten rules the change assumes, highest criticality first, each with its level, the rule in one sentence, a `path:line` that exists at the reviewed ref and where to read, on one screen, naming every changed file left unread. Takes a local repository and a branch, a commit range or a PR number; a bare branch resolves against its merge-base with the default branch. It launches the read-only `rules` agent, which reads the diff and what the changed code depends on, because an inherited rule lives outside the changed lines. The criticality is inferred and the report says so. Read-only over the reviewed repository: nothing reaches its working tree, its `.git` or its memory log, and the report lives in the conversation. Use when somebody has to decide on a branch or a PR without reading the whole diff. Triggers on: 'revisá esta rama', 'revisá este PR', 'revisá este rango', 'qué reglas asume este cambio', 'qué asume esta rama', 'qué reglas asume este PR', 'quiero decidir sobre este PR sin leer el diff', 'review this branch', 'review this PR', 'review this range', 'what rules does this change assume', 'what does this branch assume', 'help me decide on this PR without reading the diff'. It criticises no code, which is `debrief`'s job over code the person wrote, it does not explain how a repository works, which is `ask`'s, and it never edits, never commits and never invokes `plan`, `work` or `debug`."
+description: "Put one change in front of the person who has to decide on it, as rules instead of lines: at most ten rules the change assumes, highest criticality first, each with its level, the rule in one sentence, a `path:line` that exists at the reviewed ref and where to read, on one screen, naming every changed file left unread. On a branch or a range it puts a short block of automatic evidence between the rules and that list: secrets in added lines, new dependency advisories and insecure workflow lines, what is inherited as a count, and every check that did not run with its reason. Takes a local repository and a branch, a commit range or a PR number; a bare branch resolves against its merge-base with the default branch. It launches the read-only `rules` agent, which reads the diff and what the changed code depends on, because an inherited rule lives outside the changed lines. The criticality is inferred and the report says so. Read-only over the reviewed repository: nothing reaches its working tree, its `.git` or its memory log, and the report lives in the conversation. Use when somebody has to decide on a branch or a PR without reading the whole diff. Triggers on: 'revisá esta rama', 'revisá este PR', 'revisá este rango', 'qué reglas asume este cambio', 'qué asume esta rama', 'qué reglas asume este PR', 'quiero decidir sobre este PR sin leer el diff', 'review this branch', 'review this PR', 'review this range', 'what rules does this change assume', 'what does this branch assume', 'help me decide on this PR without reading the diff'. It criticises no code, which is `debrief`'s job over code the person wrote, it does not explain how a repository works, which is `ask`'s, and it never edits, never commits and never invokes `plan`, `work` or `debug`."
 ---
 
 # review
@@ -17,8 +17,9 @@ not show it.
 
 This skill is the door and the orchestrator. It settles the repository, resolves
 the input to a base and a head, puts the code and the diff in a temporary
-directory, launches `rules`, checks what comes back, cleans up and prints one
-screen. The `rules` agent reads and returns.
+directory, launches `rules`, checks what comes back, runs `evidence`, cleans up and
+prints one screen. The `rules` agent reads and returns, and it never sees the
+evidence.
 
 It shares a name with the `review` agent and is not that agent. `work` step 7
 launches `review` over code an agent wrote, against an objective, and it returns
@@ -49,6 +50,8 @@ findings on the code. This skill needs no objective and reports no code criticis
    criticism, no fix. The decision is the person's.
 9. **Conversation in the user's language; everything written to disk in English.**
    The agent answers in English and you put the report in their language.
+10. **A check that did not run never reads as clean.** It appears with its reason
+    and with no count, and a missing `evidence` is reported the same way.
 
 ## Commands
 
@@ -229,7 +232,7 @@ tar -xzf "<work-dir>/head.tar.gz" --strip-components=1 -C "<work-dir>/code" &&
 rm "<work-dir>/head.tar.gz"
 ```
 
-**When either block fails, go to step 6's cleanup and stop**, repeating the error,
+**When either block fails, go to step 7's cleanup and stop**, repeating the error,
 with no agent launched. GitHub refuses the diff of a very large PR; when that is
 what happened, say so and offer the range, if the branch is local.
 
@@ -244,7 +247,7 @@ diff_path: <work-dir>/change.diff
 changed_files_path: <work-dir>/changed.txt
 ```
 
-When it fails or returns nothing usable, go to step 6's cleanup and say so. A report
+When it fails or returns nothing usable, go to step 7's cleanup and say so. A report
 built without it does not exist.
 
 ### 5 — Check what came back
@@ -284,7 +287,39 @@ Read `<work-dir>/unread.txt` whole, past any limit a tool puts on it: on a large
 range it is the longest thing in this run and the one thing here that may not be
 shortened.
 
-### 6 — Clean up
+### 6 — Gather the evidence
+
+**On a PR there is nothing to run**: no base is exported on that path, so go to
+step 7, and the report says so.
+
+On a branch or a range, the base goes beside the code here rather than in step 3,
+so that it does not exist while `rules` is reading. `evidence` gets only paths
+inside the temporary directory, never `<target-repo>`.
+
+```bash
+mkdir "<work-dir>/base" &&
+git -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false -C <target-repo> archive --format=tar --output "<work-dir>/base.tar" "<base>" &&
+tar -xf "<work-dir>/base.tar" -C "<work-dir>/base" &&
+rm "<work-dir>/base.tar" &&
+evidence --head "<work-dir>/code" --base "<work-dir>/base" --diff "<work-dir>/change.diff"
+```
+
+Give this call a ten-minute timeout: a scan can take that long, and `evidence` stops
+its own scanners before then and still prints a report. Its standard output is one
+JSON report. Hold it in the conversation: it goes in no file and to no agent, and
+step 8 is built from it.
+
+Each of `secrets`, `dependencies` and `workflows` carries a `status`, which is one
+of `ran`, `partial`, `not-run` or `not-applicable`, with a `reason` on all but the
+first. Its `new` lists what this change introduced, `inherited` counts what was
+already at the base, and `scanners` names what ran. In `dependencies`, `targets`
+says manifest by manifest what was scanned and what was not.
+
+**A failure here stops nothing.** The rules are still the report. If the block
+fails, or what it prints is not that JSON, go on to step 7 and step 8 says evidence
+did not run, repeating the error.
+
+### 7 — Clean up
 
 ```bash
 rm -rf "<work-dir>"
@@ -294,7 +329,7 @@ This runs on every path that reached step 3, and it runs before the report goes 
 so the report is the last thing the person sees. If it fails, say so and name the
 directory.
 
-### 7 — Print the report
+### 8 — Print the report
 
 One screen, in the user's language, and then stop. The template is the shape:
 
@@ -310,6 +345,16 @@ Criticidad inferida: la deduje del código, nadie la declaró para este reposito
 Quedaron <n> reglas fuera del corte de 10.
 Descarté <n> reglas con un ancla que no existe en este ref.
 
+Evidencia sobre lo que introduce este cambio:
+Secretos: <n> nuevos
+  `<path>:<line>` <regla>
+Dependencias: <n> nuevas, <n> heredadas
+  <advisory> en <paquete> <versión>, `<path>`
+Workflows: <n> nuevos, <n> heredados
+  `<path>:<line>` <regla> <detalle>
+No corrió: <check o manifiesto>: <razón>
+Escáneres: <nombre> <versión> (datos del <fecha>); Go <toolchain>, go.mod <versión>
+
 Sin leer (<n>):
 <path>
 <path>
@@ -324,6 +369,24 @@ Sin leer (<n>):
   wrapped onto a third.
 - The line about rules past the cut and the line about dropped rules appear only
   when they are not zero.
+- **The evidence block goes between the rules and `Sin leer`** and holds facts from
+  the JSON and nothing else. It says no `limpio`, no `seguro`, no `sin riesgo`: no
+  word that grades the change.
+- A finding is one line, every one in `new` is listed, and each line is built only
+  from the fields the JSON gives. `<detalle>` appears when the finding has one.
+- A check with status `ran` shows its counts, including a zero. `secrets` has no
+  `inherited` and shows none. `partial` shows its counts too, with a `No corrió` line
+  for every target whose status is `not-run`.
+- A check with status `not-run` shows no count: `Secretos: no corrió: <razón>`.
+  `not-applicable` reads `Secretos: no aplica: <razón>`. `dependencies` gets a
+  `No corrió` line per target here as well.
+- `Escáneres` names each scanner in `scanners`, its version, and its `database_date`
+  unless that is `not-applicable`. One with `at_pin` false shows both versions:
+  `gitleaks 8.31.0 (fijada 8.30.1)`. For Go, `toolchain` and `go_mod` go side by
+  side, because they can differ and the reader decides what that means.
+- On a PR the whole block is one line: `Evidencia: no corrió: en un PR no se exporta
+  la base.` When `evidence` itself failed it is one line too: `Evidencia: no corrió:
+  <el error>.`
 - `Sin leer` lists every path in `unread.txt`, one per line, and goes last so that
   a long list does not push a rule off the screen. When nothing was left unread, the
   section is not there and the count in the first line says it.
@@ -337,6 +400,9 @@ offered.
 - **The rule is the unit.** Lines are what the diff already shows.
 - **An inherited rule is the reason this exists**, and it cannot be seen from the
   changed lines, which is why `rules` gets the code as well as the diff.
+- **Evidence is what this change introduced.** A report of the whole repository
+  would read the same on every branch, so what is inherited is a count and nothing
+  more.
 - **What can be checked is checked here.** An anchor is read off the code and
   coverage is subtracted from the changed files, because a report that is trusted
   without the diff has nothing else standing behind it.
