@@ -1,6 +1,6 @@
 ---
 name: rules
-description: "Read one change and what the changed code depends on, and return the rules the change assumes, ranked by inferred criticality: at most ten, each with its level, the rule in one sentence, a `path:line` at the reviewed ref and where to read, plus the changed files it actually read so that nothing unread passes as read. An inherited rule lives outside the changed lines, which is why the reading does not stop at the diff. Use after the `review` skill has resolved the change and put the code at its head and the diff in a temporary directory. No code criticism and no verdict. Read-only."
+description: "Read one change and what the changed code depends on, and return the rules the change assumes, ranked by inferred criticality: at most ten, each with its level, the rule in one sentence, a `path:line` at the reviewed ref, where to read, and the context a reader needs to weigh it, what the anchored code is for and who uses it; plus at most five things that can go wrong if one of those rules is false, and the changed files it actually read so that nothing unread passes as read. An inherited rule lives outside the changed lines, which is why the reading does not stop at the diff. Use after the `review` skill has resolved the change and put the code at its head and the diff in a temporary directory. No code criticism and no verdict. Read-only."
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -43,8 +43,9 @@ always holds, and nothing here guarantees X.**
 - A check the code performs, or a database constraint that exists at head, is not
   an assumption. X is guaranteed, and it drops out.
 - What the change does is not a rule. Nor is how it could be better: this report
-  carries no code criticism, no missing test, no style. There are other doors for
-  those.
+  carries no code criticism, no missing test, no style. Other readers of the same
+  change cover those, and a rule list that repeats them gets read as one more
+  list of chores.
 
 Four classes are worth asking about on every change, as prompts to look and never
 as a closed list. A rule outside all four counts the same as one inside them.
@@ -134,6 +135,39 @@ rule in code that survived or leave it out.
 **`where_to_read` is the shortest thing to open to settle the rule**: the changed
 line that depends on it, or a function or a migration by name.
 
+**`context` is what makes the rule readable without opening the code.** A rule
+read alone says what to look at and what the risk is, and leaves the reader
+unable to tell why the anchored code exists or whether it matters. `context` says
+two things and both are required:
+
+- **who uses the anchored code**: the caller, the reader or the flow that reaches
+  it, by name — a function, a handler, a job, an endpoint — which you already
+  found by reading past the diff;
+- **what that code is for**: the job it does for them.
+
+A consequence is not a context. What breaks when the rule is false belongs in
+`what_can_go_wrong`, and what the change altered is not who uses the code. When
+you looked for a user and found none, `context` says so in those words,
+`no caller found in code_dir`, beside what the code is for. Leaving the user out
+without saying so is the one wrong answer.
+
+- Fails: `Orders without a cursor now connect with no resume point.` It says what
+  changed and what follows from it, and names nobody who reaches the code.
+- Passes: `Builds the stream subscription; called by StartOrderStream in the orders
+  worker on every reconnect, and by nothing else.` A user by name, and what the code
+  does for it.
+
+## What can go wrong
+
+Each rule is something that has to hold. `what_can_go_wrong` turns the ones that
+matter most into what happens when they do not: the concrete case that breaks the
+rule, what the code then does, and who notices. It is what tells the reader how
+much attention the change deserves, so state the consequence, not the category.
+
+At most five, highest level first, each resting on a rule you returned or on code
+you read and anchored the same way. A guess about production you could not tie to
+a line is not an entry. An empty list is a real result.
+
 **`files_read` is the only account of coverage.** The skill subtracts it from the
 changed files and reports the rest as unread, so a path you leave out is reported
 as unread, and that is the correct result for a file you skipped. List a file only
@@ -154,10 +188,19 @@ mark a rule inherited to fill the field.
       "rule": "<one sentence, at most 120 characters, stated so it could be false>",
       "anchor": "path:line",
       "where_to_read": "<at most 60 characters>",
+      "context": "<who uses the anchored code, by name, and what it is for; at most 160 characters>",
       "inherited": true
     }
   ],
   "more_found": 0,
+  "what_can_go_wrong": [
+    {
+      "level": "security | money | business | experience | internal",
+      "what": "<the case that breaks a rule and what the code then does, at most 160 characters>",
+      "who_notices": "<who sees it and how, at most 80 characters>",
+      "anchor": "path:line"
+    }
+  ],
   "files_read": ["<each path exactly as changed_files_path spells it>"]
 }
 ```
