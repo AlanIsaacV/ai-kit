@@ -1,4 +1,4 @@
 interface:
-  display_name: "Review by Rules"
-  short_description: "Show the rules a change assumes, on one screen"
-  default_prompt: "Use $ai-kit:review to show the rules this branch assumes, ranked by criticality."
+  display_name: "Review a Change"
+  short_description: "Show what a change is, what it reaches and what it assumes"
+  default_prompt: "Use $ai-kit:review to report on this branch: what it is, how it works, what it touches inside and outside the repository and the rules it assumes. On Codex the outside agent does not run, because Codex ignores its disallowedTools and its read-only sandbox does not cover MCP tool calls, so the outside section reads `No corrió outside`."

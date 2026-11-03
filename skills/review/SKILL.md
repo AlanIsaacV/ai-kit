@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Put one change in front of the person who has to decide on it, in one report they can decide from without asking anything afterwards: what the change is, how it works with `path:line`, the business rules it implements, its impact inside the repository, what was tested and how (each test with what it stands on, the changed paths no test exercises, and the PR's CI), what is missing and what could be better against the intent its PR or its commits declare, at most ten rules it assumes, highest criticality first, each with what its anchored code is for and who uses it, what can go wrong, a short block of automatic evidence on a branch or a range (secrets in added lines, new dependency advisories, insecure workflow lines, every check that did not run with its reason), and every changed file left unread. Takes a local repository and a branch, a commit range or a PR number; a bare branch resolves against its merge-base with the default branch. It launches three read-only agents in parallel over an export of the reviewed ref: `explore` explains the change, `rules` finds what it assumes, including rules inherited from code the change never mentions, and `evaluate` judges what is missing and what could be better; and it reads the why from the reviewed repository's memory log the way `ask` does. The criticality is inferred and the report says so. Read-only over the reviewed repository: nothing reaches its working tree or its `.git`, the log read only leaves its `.ai-kit/` behind, nothing from the reviewed code runs, and the report lives in the conversation. Use when somebody has to decide on a branch or a PR without reading the whole diff. Triggers on: 'revisá esta rama', 'revisá este PR', 'revisá este rango', 'qué reglas asume este cambio', 'qué asume esta rama', 'qué reglas asume este PR', 'qué le falta a este PR', 'quiero decidir sobre este PR sin leer el diff', 'review this branch', 'review this PR', 'review this range', 'what rules does this change assume', 'what does this branch assume', 'what is this PR missing', 'help me decide on this PR without reading the diff'. It gives no verdict and no merge recommendation and writes no fix; it never edits, never commits and never invokes `plan`, `work` or `debug`, and `ask` stays the door for follow-up questions about the repository."
+description: "Put one change in front of the person who has to decide on it, in one report they can decide from without asking anything afterwards: what the change is, how it works with `path:line`, the business rules it implements, its impact inside the repository, what it touches outside the repository (each service, table, cache, queue, incident or ticket it reaches, checked with the host's read-only tools and the trace each returned, and what could not be checked and why), what was tested and how (each test with what it stands on, the changed paths no test exercises, and the PR's CI), what is missing and what could be better against the intent its PR or its commits declare, at most ten rules it assumes, highest criticality first, each with what its anchored code is for and who uses it, what can go wrong, a short block of automatic evidence on a branch or a range (secrets in added lines, new dependency advisories, insecure workflow lines, every check that did not run with its reason), and every changed file left unread. Takes a local repository and a branch, a commit range or a PR number; a bare branch resolves against its merge-base with the default branch. It launches four read-only agents in parallel over an export of the reviewed ref: `explore` explains the change, `rules` finds what it assumes, including rules inherited from code the change never mentions, `evaluate` judges what is missing and what could be better, and `outside` checks what the change reaches at runtime with whatever read-only tools the host exposes, discovered at run time, calling only those whose description says they read (on Codex `outside` does not run, because Codex ignores its `disallowedTools` and its read-only sandbox does not cover MCP tool calls, and the outside section reads `No corrió outside`); and it reads the why from the reviewed repository's memory log the way `ask` does. The criticality is inferred and the report says so. Read-only over the reviewed repository: nothing reaches its working tree or its `.git`, the log read only leaves its `.ai-kit/` behind, nothing from the reviewed code runs, `outside` writes nothing in any system it reads, and the report lives in the conversation. Use when somebody has to decide on a branch or a PR without reading the whole diff. Triggers on: 'revisá esta rama', 'revisá este PR', 'revisá este rango', 'qué reglas asume este cambio', 'qué asume esta rama', 'qué reglas asume este PR', 'qué le falta a este PR', 'quiero decidir sobre este PR sin leer el diff', 'review this branch', 'review this PR', 'review this range', 'what rules does this change assume', 'what does this branch assume', 'what is this PR missing', 'help me decide on this PR without reading the diff'. It gives no verdict and no merge recommendation and writes no fix; it never edits, never commits and never invokes `plan`, `work` or `debug`, and `ask` stays the door for follow-up questions about the repository."
 ---
 
 # review
@@ -12,20 +12,21 @@ with `--dir` rather than from inside the target.
 
 Put one change in front of the person who has to decide on it, in one report they
 can decide from without asking anything afterwards: what the change is and how it
-works, what it was tested with, what it left undone, the rules it assumes and what
-can go wrong. What escapes a review is rarely a line. It is something the change
-takes for granted about the data or the business, often inherited from code the
-change never mentions, so a diff read carefully still does not show it. And a rule
+works, what it reaches outside its repository, what it was tested with, what it
+left undone, the rules it assumes and what can go wrong. What escapes a review is
+rarely a line. It is something the change takes for granted about the data or the
+business, often inherited from code the change never mentions, so a diff read
+carefully still does not show it. And a rule
 read alone does not show it either: without what the change is for and how it
 works, the reader knows what to look at and not whether it matters.
 
 This skill is the door and the orchestrator. It settles the repository, resolves
 the input to a base and a head, puts the code and the diff in a temporary
-directory, reads what the change says it is for, launches `explore`, `rules` and
-`evaluate` in parallel over that directory, reads the why from the reviewed
-repository's log and the CI from GitHub, checks what came back, runs `evidence`,
-cleans up and prints the report. The three agents read and return, and none of
-them sees the evidence, the log or the CI.
+directory, reads what the change says it is for, launches `explore`, `rules`,
+`evaluate` and `outside` in parallel over that directory, reads the why from the
+reviewed repository's log and the CI from GitHub, checks what came back, runs
+`evidence`, cleans up and prints the report. The four agents read and return, and
+none of them sees the evidence, the log or the CI.
 
 It shares a name with the `review` agent and is not that agent. `work` step 7
 launches `review` over code an agent wrote, against an objective, and it returns
@@ -49,17 +50,21 @@ improvable is `evaluate`'s reading against what the change itself declares.
 3. **A stop launches nothing.** A ref that does not exist, a range with no changes
    and a PR that cannot be read each end the run with a message naming what
    failed, before any agent starts.
-4. **The three agents read only the temporary directory.** `explore`, `rules` and
-   `evaluate` get no path to the reviewed repository, which is the one place this
-   differs from what the runtime says about `repo_root`: an agent with no path to
-   the target cannot write to it. `explore` is told not to use the code graph,
-   whose index describes a checkout and not the reviewed commit. The log and the
-   CI are read by this skill, never by an agent.
+4. **The agents read only the temporary directory, with one exception.**
+   `explore`, `rules`, `evaluate` and `outside` get no path to the reviewed
+   repository, which is the one place this differs from what the runtime says
+   about `repo_root`: an agent with no path to the target cannot write to it.
+   `explore` is told not to use the code graph, whose index describes a checkout
+   and not the reviewed commit. The log and the CI are read by this skill, never
+   by an agent. The exception is `outside`, the only agent that reads beyond the
+   temporary directory, and only through the read tools the host exposes, each
+   called only when its own description says it reads and writes nothing
+   anywhere. It runs no shell, so no command line reaches anything from it.
 5. **Nothing from the reviewed code runs.** No build, no tests, no install, no
    script it ships, here or in any agent. What was tested is read off the test
    files and the CI, never learned by running them.
 6. **The report lives in the conversation.** No file, no record, no copy kept.
-7. **Nothing unread passes as read.** Every changed file that none of the three
+7. **Nothing unread passes as read.** Every changed file that none of the four
    agents read is named in the report, however long that list gets. Coverage is
    computed by subtraction, so a file nobody mentioned counts as unread.
 8. **The criticality is inferred, and the report says so.** Nobody declared it for
@@ -71,8 +76,9 @@ improvable is `evaluate`'s reading against what the change itself declares.
 10. **Conversation in the user's language; everything written to disk in English.**
     The agents answer in English and you put the report in their language.
 11. **A check that did not run never reads as clean.** An agent that failed, a log
-    that was not read, a CI that was not read and a missing `evidence` each appear
-    with their reason and with no count.
+    that was not read, a CI that was not read, a missing `evidence` and a thing
+    outside the repository that was not checked each appear with their reason and
+    with no count.
 
 ## Commands
 
@@ -284,9 +290,10 @@ the name — is not a stop. `evaluate` gets `intent_source: inferred` and the in
 `Nothing was declared; read it off the diff at diff_path.`, and the report says the
 intent was inferred.
 
-### 5 — Launch `explore`, `rules` and `evaluate`
+### 5 — Launch `explore`, `rules`, `evaluate` and `outside`
 
-Three subagents, launched together in one turn so that they read in parallel. Each
+Four subagents, launched together in one turn so that they read in parallel, or
+three where `outside`'s role is not installed, as its paragraph below says. Each
 gets the inputs below and nothing else, and every path in them is inside
 `<work-dir>`.
 
@@ -345,7 +352,51 @@ diff_path: <work-dir>/change.diff
 constraints: <empty>
 ```
 
-**Wait for all three before step 8.** Steps 6 and 7 touch nothing in `<work-dir>`
+**`outside`** checks what the change touches outside the repository:
+
+```
+label: <the ref, the range or the PR, as the readback named it>
+repo_name: <on a PR, the <name> of <owner>/<name>; otherwise the <name> read off origin below>
+intent: <step 4's intent, verbatim>
+code_dir: <work-dir>/code
+diff_path: <work-dir>/change.diff
+changed_files_path: <work-dir>/changed.txt
+```
+
+On a branch or a range, `repo_name` comes from the remote and not from the
+directory, because a linked worktree or a clone under another name sits in a
+folder that is not the repository's name, and `outside` tags its reads and
+searches with it:
+
+```bash
+git -C <target-repo> remote get-url origin
+```
+
+Read `<owner>/<name>` off what it prints, as step 2 does for a PR, and pass
+`<name>`. A remote that is not on GitHub is not a stop here: its last path
+component, without `.git`, is the name. Only when there is no `origin` is
+`repo_name` the last component of `<target-repo>`.
+
+It gets no list of tools: what the host exposes is discovered by the agent at run
+time, and a tool added to the host is used without this skill changing. A host
+with no outside tools is not a stop: `outside` says so and its section reads as
+one line.
+
+**`outside` is launched only as its own installed role**, `ai-kit:outside` on
+Claude Code, which carries the `disallowedTools` that keep the shell and every
+editing tool away from it. It is not installed on Codex: Codex ignores
+`disallowedTools` and its read-only sandbox does not cover MCP tool calls, so
+nothing but the contract would stand between `outside` and a tool that writes.
+On Codex, and on any host where the role cannot be selected by name, it is not
+launched, not even through the runtime's fallback of handing the contract to a
+fresh subagent, and its section is one line:
+
+> No corrió outside: en este host no está instalado como rol propio, y sin él
+> nada más que el contrato lo separa de una herramienta que escribe (en Codex,
+> `disallowedTools` se ignora y el sandbox de solo lectura no cubre las
+> llamadas a herramientas MCP).
+
+**Wait for all four before step 8.** Steps 6 and 7 touch nothing in `<work-dir>`
 and may run while they read, when the host lets agents run in the background.
 Nothing from step 8 on runs while any of them is still reading, on any path: step
 9 puts the base beside the code they are reading, and step 10 deletes the
@@ -353,11 +404,13 @@ directory from under them.
 
 **An agent that fails, or returns nothing usable, costs its own sections and
 nothing else.** Keep what went wrong in one line; step 11 prints it where those
-sections would have been. When all three fail there is no report: go to step 10's
-cleanup and say which failed and why.
+sections would have been. `outside` returning `did_not_run` is the same case, with
+its reason, and so is `outside` not launched on a host without its role. When none
+of the four returns something usable there is no report: go to step 10's cleanup
+and say which failed or did not run and why.
 
-> Ninguno de los tres lectores devolvió algo usable: `<explore: razón>`,
-> `<rules: razón>`, `<evaluate: razón>`. No hay reporte.
+> Ninguno de los cuatro lectores devolvió algo usable: `<explore: razón>`,
+> `<rules: razón>`, `<evaluate: razón>`, `<outside: razón>`. No hay reporte.
 
 ### 6 — Read the why from the log
 
@@ -455,16 +508,16 @@ says so.
 
 ### 8 — Check what came back
 
-An agent's own account is not the report. Three things in what the three returned
+An agent's own account is not the report. Three things in what the four returned
 are checkable, and all three are checked here against the files.
 
 **Every anchor has to exist at the reviewed ref.** That is each `anchor` in
 `rules`' `rules` and `what_can_go_wrong`, each `evidence` entry of `explore`'s
-findings, and each `where` of `evaluate`'s `missed` and `better`. Paste one line
-per anchor into one block, with `<path>` and `<line>` taken from it; for a range
-`<path>:<first>-<last>`, `<line>` is its first line. Add the `grep` line for the
-anchors of `rules`' rules and for the evidence of `explore`'s `untested:`
-findings, and for nothing else:
+findings, each `where` of `evaluate`'s `missed` and `better`, and each `where` of
+`outside`'s `touches`. Paste one line per anchor into one block, with `<path>` and
+`<line>` taken from it; for a range `<path>:<first>-<last>`, `<line>` is its first
+line. Add the `grep` line for the anchors of `rules`' rules and for the evidence of
+`explore`'s `untested:` findings, and for nothing else:
 
 ```bash
 awk 'NR==<line>{print FILENAME":"FNR": "$0}' "<work-dir>/code/<path>"
@@ -472,10 +525,11 @@ grep -Fxc "<path>" "<work-dir>/changed.txt"
 ```
 
 - `awk` printing nothing, or a line with nothing on it, means the anchor does not
-  exist. A rule, a what-can-go-wrong entry or an `evaluate` finding with that
-  anchor is dropped. An `explore` finding keeps the evidence that exists and is
-  dropped when none does. An evidence entry that is not a path under `code` is
-  dropped the same way. The report counts the drops per agent.
+  exist. A rule, a what-can-go-wrong entry, an `evaluate` finding or an `outside`
+  thing with that anchor is dropped, the `outside` thing with every check on it.
+  An `explore` finding keeps the evidence that exists and is dropped when none
+  does. An evidence entry that is not a path under `code` is dropped the same way.
+  The report counts the drops per agent.
 - `grep` printing `0` means the file was not touched: the rule is inherited. Any
   other number means it was. Take this over the agent's `inherited`.
 - **An `untested:` finding is about a changed path or it is dropped.** Its evidence
@@ -483,6 +537,10 @@ grep -Fxc "<path>" "<work-dir>/changed.txt"
   none is left, counted with `explore`'s other drops. A path the change did not
   touch is not one it left untested. What survives here is the whole of what step
   11 may print as `Sin test`.
+- **`outside`'s trace ids are not checked.** They name a call in a system this skill
+  cannot read, so they are cited as `outside` returned them, never completed and
+  never dropped for being unverifiable. What a tool returned is `outside`'s account
+  and is printed as such.
 
 Put the rules in order: `security` and `money` together, then `business`,
 `experience`, `internal`. Keep the first ten. Put `what_can_go_wrong` in the same
@@ -490,9 +548,10 @@ order and keep the first five. Order `missed` and `better` by severity, `high`
 first, and keep five of each.
 
 **Unread is computed, not told.** Paste the `files_read` of every agent that
-returned, together, as the arguments here, one per path, spelled as `changed.txt`
-spells them: relative to `<work-dir>/code`, with that prefix taken off a path an
-agent wrote absolute. A path that appears twice costs nothing.
+returned, `outside`'s included, together, as the arguments here, one per path,
+spelled as `changed.txt` spells them: relative to `<work-dir>/code`, with that
+prefix taken off a path an agent wrote absolute. A path that appears twice costs
+nothing.
 
 ```bash
 printf '%s\n' "<path>" "<path>" > "<work-dir>/read.txt"
@@ -514,7 +573,7 @@ step 10, and the report says so.
 
 On a branch or a range, the base goes beside the code here rather than in step 3,
 so that it does not exist while the agents are reading, and that is why this step
-waits for all three. `evidence` gets only paths inside the temporary directory,
+waits for all four. `evidence` gets only paths inside the temporary directory,
 never `<target-repo>`.
 
 ```bash
@@ -574,6 +633,12 @@ Log: consulté <tipos> sobre <áreas>: <n> registros citados.
 ## Impacto dentro del repositorio
 - <qué lo usa y qué cambia para eso> `<path>:<line>`
 
+## Fuera del repositorio
+- <lo que toca> (<servicio | datos | historial>): <qué hace el cambio con eso> `<path>:<line>`
+  <herramienta>: <lo que devolvió, en una línea> (traza <id>)
+No se pudo revisar:
+- <lo que toca>: <sin herramienta | falló la herramienta | requiere acceso | la consulta factura | la herramienta no es de solo lectura | fuera del corte de 20 llamadas>: <detalle>
+
 ## Qué se probó y cómo
 - `<path>:<line>` <qué prueba>; se apoya en: <mocks, servidor falso, base real, nada>
 Sin test: `<path>` <qué hace ese camino>
@@ -600,7 +665,7 @@ Quedaron <n> reglas fuera del corte de 10.
 - [<nivel>] <el caso que rompe una regla y qué hace entonces el código> `<path>:<line>`
   Lo nota: <quién y cómo>
 
-Descarté <n> afirmaciones con un ancla que no existe en este ref o un camino sin test que el cambio no toca: <n> de explore, <n> de rules, <n> de evaluate.
+Descarté <n> afirmaciones con un ancla que no existe en este ref o un camino sin test que el cambio no toca: <n> de explore, <n> de rules, <n> de evaluate, <n> de outside.
 
 ## Evidencia
 Sobre lo que introduce este cambio:
@@ -621,8 +686,9 @@ Escáneres: <nombre> <versión> (datos del <fecha>); Go <toolchain>, go.mod <ver
 - **An agent that did not run** leaves each of its sections with one line:
   `No corrió explore: <razón>.` `explore` owns what it is, how it works, the
   business rules, the impact and the tests; `rules` owns the assumed rules and what
-  can go wrong; `evaluate` owns what is missing and what could be better. The CI
-  line and the log's whys do not depend on any agent and stay.
+  can go wrong; `evaluate` owns what is missing and what could be better; `outside`
+  owns what lies outside the repository. The CI line and the log's whys do not
+  depend on any agent and stay.
 - **The caps are the shape**: what it is in at most five lines, how it works in at
   most ten steps, business rules and impact at most eight each, missing and better
   at most five each, assumed rules at most ten, what can go wrong at most five.
@@ -631,6 +697,18 @@ Escáneres: <nombre> <versión> (datos del <fecha>); Go <toolchain>, go.mod <ver
 - **How it works is steps with `path:line`.** Draw it as mermaid only when the
   answer is a graph, such as two flows that split and meet again, and never for a
   sequence a numbered list already says.
+- **Fuera del repositorio is `outside`'s account, as it came back and survived
+  step 8.** One entry per thing it touched: what it is, its kind, what the change
+  does with it and its anchor, then one line per check with the tool's name as the
+  host exposes it, what came back, and `(traza <id>)` when there was one. Then
+  `No se pudo revisar:` with one line per thing in `not_checked`, each with its
+  reason and its detail, the error and its trace when a tool failed; the list is
+  absent when it is empty. When `outside` returned `did_not_run`, or was not
+  launched because its role is not installed on this host, the section is one
+  line, `No corrió outside: <razón>.`, as for any agent that did not run. When
+  it returned `nothing_outside`, the section is one line, `El cambio no toca nada
+  fuera del repositorio.` The orchestrator adds no thing, no tool and no result of
+  its own, and calls no outside tool itself.
 - `explore`'s `gaps` go at the end of the section they bear on, one line each:
   `Sin establecer: <la pregunta>`. A gap is not filled with a guess.
 - **The why comes only from the log.** `Por qué, según el log` lines appear only
@@ -713,6 +791,11 @@ Add nothing after it: no opinion on merging, no next step offered.
   uses it is what turns a rule into something the person can weigh.
 - **The why comes from the log or not at all.** The code shows what is there; a
   reason read off it is a guess dressed as a decision.
+- **What lies outside is read with what the host offers, and only what reads.**
+  No list of tools lives here, so a tool added to the host is used without this
+  skill changing. A tool is trusted to read by its own description and by nothing
+  else, because a write misjudged as a read lands in production, where reverting
+  ai-kit does not undo it.
 - **Evidence is what this change introduced.** A report of the whole repository
   would read the same on every branch, so what is inherited is a count and nothing
   more.

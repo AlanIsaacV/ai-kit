@@ -47,7 +47,9 @@ skills/ask     answer a question about a repo from its code and its log, every c
 skills/inbox   say what is waiting on you across every repo, and close it from your words
 skills/bootstrap  give an unseen repo a README.md and a CLAUDE.md in one invocation
 skills/prefer  record why this repo chose what it chose, and carry it to the next one
-agents/        explore · implement · verify · review · evaluate · record
+skills/review  put one change in front of whoever decides on it: what it is, reaches and assumes
+skills/hotpaths  rank where a service spends its time and price what each hot path would cost
+agents/        explore · implement · verify · review · evaluate · rules · outside · record
 tools/memory   the append-only knowledge log everything writes to
 tools/evidence  facts on what one change introduces: secrets, advisories, workflow lines
 ```
@@ -127,13 +129,15 @@ repository as a skills plugin. The third is one link per directory under
 `skills/`, which is how Codex finds them — one at a time rather than as a plugin,
 so a skill added to `skills/` gets its own link the next time this runs, while a
 skill renamed or removed leaves its old link behind, which no re-run clears and
-you delete by hand. The fourth installs all six native Codex roles, named
+you delete by hand. The fourth installs seven native Codex roles, named
 `ai-kit-explore`, `ai-kit-implement`, `ai-kit-verify`, `ai-kit-review`,
-`ai-kit-evaluate` and `ai-kit-record`. Their generated TOML wrappers load the
-original `agents/*.md` contracts and [shared runtime guide](runtime.md), keeping
-one source of instructions. Codex agents inherit the current model; Claude's
-agents declare no model and run on the session's model. The fifth puts `evidence`
-on PATH for `review`, which calls it by name the way the skills call `memory`.
+`ai-kit-evaluate`, `ai-kit-rules` and `ai-kit-record`; `outside` is left out,
+because Codex ignores its `disallowedTools` and its read-only sandbox does not
+cover MCP tool calls, so on Codex `review` reports that `outside` did not run. Their
+generated TOML wrappers load the original `agents/*.md` contracts and
+[shared runtime guide](runtime.md), keeping one source of instructions. Codex
+agents inherit the current model; Claude's agents declare no model and run on the
+session's model. The fifth puts `evidence` on PATH for `review`, which calls it by name the way the skills call `memory`.
 
 Codex skills remain in `~/.agents/skills`; agent definitions go into
 `$CODEX_HOME/agents` when `CODEX_HOME` is set, otherwise `~/.codex/agents`.
@@ -176,7 +180,7 @@ were validated locally; a full delegated model run was not exercised. See the of
 [Codex skill discovery documentation](https://learn.chatgpt.com/docs/build-skills)
 and [Codex agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
-In Claude Code, `claude plugin details ai-kit` should show nine skills and six
+In Claude Code, `claude plugin details ai-kit` should show eleven skills and eight
 agents. Invoke skills as `/ai-kit:plan` or `/ai-kit:work`. In Codex, select the
 installed skills or invoke `$ai-kit:plan` / `$ai-kit:work`; the native agent names
 use hyphens instead of colons. Both hosts load the same skill files, including
@@ -197,7 +201,7 @@ make check
 ```
 
 `scripts/check-frontmatter` walks the tree, finds every file that opens with YAML
-frontmatter — the nine `skills/*/SKILL.md` and the six `agents/*.md` today, and
+frontmatter — the eleven `skills/*/SKILL.md` and the eight `agents/*.md` today, and
 whatever is added later, since the set is read off the tree rather than listed
 here — and refuses any whose `description` spans more than one physical line. It
 names the path and the line and exits non-zero. It repairs nothing, and nothing

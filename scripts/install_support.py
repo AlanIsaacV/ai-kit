@@ -25,10 +25,15 @@ def agent_definitions(repo, build_dir):
             "If either file cannot be read, report the missing path and stop."
         )
         values = {"name": name, "description": description, "developer_instructions": instructions}
-        if source.stem in {"evaluate", "explore", "review"}:
+        if source.stem in {"evaluate", "explore", "outside", "review"}:
             values["sandbox_mode"] = "read-only"
+        if source.stem in CODEX_WITHHELD:
+            continue
         content = "".join(f"{key} = {json.dumps(value, ensure_ascii=False)}\n" for key, value in values.items())
         yield name, build_dir / f"{name}.toml", content
+
+
+CODEX_WITHHELD = frozenset({"outside"})
 
 
 def link_problem(link, target):

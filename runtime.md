@@ -55,11 +55,15 @@ given in this conversation, subject to the host's rules.
 
 ## Delegated roles
 
-The shared roles are `explore`, `implement`, `verify`, `review`, `evaluate` and
-`record`. Their authoritative contracts are `<ai-kit clone>/agents/<role>.md`.
+The shared roles are `explore`, `implement`, `verify`, `review`, `evaluate`,
+`rules`, `outside` and `record`. Their authoritative contracts are
+`<ai-kit clone>/agents/<role>.md`.
 The installer supplies Codex with native TOML definitions that load this
 runtime and those contracts; it does not translate Claude YAML into Codex
-configuration.
+configuration. It supplies none for `outside`, which Codex does not get: Codex
+ignores its `disallowedTools` and its read-only sandbox does not cover MCP tool
+calls, so only the contract would keep it from a tool that writes, and the
+fallback below never launches it either.
 
 When the available delegation tool cannot select a named role, read the
 authoritative contract and pass its Markdown body, this runtime's host mapping
