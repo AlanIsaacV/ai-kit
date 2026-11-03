@@ -233,7 +233,7 @@ var anchoredKindsV3 = map[Kind]bool{KindGotcha: true}
 //     sweeping the class would carry hundreds of records about this repository's
 //     own code into a log meant to outlive it.
 //   - `gotcha` because it cannot exist without an Anchor, and a path:line is
-//     resolved against the repository the record's log lives in — or, once it is
+//     resolved against the checkout the writing command ran in — or, once it is
 //     in the user log, against the checkout `origin.repo_id` names. Either way it
 //     is a claim about one repository's code and means nothing in the next one.
 //     See anchoredKindsV3 and Anchor.Path.
@@ -499,9 +499,9 @@ type Origin struct {
 // differently.
 type Anchor struct {
 	// Path is repo-relative and slash-separated, so the record still resolves in
-	// a clone checked out somewhere else. *Which* repo it is relative to is the
-	// one the record's log lives in, or in the user log the one `origin.repo_id`
-	// names — the path itself does not carry it.
+	// a clone checked out somewhere else. *Which* checkout it is relative to is
+	// the one the writing command ran in, or --repo-root, or in the user log the
+	// one `origin.repo_id` names — the path itself does not carry it.
 	Path string `json:"path"`
 	// Line is 1-based, and it is where the cited text was when the record was
 	// written. The check never rewrites it: text that moved is reported at the

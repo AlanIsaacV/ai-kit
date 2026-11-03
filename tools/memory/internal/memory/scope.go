@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Location resolves to one memory log on disk.
 type Location struct {
-	Scope Scope
-	Repo  string // absolute repo root, empty for ScopeUser
-	Path  string
+	Scope    Scope
+	Repo     string // absolute repo root, empty for ScopeUser
+	Checkout string
+	Path     string
 }
 
 // ErrPlanScopeRemoved is returned for `--scope plan`.
@@ -56,11 +58,13 @@ func Resolve(scope Scope, startDir string) (Location, error) {
 		return loc, nil
 	}
 
-	root, err := RepoRoot(startDir)
+	checkout, err := CheckoutRoot(startDir)
 	if err != nil {
 		return loc, err
 	}
+	root := mainCheckout(checkout)
 	loc.Repo = root
+	loc.Checkout = checkout
 
 	switch scope {
 	case ScopeRepo:
@@ -96,8 +100,17 @@ func PlanSlug(plan string) (string, error) {
 	return plan, nil
 }
 
-// RepoRoot walks up from dir looking for a .git entry.
+// RepoRoot walks up from dir looking for a .git entry and, when that entry is a
+// linked worktree's .git file, returns the worktree's main checkout instead.
 func RepoRoot(dir string) (string, error) {
+	checkout, err := CheckoutRoot(dir)
+	if err != nil {
+		return "", err
+	}
+	return mainCheckout(checkout), nil
+}
+
+func CheckoutRoot(dir string) (string, error) {
 	if dir == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -119,6 +132,43 @@ func RepoRoot(dir string) (string, error) {
 		}
 		abs = parent
 	}
+}
+
+func mainCheckout(checkout string) string {
+	dotGit := filepath.Join(checkout, ".git")
+	info, err := os.Lstat(dotGit)
+	if err != nil || !info.Mode().IsRegular() {
+		return checkout
+	}
+	raw, err := os.ReadFile(dotGit)
+	if err != nil {
+		return checkout
+	}
+	line, _, _ := strings.Cut(string(raw), "\n")
+	gitdir, ok := strings.CutPrefix(strings.TrimSpace(line), "gitdir:")
+	gitdir = strings.TrimSpace(gitdir)
+	if !ok || gitdir == "" {
+		return checkout
+	}
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Join(checkout, gitdir)
+	}
+	raw, err = os.ReadFile(filepath.Join(gitdir, "commondir"))
+	if err != nil {
+		return checkout
+	}
+	common := strings.TrimSpace(string(raw))
+	if common == "" {
+		return checkout
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(gitdir, common)
+	}
+	common = filepath.Clean(common)
+	if filepath.Base(common) != ".git" {
+		return checkout
+	}
+	return filepath.Dir(common)
 }
 
 func ValidScope(scope Scope) error {

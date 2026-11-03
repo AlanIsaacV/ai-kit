@@ -776,12 +776,17 @@ func TestAnIdentitySharedByAWorktreeIsCheckedAgainstTheCheckoutWhoseGitIsADirect
 		log: filepath.Join(wt, ".ai-kit", "memory.jsonl"), user: checkout.user}
 
 	id := addGotcha(t, checkout, "The lock is taken before the write, not after", anchorPath+":4-5")
-	addKind(t, worktree, "decision", "Rotation stays single-writer")
 	_, rewritten := rewrittenToken(t, worktree)
 	srcFile(t, worktree, anchorPath, rewritten...)
 	promote(t, checkout, "--ids", id, "--to", "user")
 
 	db := openStore(t, checkout)
+	if _, err := db.Exec(
+		`INSERT INTO lines (source_path, line_number, scope, repo_id, raw)
+		 SELECT ?, 1, 'repo', ?, raw FROM lines WHERE source_path = ? AND line_number = 1`,
+		worktree.log, remote, checkout.log); err != nil {
+		t.Fatal(err)
+	}
 	var logs int
 	if err := db.QueryRow(`SELECT count(DISTINCT source_path) FROM lines WHERE repo_id = ?`, remote).Scan(&logs); err != nil {
 		t.Fatal(err)

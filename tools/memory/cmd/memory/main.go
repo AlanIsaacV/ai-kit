@@ -484,7 +484,7 @@ func cmdAdd(args []string) error {
 	about := fs.String("about", "", "comma-separated tags: areas, paths, topics")
 	var anchors anchorSpecs
 	fs.Var(&anchors, "anchor", "code this record rests on, as repo-relative path:line or path:first-last; repeat for more than one")
-	anchorRoot := fs.String("repo-root", "", "repository the --anchor paths are relative to (default: the repo the log lives in)")
+	anchorRoot := fs.String("repo-root", "", "repository the --anchor paths are relative to (default: the checkout the command runs in)")
 	unit := fs.String("unit", "", "id of the unit of work this came out of")
 	author := fs.String("author", "", "who recorded it; defaults to git config user.name")
 	repo := fs.String("repo", "", "repo label; defaults to the repo directory name")
@@ -589,7 +589,7 @@ type stamp struct {
 // never bends — a `gotcha` is refused without an anchor in every scope — so what
 // the flag changes is that the root can be supplied rather than only inferred.
 func (s stamp) anchorRepo(loc memory.Location) string {
-	return firstNonEmpty(s.anchorRoot, loc.Repo)
+	return firstNonEmpty(s.anchorRoot, loc.Checkout, loc.Repo)
 }
 
 // origin is the whole origin for one record: the base, plus the plan that record
@@ -1199,7 +1199,7 @@ func cmdAnchors(args []string) error {
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "check at most N, most recent first")
 	all := fs.Bool("all", false, "check every record the store holds, each against the repository its own log lives in")
-	repoRoot := fs.String("repo-root", "", "repository to check every record against (default: the repo the log lives in; under --scope user and under --all, the repository each record's own log lives in)")
+	repoRoot := fs.String("repo-root", "", "repository to check every record against (default: the checkout the command runs in; under --scope user and under --all, the repository each record's own log lives in)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -1256,7 +1256,7 @@ func cmdAnchors(args []string) error {
 	var abs string
 	var repos repoLocator
 	if named := strings.TrimSpace(*repoRoot); named != "" || (!*all && loc.Scope == memory.ScopeRepo) {
-		if abs, err = resolveRepoRoot(firstNonEmpty(named, loc.Repo)); err != nil {
+		if abs, err = resolveRepoRoot(firstNonEmpty(named, loc.Checkout, loc.Repo)); err != nil {
 			return err
 		}
 	} else if repos, err = locateRepos(); err != nil {

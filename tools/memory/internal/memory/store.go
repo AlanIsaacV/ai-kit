@@ -39,11 +39,11 @@ const gitignoreSentinel = "*\n"
 // because outside one it is inert rather than wrong.
 func (s *Store) ensureDir() (created bool, err error) {
 	dir := filepath.Dir(s.Path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o775); err != nil {
 		return false, err
 	}
 	name := filepath.Join(dir, ".gitignore")
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o664)
 	if err != nil {
 		if os.IsExist(err) {
 			return false, nil

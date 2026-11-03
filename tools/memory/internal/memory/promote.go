@@ -241,7 +241,7 @@ func PlanPromotion(src []*Entry, srcEdges []*Edge, dst []*Entry, dstEdges []*Edg
 //     scaffolding upward. An objective names work that happened in one
 //     repository; the ADR it produced is what was meant to outlive it.
 //   - `gotcha` because it cannot exist without an Anchor, and an anchor's
-//     path:line is resolved against the repository the record's log lives in, or
+//     path:line is resolved against the checkout the writing command ran in, or
 //     against the checkout `origin.repo_id` names once it is in the user log — a
 //     claim about one repository's code, which means nothing in the next one.
 //     `--kind` refuses the class for that reason, and following an edge into one
