@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Put one change in front of the person who has to decide on it, in one report they can decide from without asking anything afterwards: what the change is, how it works with `path:line`, the business rules it implements, its impact inside the repository, what it touches outside the repository (each service, table, cache, queue, incident or ticket it reaches, checked with the host's read-only tools and the trace each returned, and what could not be checked and why), what was tested and how (each test with what it stands on, the changed paths no test exercises, and the PR's CI), what is missing and what could be better against the intent its PR or its commits declare, at most ten rules it assumes, highest criticality first, each with what its anchored code is for and who uses it, what can go wrong, a short block of automatic evidence on a branch or a range (secrets in added lines, new dependency advisories, insecure workflow lines, every check that did not run with its reason), and every changed file left unread. Takes a local repository and a branch, a commit range or a PR number; a bare branch resolves against its merge-base with the default branch. A branch or a range whose commits fall into two or more topics, one per conventional-commit scope and one per unscoped commit, is first shown as a map of those topics, each with its commits and its files of the final diff counted as added, modified, deleted and shared, and nothing is launched until one is named as `review <range> tema <name>`, which reviews that topic alone: the final diff cut down to its files, judged against its own commits, with an unread list of its files only. It launches four read-only agents in parallel over an export of the reviewed ref: `explore` explains the change, `rules` finds what it assumes, including rules inherited from code the change never mentions, `evaluate` judges what is missing and what could be better, and `outside` checks what the change reaches at runtime with whatever read-only tools the host exposes, discovered at run time, calling only those whose description says they read (on Codex `outside` does not run, because Codex ignores its `disallowedTools` and its read-only sandbox does not cover MCP tool calls, and the outside section reads `No corrió outside`); and it reads the why from the reviewed repository's memory log the way `ask` does. The criticality is inferred and the report says so. Read-only over the reviewed repository: nothing reaches its working tree or its `.git`, the log read only leaves its `.ai-kit/` behind, nothing from the reviewed code runs, `outside` writes nothing in any system it reads, and the report lives in the conversation. Use when somebody has to decide on a branch or a PR without reading the whole diff. Triggers on: 'revisá esta rama', 'revisá este PR', 'revisá este rango', 'qué reglas asume este cambio', 'qué asume esta rama', 'qué reglas asume este PR', 'qué le falta a este PR', 'quiero decidir sobre este PR sin leer el diff', 'review this branch', 'review this PR', 'review this range', 'what rules does this change assume', 'what does this branch assume', 'what is this PR missing', 'help me decide on this PR without reading the diff'. It gives no verdict and no merge recommendation and writes no fix; it never edits, never commits and never invokes `plan`, `work` or `debug`, and `ask` stays the door for follow-up questions about the repository."
+description: "Put one change in front of the person who has to decide on it, in one report they can decide from without asking anything afterwards: what the change is, how it works with `path:line`, the business rules it implements, its impact inside the repository, what it touches outside the repository (each service, table, cache, queue, incident or ticket it reaches, checked with the host's read-only tools and the trace each returned, and what could not be checked and why), what was tested and how (each test with what it stands on, the changed paths no test exercises, and the PR's CI), what is missing and what could be better against the intent its PR or its commits declare, at most ten rules it assumes, highest criticality first, each with what its anchored code is for and who uses it, what can go wrong, a short block of automatic evidence on a branch or a range (secrets in added lines, new dependency advisories, insecure workflow lines, every check that did not run with its reason), and every changed file left unread. Takes a local repository and a branch, a commit range or a PR number; a bare branch resolves against its merge-base with the default branch. A branch, a range or a PR whose commits are local, when its commits fall into two or more topics, is first shown as a map of those topics, each with its commits and its files of the final diff counted as added, modified, deleted and shared: one topic per conventional-commit scope, read tolerantly so `Type (scope):` counts, and one per unscoped commit, or, when no commit has a scope, one per commit's dominant directory, plus a last `sin-tema` topic holding the files only merges changed. Nothing is launched until topics are named as `review <range> tema <name>`, or several as `tema a,b`, which are reviewed as one union: the final diff cut down to their files, judged against their own commits, with an unread list of their files only; a name not on the map stops the run and lists the valid names. It launches four read-only agents in parallel over an export of the reviewed ref: `explore` explains the change, `rules` finds what it assumes, including rules inherited from code the change never mentions, `evaluate` judges what is missing and what could be better, and `outside` checks what the change reaches at runtime with whatever read-only tools the host exposes, discovered at run time, calling only those whose description says they read (on Codex `outside` does not run, because Codex ignores its `disallowedTools` and its read-only sandbox does not cover MCP tool calls, and the outside section reads `No corrió outside`); and it reads the why from the reviewed repository's memory log the way `ask` does. The criticality is inferred and the report says so. Read-only over the reviewed repository: nothing reaches its working tree or its `.git`, the log read only leaves its `.ai-kit/` behind, nothing from the reviewed code runs, `outside` writes nothing in any system it reads, and the report lives in the conversation. Use when somebody has to decide on a branch or a PR without reading the whole diff. Triggers on: 'revisá esta rama', 'revisá este PR', 'revisá este rango', 'qué reglas asume este cambio', 'qué asume esta rama', 'qué reglas asume este PR', 'qué le falta a este PR', 'quiero decidir sobre este PR sin leer el diff', 'review this branch', 'review this PR', 'review this range', 'what rules does this change assume', 'what does this branch assume', 'what is this PR missing', 'help me decide on this PR without reading the diff'. It gives no verdict and no merge recommendation and writes no fix; it never edits, never commits and never invokes `plan`, `work` or `debug`, and `ask` stays the door for follow-up questions about the repository."
 ---
 
 # review
@@ -38,9 +38,9 @@ improvable is `evaluate`'s reading against what the change itself declares.
 
 1. **Read-only over the reviewed repository.** Nothing reaches its working tree or
    its `.git`, with the one exception rule 2 names. The git commands below are all
-   this skill runs there, `git log` among them, and each of them only reads. No
-   `git fetch`, no `git worktree add`, no `git checkout`, and no `git status`,
-   which refreshes the index behind your back.
+   this skill runs there, `git log` and `git cat-file` among them, and each of them
+   only reads. No `git fetch`, no `git worktree add`, no `git checkout`, and no
+   `git status`, which refreshes the index behind your back.
 2. **The log is read and never written, and only the reviewed repository's.**
    `memory query` and `memory search` against `<target-repo>`, and no other
    `memory` subcommand. Any `memory` read creates `<target-repo>/.ai-kit/` while it
@@ -49,9 +49,9 @@ improvable is `evaluate`'s reading against what the change itself declares.
    repository, and it is accepted. The export is never a `--dir`: it is not a git
    repository, `memory` refuses it, and the log belongs to the repository anyway.
 3. **A stop launches nothing.** A ref that does not exist, a range with no changes,
-   a topic with no files and a PR that cannot be read each end the run with a
-   message naming what failed, before any agent starts. So does a map of topics
-   waiting for the person to name one.
+   a topic that is not on the map or has no files, and a PR that cannot be read
+   each end the run with a message naming what failed, before any agent starts.
+   So does a map of topics waiting for the person to name one.
 4. **The agents read only the temporary directory, with one exception.**
    `explore`, `rules`, `evaluate` and `outside` get no path to the reviewed
    repository, which is the one place this differs from what the runtime says
@@ -110,8 +110,10 @@ repository.
 
 ### 2 — Resolve the input to a base and a head
 
-An input that ends in `tema <name>` names a topic, which **Topics** below defines.
-Take those two words off, keep `<name>` exactly as written, and read what is left.
+An input that ends in `tema <names>` names a topic, which **Topics** below defines,
+or several separated by commas, as in `tema aum,valuation`, which are reviewed
+together as one. Take `tema` and everything after it off, keep `<names>` exactly
+as written, commas and all, and read what is left.
 Read the input by its shape, in this order:
 
 - **A PR**: `123`, `#123` or a URL ending in `/pull/123`. Go to **A PR** below.
@@ -195,64 +197,131 @@ expected:
 > Reviso `<ref o rango>`: base `<base corta>` (`<de dónde salió>`), head
 > `<head corta>`, `<N>` archivos.
 
-On a branch or a range, the topics below come first, and the readback is said
-once they are known: with a topic named and two or more topics, it is the topic's
-readback there instead of this one.
+On a branch, a range, or a PR whose commits are local, the topics below come
+first, and the readback is said once they are known: with a topic named and two
+or more topics, it is the topic's readback there instead of this one.
 
 #### Topics
 
-On a branch or a range the commits classify the change into topics, and that is
-all they do: what gets reviewed is always the final diff `<base>..<head>`, cut
-down to one topic's files, never the state of the code at any commit in between.
-A topic is the scope of a conventional commit, `type(scope): ...` or
-`type(scope)!: ...`. Every non-merge commit without a scope is its own topic,
-named by its short hash. A topic's files are the files of the final diff that its
-commits touched, and a file that several topics touched belongs to each of them
-and is shared. A file only a merge commit touched belongs to no topic. A renamed
-file counts as a deletion and an addition, so the total here can run one above
-the readback's count for each rename.
+On a branch, a range, or a PR whose commits are local, as **A PR** below says,
+the commits classify the change into topics, and that is all they do: what gets
+reviewed is always the final diff `<base>..<head>`, cut down to the files of the
+topics named, never the state of the code at any commit in between.
 
-The map is computed here on every run, from git and nothing else, and it is never
-written anywhere:
+A topic is the scope of a conventional commit, `type(scope): ...` or
+`type(scope)!: ...`, read loosely: a space may stand before the parenthesis and
+the type may take any case, so `Feat (split): ...` is the topic `split`. The scope
+is lowercased, so `CI` and `ci` are one topic, and scopes that differ by a plural
+or a spelling stay two. When some non-merge commit of the change has a scope,
+every non-merge commit without one is its own topic, named by its short hash.
+When none has a scope, each commit goes under the directory where its own diff
+changed the most lines, added plus deleted: the first two segments of a path with
+three or more, the first segment of a path with two, and `raiz` for a file at the
+root, the alphabetically first winning a tie.
+
+A topic's files are the files of the final diff that its commits touched, and a
+file that several topics touched belongs to each of them and is shared. A file
+that no non-merge commit touched, which only a merge brought in, belongs to the
+topic `sin-tema`, whose commits are the change's merge commits. `sin-tema` is the
+last row, is there only when it has files, shares none of them, and does not count
+toward the two topics a map needs. A renamed file counts as a deletion and an
+addition, so the total here can run one above the readback's count for each
+rename.
+
+The map reads git's output from the temporary directory step 3 fills, so that
+directory is made here, before the map, and step 3 uses it:
 
 ```bash
-awk -v repo=<target-repo> -v base="<base>" -v head="<head>" -v show="rows" 'BEGIN {
-  dcmd = "git -C \"" repo "\" -c core.quotePath=false diff --no-ext-diff --no-textconv --no-renames --name-status " base " " head
-  while ((dcmd | getline line) > 0) {
+mktemp -d
+```
+
+`<work-dir>` is the path it printed, pasted literally from here on. If that path
+sits under `<target-repo>`, stop: the temporary directory has to be outside the
+reviewed repository. It is the only place this skill writes, apart from the
+`.ai-kit/` that step 6's log read leaves in the reviewed repository under rule 2,
+and every run that made it removes it at step 10, a run that stops before step 3
+included.
+
+The map is computed here on every run, from git and nothing else. Git writes what
+the map reads to three files in `<work-dir>`:
+
+```bash
+git -C <target-repo> -c core.quotePath=false diff --no-ext-diff --no-textconv --no-renames --name-status "<base>" "<head>" > "<work-dir>/map-status.txt" &&
+git -C <target-repo> -c core.quotePath=false log --no-merges --no-renames --numstat --format=%x01%h%x09%s "<base>..<head>" > "<work-dir>/map-log.txt" &&
+git -C <target-repo> log --merges --format=%h "<base>..<head>" > "<work-dir>/map-merges.txt"
+```
+
+**When this block fails, go to step 10's cleanup and stop**, repeating the error,
+with no agent launched.
+
+The program below reads those three files and runs no command, and the map it
+prints is never written anywhere. Pass it inline, as it stands; if it has to go in
+a file, that file is `<work-dir>/map.awk` and nowhere else. With no topic named it
+runs with `show="rows"` and an empty `topic`; with one named, with `show="pick"`
+and `topic` set to `<names>` as written. `label`, `base`, `from` and `head` are
+what the readback names and the program cannot work out: the ref, range or PR as
+the person wrote it, the short base, where the base came from, and the short head.
+
+```bash
+awk -v dir="<work-dir>" -v show="<rows, or pick when a topic was named>" -v topic="<names, or nothing>" -v label="<ref, rango o PR>" -v base="<base corta>" -v from="<de dónde salió>" -v head="<head corta>" 'BEGIN {
+  sfile = dir "/map-status.txt"
+  while ((getline line < sfile) > 0) {
     tab = index(line, "\t")
     path = substr(line, tab + 1)
     status[path] = substr(line, 1, 1)
     order[++n] = path
   }
-  close(dcmd)
-  lcmd = "git -C \"" repo "\" -c core.quotePath=false log --no-merges --no-renames --name-only --format=%x01%h%x09%s " base ".." head
-  while ((lcmd | getline line) > 0) {
+  close(sfile)
+  lfile = dir "/map-log.txt"
+  while ((getline line < lfile) > 0) {
     if (substr(line, 1, 1) == "\001") {
       tab = index(line, "\t")
-      hash = substr(line, 2, tab - 2)
+      hash[++nc] = substr(line, 2, tab - 2)
       subject = substr(line, tab + 1)
-      t = hash
-      if (match(subject, /^[A-Za-z]+\([^() ]+\)!?:/)) {
-        t = substr(subject, index(subject, "(") + 1)
-        t = substr(t, 1, index(t, ")") - 1)
+      if (match(subject, /^[A-Za-z]+ ?\([^() ]+\)!?:/)) {
+        s = substr(subject, index(subject, "(") + 1)
+        scope[nc] = tolower(substr(s, 1, index(s, ")") - 1))
+        scoped = 1
       }
-      if (!(t in commits)) names[++m] = t
-      sep = (t in commits) ? " " : ""
-      commits[t] = commits[t] sep hash
-      ncommits[t]++
       continue
     }
-    if (line == "" || !(line in status) || ((t, line) in has)) continue
-    has[t, line] = 1
-    files[t]++
-    if (status[line] == "A") added[t]++
-    else if (status[line] == "D") deleted[t]++
-    else modified[t]++
-    sep = (line in owners) ? " " : ""
-    owners[line] = owners[line] sep t
-    nowners[line]++
+    if (line == "") continue
+    split(line, f, "\t")
+    path = substr(line, length(f[1]) + length(f[2]) + 3)
+    k = split(path, seg, "/")
+    key = (k >= 3) ? seg[1] "/" seg[2] : (k == 2) ? seg[1] : "raiz"
+    if (!((nc, key) in weight)) keys[nc, ++nkeys[nc]] = key
+    weight[nc, key] += (f[1] == "-" ? 0 : f[1]) + (f[2] == "-" ? 0 : f[2])
+    if (path in status) touched[nc, ++ntouched[nc]] = path
   }
-  close(lcmd)
+  close(lfile)
+  for (c = 1; c <= nc; c++) {
+    t = hash[c]
+    if (c in scope) t = scope[c]
+    else if (!scoped) {
+      best = -1
+      for (i = 1; i <= nkeys[c]; i++) {
+        key = keys[c, i]
+        if (weight[c, key] > best || (weight[c, key] == best && key < t)) { t = key; best = weight[c, key] }
+      }
+    }
+    if (!(t in commits)) names[++m] = t
+    sep = (t in commits) ? " " : ""
+    commits[t] = commits[t] sep hash[c]
+    ncommits[t]++
+    for (i = 1; i <= ntouched[c]; i++) {
+      line = touched[c, i]
+      if ((t, line) in has) continue
+      has[t, line] = 1
+      files[t]++
+      if (status[line] == "A") added[t]++
+      else if (status[line] == "D") deleted[t]++
+      else modified[t]++
+      sep = (line in owners) ? " " : ""
+      owners[line] = owners[line] sep t
+      nowners[line]++
+    }
+  }
   for (i = 1; i <= n; i++) {
     p = order[i]
     if (nowners[p] < 2) continue
@@ -264,68 +333,179 @@ awk -v repo=<target-repo> -v base="<base>" -v head="<head>" -v show="rows" 'BEGI
     for (j = i - 1; j >= 1 && (files[names[j]] + 0 < files[x] + 0 || (files[names[j]] + 0 == files[x] + 0 && names[j] > x)); j--) names[j + 1] = names[j]
     names[j + 1] = x
   }
-  if (show == "rows" && m < 2) print "fewer than two topics: the change is reviewed whole"
+  rows = m
+  for (i = 1; i <= n; i++) {
+    p = order[i]
+    if (p in owners) continue
+    owners[p] = "sin-tema"
+    has["sin-tema", p] = 1
+    files["sin-tema"]++
+    if (status[p] == "A") added["sin-tema"]++
+    else if (status[p] == "D") deleted["sin-tema"]++
+    else modified["sin-tema"]++
+  }
+  if (files["sin-tema"] > 0) {
+    names[++rows] = "sin-tema"
+    mfile = dir "/map-merges.txt"
+    while ((getline line < mfile) > 0) {
+      sep = ("sin-tema" in ncommits) ? " " : ""
+      commits["sin-tema"] = commits["sin-tema"] sep line
+      ncommits["sin-tema"]++
+    }
+    close(mfile)
+  }
+  for (i = 1; i <= rows; i++) if (files[names[i]] > 0) {
+    valid[names[i]] = 1
+    list = list (list == "" ? "" : ", ") "`" names[i] "`"
+  }
+  if (topic in valid) picked[++np] = topic
+  else {
+    k = split(topic, w, ",")
+    for (i = 1; i <= k; i++) {
+      x = w[i]
+      gsub(/^ +| +$/, "", x)
+      if (x != "" && !(x in named)) picked[++np] = x
+      named[x] = 1
+    }
+  }
+  delete named
+  ok = (np > 0)
+  for (i = 1; i <= np; i++) {
+    named[picked[i]] = 1
+    if (!(picked[i] in valid)) ok = 0
+  }
+  if (show != "export" && m < 2) print "fewer than two topics: the change is reviewed whole"
   if (show == "rows" && m >= 2) {
-    print "| Tema | Commits | Archivos | Nuevos | Modificados | Borrados | Compartidos |"
-    print "|---|---|---|---|---|---|---|"
-    for (i = 1; i <= m; i++) {
+    bar = "\174"
+    hdr = "@ Tema @ Commits @ Archivos @ Nuevos @ Modificados @ Borrados @ Compartidos @"
+    rule = "@---@---@---@---@---@---@---@"
+    fmt = "@ `%s` @ %d: %s @ %d @ %d @ %d @ %d @ %d @\n"
+    gsub(/@/, bar, hdr)
+    gsub(/@/, bar, rule)
+    gsub(/@/, bar, fmt)
+    print hdr
+    print rule
+    for (i = 1; i <= rows; i++) {
       t = names[i]
       c = commits[t]
       gsub(/[^ ]+/, "`&`", c)
-      printf "| `%s` | %d: %s | %d | %d | %d | %d | %d |\n", t, ncommits[t], c, files[t], added[t], modified[t], deleted[t], shared[t]
+      printf fmt, t, ncommits[t], c, files[t], added[t], modified[t], deleted[t], shared[t]
     }
   }
-  if (show == "export") for (i = 1; i <= n; i++) {
-    p = order[i]
-    if ((topic, p) in has) print p > (dir "/changed.txt")
-    if (p in owners) print p "\t" owners[p] > (dir "/topics.txt")
+  if (show == "pick" && m >= 2 && !ok) print "no such topic; valid names: " list
+  if (show == "pick" && m >= 2 && ok) {
+    for (i = 1; i <= np; i++) {
+      tl = tl (i > 1 ? ", " : "") "`" picked[i] "`"
+      hl = hl (hl == "" || commits[picked[i]] == "" ? "" : " ") commits[picked[i]]
+    }
+    for (i = 1; i <= n; i++) {
+      p = order[i]
+      k = split(owners[p], o, " ")
+      in_union = 0
+      outside = 0
+      for (j = 1; j <= k; j++) {
+        if (o[j] in named) in_union = 1
+        else outside = 1
+      }
+      if (in_union) { nfiles++; if (outside) nshared++ }
+    }
+    print "topics: " tl
+    print "files: " nfiles + 0
+    print "shared: " nshared + 0
+    print "commits: " hl
+    print "Reviso `" label "`, " (np > 1 ? "temas" : "tema") " " tl ": base `" base "` (`" from "`), head `" head "`, `" nfiles + 0 "` archivos del tema, `" nshared + 0 "` compartidos con otros temas."
+  }
+  if (show == "export") {
+    printf "" > (dir "/topics.txt")
+    for (i = 1; i <= n; i++) {
+      p = order[i]
+      k = split(owners[p], o, " ")
+      others = ""
+      in_union = 0
+      for (j = 1; j <= k; j++) {
+        if (o[j] in named) in_union = 1
+        else others = others (others == "" ? "" : " ") o[j]
+      }
+      if (in_union) print p > (dir "/changed.txt")
+      if (others != "") print p "\t" others > (dir "/topics.txt")
+    }
   }
 }'
 ```
 
 With fewer than two topics it prints one line, `fewer than two topics: the change
-is reviewed whole`. With two or more it prints the map itself, as the markdown
-table the person sees: a header, a separator and one row per topic, largest first,
-each with the topic, its commits counted and listed by short hash, its files, how
-many of them were added, modified and deleted, and how many are shared. **Every
-cell is the program's.** The table goes to the person as it was printed, pasted
-whole and verbatim: no row is retyped, reordered, recomputed or rounded, no cell
-is filled from anything but that output, and no table is ever written by hand from
-the git output. Step 3 runs the same program with `show="export"`, and that is the
-only other place it runs.
+is reviewed whole`, in either shape. With two or more and `show="rows"` it prints
+the map itself, as the markdown table the person sees: a header, a separator and
+one row per topic, largest first and `sin-tema` last, each with the topic, its
+commits counted and listed by short hash, its files, how many of them were added,
+modified and deleted, and how many are shared. With two or more and `show="pick"`
+it prints what the topics named add up to and the topic's readback, or the line
+that stops the run. **Every cell and every value is the program's.** The table goes to the person as it was
+printed, pasted whole and verbatim: no row is retyped, reordered, recomputed or
+rounded, no cell is filled from anything but that output, and no table is ever
+written by hand from the git output. Step 3 runs the same program with
+`show="export"`, over the same three files, and that is the only other place it
+runs.
 
 - **The one line** means a single topic, or none. The change is reviewed exactly
   as it is today: the readback above, then step 3, and a `tema` named with it
-  changes nothing.
+  changes nothing. On a PR that is the PR reviewed whole, as **A PR** says.
 - **A table and no topic named**: say the readback above, then the map, then ask
-  which topic to review, and stop. Nothing has been exported and no agent has been
-  launched. First this line:
+  which topic to review, and stop, after step 10's cleanup has removed
+  `<work-dir>`. Nothing has been exported and no agent has been launched. First
+  this line:
 
-  > Temas por scope de commit. Cada uno se revisa sobre el diff final
-  > `<base corta>..<head corta>` reducido a sus archivos; un archivo compartido
-  > entra en cada tema que lo tocó.
+  > Temas por scope de commit, o por directorio cuando ningún commit trae scope;
+  > `sin-tema` junta los archivos que sólo trajo un merge. Cada uno se revisa
+  > sobre el diff final `<base corta>..<head corta>` reducido a sus archivos; un
+  > archivo compartido entra en cada tema que lo tocó.
 
   then the table, every line the program printed, as it printed it, and then the
   question:
 
-  > ¿Qué tema reviso? Pedímelo como `review <ref o rango> tema <nombre>`.
+  > ¿Qué tema reviso? Pedímelo como `review <ref, rango o PR> tema <nombre>`, o
+  > como `tema <nombre>,<nombre>` para revisar varios juntos en un solo reporte.
 
-  An answer that names one of them is that request: start again from step 2 with
-  `tema <name>` added to the input, so the map is computed again.
-- **A table and a topic named**: its row is the one whose `Tema` cell is
-  `` `<name>` ``. Copy its short hashes from its `Commits` cell for step 4, and its
-  `Archivos` and `Compartidos` cells for the readback, which is this one:
+  An answer that names one or several of them is that request: start again from
+  step 2 with `tema <names>` added to the input, so the map is computed again.
+- **A topic named** runs the program with `show="pick"`, and what it prints
+  decides the path.
 
-  > Reviso `<ref o rango>`, tema `<nombre>`: base `<base corta>`
-  > (`<de dónde salió>`), head `<head corta>`, `<Archivos>` archivos del
-  > tema, `<Compartidos>` compartidos con otros temas.
+  Several names separated by commas are one topic: the union of their files and
+  of their commits, reviewed in one report. A file that only topics named
+  together touched is not shared on that report, since every topic that touched
+  it is under review. `sin-tema` can be named alone or with others.
 
-  **No row with that name, or a row whose `Archivos` is 0, stops the run**, and no
-  agent is launched:
+  **A line starting `no such topic; valid names:` stops the run** after step
+  10's cleanup, and no agent is launched. It is what the program prints when a name is not on the map or its
+  row has no files, and what follows the colon is every name with files, as the
+  `Tema` column shows them. Paste that list, as printed, into the message:
 
-  > No hay archivos del tema `<nombre>` en `<ref o rango>`. No lancé ningún agente.
+  > No hay archivos del tema `<names>` en `<ref, rango o PR>`. Los temas que
+  > puedo revisar son: <la lista que imprimió el programa, tal cual>. No lancé
+  > ningún agente.
 
-Everything below that says "on a topic" holds only on this last path. On a PR this
+  **Otherwise it prints five lines**: `topics:` with the names as the readback and
+  the report write them, `files:` with the files of the union, `shared:` with how
+  many of them a topic outside the named ones also touched, `commits:` with the
+  short hashes of the union's commits, which step 4 pastes, and last the topic's
+  readback, the line starting `Reviso`. It is this one, with `tema` for one name
+  and `temas` for several, `<topics>`, `<files>` and `<shared>` the values of the
+  lines above it, and the rest what `label`, `base`, `from` and `head` carried:
+
+  > Reviso `<ref, rango o PR>`, tema <topics>: base `<base corta>`
+  > (`<de dónde salió>`), head `<head corta>`, `<files>` archivos del tema,
+  > `<shared>` compartidos con otros temas.
+
+  **That line is said to the person now, verbatim, as the program printed it, as
+  a message of its own, and step 3 does not start until it has been said.**
+  Nothing is exported and no agent is launched before it. It is never retyped
+  from the template above or rebuilt from the other four lines; the template is
+  what the program prints, not something to fill in.
+
+Everything below that says "on a topic" holds only on this last path, for one
+name or several, and `<names>` there is what followed `tema`, as written, which
+the program reads, never retyped. On a PR whose commits are not local this
 section does not run, and the PR is reviewed whole.
 
 #### A PR
@@ -350,23 +530,49 @@ gh pr view "<number>" --repo "<owner>/<name>" --json number,title,body,baseRefNa
 > No pude leer el PR `<number>` de `<owner>/<name>`: `<lo que dijo gh>`. No lancé
 > ningún agente.
 
-`changedFiles` at 0 stops the same way, with the no-changes message. The base is
-`baseRefOid` and the head is `headRefOid`. Keep `title` and `body`: they are what
-the change declares, and step 4 hands them on. Say the same readback line, then
-go on to step 3.
+`changedFiles` at 0 stops the same way, with the no-changes message. Keep `title`
+and `body`: they are what the change declares, and step 4 hands them on.
+
+**A PR whose two commits are local goes through Topics.** Ask for each, one call
+per commit so that a failure says which one is missing:
+
+```bash
+git -C <target-repo> cat-file -e "<baseRefOid>^{commit}"
+git -C <target-repo> cat-file -e "<headRefOid>^{commit}"
+```
+
+Both exit 0 when both are local. Then the head is `headRefOid` and the base is
+what this prints, the commit GitHub's own diff of the PR starts from:
+
+```bash
+git -C <target-repo> merge-base "<baseRefOid>" "<headRefOid>"
+```
+
+Run the diff check from step 2 with that base and head, and go to **Topics**.
+On a map or a topic it goes the way a range does, and the PR number stays what the
+readback and the report name. When Topics prints its one line, the PR is reviewed
+whole: the readback Topics said, with this base, is the PR's only one and is not
+said again, a `tema` named with it changes nothing, and step 3 reads it from
+GitHub, whose diff starts from this same commit.
+
+**Otherwise the PR is reviewed whole**, whether a commit is missing or
+`merge-base` printed nothing: the base is `baseRefOid` and the head is
+`headRefOid`, a `tema` named with it changes nothing, and step 3 reads it from
+GitHub. Say the same readback line, then go on to step 3.
 
 ### 3 — Put the change in a temporary directory
 
-The temporary directory is the only place this skill writes, apart from the
-`.ai-kit/` that step 6's log read leaves in the reviewed repository under rule 2.
+`<work-dir>` is the temporary directory **Topics** made before the map, and it
+holds nothing yet but what the map read. A PR that did not go through Topics
+reaches here without one, and makes it now:
 
 ```bash
 mktemp -d
 ```
 
-`<work-dir>` is the path it printed, pasted literally from here on. If that path
-sits under `<target-repo>`, stop: the temporary directory has to be outside the
-reviewed repository.
+`<work-dir>` is the path it printed, pasted literally from here on, and the rest
+holds as Topics says: if that path sits under `<target-repo>`, stop, and it is the
+only place this skill writes.
 
 For a branch or a range, except on a topic:
 
@@ -387,19 +593,24 @@ and `--no-textconv` keep the repository's own diff configuration out of the run.
 The cost is that the code has no gitignored files, so a repository that keeps its
 docs out of git has no docs here.
 
-**On a topic** the code is the whole head, exported the same way, so that the
-readers can follow what the topic's files call and what calls them. What is cut
-down is the diff and the list of changed files. The map program writes the
-topic's files to `changed.txt`, and every file of the final diff with the topics
-that touched it to `topics.txt`, which step 8 and step 11 read. The diff is the
-final one with every file outside the topic taken out:
+**On a topic**, nothing here runs until the topic's readback, the line starting
+`Reviso` that step 2's program printed, has been said to the person as printed.
+Then, a PR's included, the code is the whole head, exported the same
+way from the local commit, so that the readers can follow what the topic's files
+call and what calls them. What is cut down is the diff and the list of changed
+files. The map program writes the topic's files to `changed.txt`, the union's
+when several topics were named, and to `topics.txt` every file of the final diff
+that a topic outside the named ones touched, followed by a tab and those topics,
+which step 8 and step 11 read; it reads the three files step 2 wrote, which are
+still there. The diff is the final one with every file outside
+the topic taken out:
 
 ```bash
 mkdir "<work-dir>/code" &&
 git -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false -C <target-repo> archive --format=tar --output "<work-dir>/head.tar" "<head>" &&
 tar -xf "<work-dir>/head.tar" -C "<work-dir>/code" &&
 rm "<work-dir>/head.tar" &&
-awk -v repo=<target-repo> -v base="<base>" -v head="<head>" -v show="export" -v topic="<name>" -v dir="<work-dir>" '<the program of the map block in step 2, verbatim>' &&
+awk -v dir="<work-dir>" -v show="export" -v topic="<names>" '<the program of the map block in step 2, verbatim>' &&
 git -c core.quotePath=false -C <target-repo> diff --no-color --no-ext-diff --no-textconv --no-renames "<base>" "<head>" > "<work-dir>/whole.diff" &&
 awk 'NR == FNR { keep[$0] = 1; next } /^diff --git / { on = 0 } /^diff --git a\// { rest = substr($0, 14); on = (substr(rest, 1, (length(rest) - 3) / 2) in keep) } on' "<work-dir>/changed.txt" "<work-dir>/whole.diff" > "<work-dir>/change.diff" &&
 rm "<work-dir>/whole.diff" &&
@@ -407,13 +618,14 @@ grep -c '^diff --git ' "<work-dir>/change.diff" &&
 wc -l "<work-dir>/changed.txt"
 ```
 
-The two counts at the end are the same number, the `Archivos` cell of the
-topic's map row. A file whose path git has to quote, because it holds a tab, a quote, a
+The two counts at the end are the same number, the `files:` value step 2's
+program printed for the topic. A file whose path git has to quote, because it holds a tab, a quote, a
 backslash or a newline, falls out of the diff and makes the first count smaller;
 it stays in `changed.txt`, so it is still listed as unread if nobody opens it.
 
-For a PR, the diff comes from GitHub, and the code comes over `gh api` as a tarball
-of the exact head commit, because a `git fetch` would write to `.git`:
+For a PR reviewed whole, the diff comes from GitHub, and the code comes over
+`gh api` as a tarball of the exact head commit, because a `git fetch` would write
+to `.git`:
 
 ```bash
 mkdir "<work-dir>/code" &&
@@ -434,8 +646,8 @@ that is what happened, say so and offer the range, if the branch is local.
 whoever made the change wrote about it. Nobody in this conversation corrected it,
 which is why it travels as `declared`.
 
-**On a PR** it is the `title` and the `body` step 2 read, verbatim. An empty body
-leaves the title alone.
+**On a PR**, except on a topic, it is the `title` and the `body` step 2 read,
+verbatim. An empty body leaves the title alone.
 
 **On a branch or a range** it is the commit messages of the change:
 
@@ -443,8 +655,11 @@ leaves the title alone.
 git -C <target-repo> log --no-merges --format='%h %s%n%b' "<base>..<head>"
 ```
 
-**On a topic** it is the messages of the topic's own commits and of no other, the
-short hashes its map row's `Commits` cell listed, pasted one per argument:
+**On a topic**, a PR's included, it is the messages of the topic's own commits
+and of no other: the short hashes on the `commits:` line step 2's program printed,
+pasted one per argument. For several topics that line holds the commits of all of
+them, and for `sin-tema` it holds the change's merge commits, whose messages are
+then the whole of what that topic declares:
 
 ```bash
 git -C <target-repo> log --no-walk --format='%h %s%n%b' "<hash>" "<hash>"
@@ -452,8 +667,9 @@ git -C <target-repo> log --no-walk --format='%h %s%n%b' "<hash>" "<hash>"
 
 When that runs past about two hundred lines, run it once more with
 `--format='%h %s'` and hand on the subjects alone, saying in the intent that they
-are subjects only. Merge commits are left out because their message names a
-branch, not a purpose.
+are subjects only. Merge commits are left out of every intent but `sin-tema`'s,
+because their message names a branch, not a purpose; `sin-tema` has nothing else
+to be judged against.
 
 **Nothing declared** — an empty output, or a PR with neither title nor body worth
 the name — is not a stop. `evaluate` gets `intent_source: inferred` and the intent
@@ -525,10 +741,12 @@ List in files_read every path under repo_root you opened, relative to repo_root.
 ```
 
 On a topic, that text gets these lines after its first sentence, so that the files
-the diff leaves out are not read as missing from the change:
+the diff leaves out are not read as missing from the change. `<topics>` is the
+`topics:` value step 2's program printed, after `topic` for one name and `topics`
+for several:
 
 ```
-This is the topic <name> of a larger change: the diff and changed files hold only
+This is the topic <topics> of a larger change: the diff and changed files hold only
 the files its own commits touched, and the head under repo_root is the whole
 change.
 ```
@@ -741,9 +959,10 @@ grep -Fxc "<path>" "<work-dir>/changed.txt"
   awk -F '\t' '$1 == "<path>" { print $2 }' "<work-dir>/topics.txt"
   ```
 
-  What it prints is the topics that changed that file, and the rule is labelled
-  with them rather than inherited. Nothing printed means no non-merge commit of the
-  change touched it, and the rule is inherited.
+  What it prints is the topics that changed that file, `sin-tema` when only a
+  merge did, and the rule is labelled with them rather than inherited. Every file
+  of the final diff outside the topics named is there, so nothing printed means
+  the change did not touch it, and the rule is inherited.
 - **An `untested:` finding is about a changed path or it is dropped.** Its evidence
   entries whose `grep` prints `0` are taken off it, and the finding is dropped when
   none is left, counted with `explore`'s other drops. A path the change did not
@@ -779,18 +998,21 @@ range it is the longest thing in this run and the one thing here that may not be
 shortened.
 
 **On a topic**, read it with the other topics that share each file instead, which
-prints every unread path, followed by a tab and those topics when it is shared:
+prints every unread path, followed by a tab and those topics when it is shared.
+`topics.txt` already leaves out the topics named, so a file only they touched
+prints bare:
 
 ```bash
-awk -F '\t' -v topic="<name>" 'NR == FNR { owners[$1] = $2; next } { k = split(owners[$0], o, " "); others = ""; for (j = 1; j <= k; j++) if (o[j] != topic) others = others (others == "" ? "" : " ") o[j]; print $0 (others == "" ? "" : "\t" others) }' "<work-dir>/topics.txt" "<work-dir>/unread.txt"
+awk -F '\t' 'FILENAME == ARGV[1] { others[$1] = $2; next } { print $0 (($0 in others) ? "\t" others[$0] : "") }' "<work-dir>/topics.txt" "<work-dir>/unread.txt"
 ```
 
 ### 9 — Gather the evidence
 
-**On a PR there is nothing to run**: no base is exported on that path, so go to
-step 10, and the report says so.
+**On a PR reviewed whole there is nothing to run**: no base is exported on that
+path, so go to step 10, and the report says so.
 
-On a branch or a range, the base goes beside the code here rather than in step 3,
+On a branch, a range or a topic, a PR's topic included, since its commits are
+local, the base goes beside the code here rather than in step 3,
 so that it does not exist while the agents are reading, and that is why this step
 waits for all four. `evidence` gets only paths inside the temporary directory,
 never `<target-repo>`.
@@ -829,8 +1051,9 @@ error.
 rm -rf "<work-dir>"
 ```
 
-This runs on every path that reached step 3, and only once every agent launched in
-step 5 has returned. It runs before the report goes out, so the report is the last
+This runs on every path that made `<work-dir>`, the stops at the map and at
+`no such topic` included, and only once every agent launched in step 5 has
+returned. It runs before the report goes out, so the report is the last
 thing the person sees. If it fails, say so and name the directory.
 
 ### 11 — Print the report
@@ -994,21 +1217,25 @@ Escáneres: <nombre> <versión> (datos del <fecha>); Go <toolchain>, go.mod <ver
   unless that is `not-applicable`. One with `at_pin` false shows both versions:
   `gitleaks 8.31.0 (fijada 8.30.1)`. For Go, `toolchain` and `go_mod` go side by
   side, because they can differ and the reader decides what that means.
-- On a PR the whole block is one line: `Evidencia: no corrió: en un PR no se exporta
-  la base.` When `evidence` itself failed it is one line too: `Evidencia: no corrió:
+- On a PR reviewed whole the block is one line: `Evidencia: no corrió: en un PR no
+  se exporta la base.` When `evidence` itself failed it is one line too: `Evidencia: no corrió:
   <el error>.`
 - `Sin leer` lists every path in `unread.txt`, one per line, and goes last so that
   a long list does not push a section off the screen. When nothing was left unread,
   the section is not there and the count in the first line says it.
 - **An empty section is a real result.** No rules, nothing missing, nothing that
   can go wrong: say that none came up, in one line, and never pad.
-- **On a topic the report is about that topic alone**, and these lines change:
+- **On a topic the report is about that topic alone**, or about the union when
+  several were named, and these lines change:
   - the first line names it after what was reviewed and counts its files:
-    `Revisión de `<ref o rango>`, `<base corta>..<head corta>`, tema `<nombre>`.
-    Leí <leídos> de <total> archivos del tema.`, where a range written `A..B` is
-    named once, as the first line's rule says: `Revisión de `e9c19a5..5ea9972`,
-    tema `aum`. Leí ...`
-  - `Juzgado contra` ends `(declarada en los commits del tema <nombre>)`.
+    `Revisión de `<ref, rango o PR>`, `<base corta>..<head corta>`, tema <topics>.
+    Leí <leídos> de <total> archivos del tema.`, with `<topics>` the `topics:`
+    value step 2's program printed and `temas` for several, where a range written
+    `A..B` is named once, as the first line's rule says: `Revisión de
+    `e9c19a5..5ea9972`, tema `aum`. Leí ...`, or `Revisión de
+    `e9c19a5..5ea9972`, temas `flight`, `restyclient`. Leí ...`
+  - `Juzgado contra` ends `(declarada en los commits del tema <topics>)`, or
+    `de los temas <topics>` for several.
   - a rule whose anchor is in a file another topic changed, as step 8 found it,
     reads `(del tema <tema>, <tema>)` where `(heredada)` would go. `(heredada)` is
     left for a file no topic changed.
