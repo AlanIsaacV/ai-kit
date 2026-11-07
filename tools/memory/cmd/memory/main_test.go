@@ -147,9 +147,8 @@ func execMemory(t *testing.T, r repo, stdin string, args []string, extraEnv ...s
 // the end of the line.
 //
 // Go's flag package stops parsing at the first non-flag argument, so a --dir
-// appended after `search`'s text would be swallowed as more text and never take
-// effect — pointing the command at whatever repo the test process happens to be
-// running inside, which is this one.
+// appended after `search`'s text would be refused as a flag after the text rather
+// than take effect.
 func afterSubcommand(t *testing.T, args []string, flags ...string) []string {
 	t.Helper()
 	if len(args) == 0 {
@@ -204,6 +203,24 @@ func errorCode(t *testing.T, res result) (code, message string) {
 		t.Fatalf("a refusal must still print JSON: %v\n%s%s", err, res.stdout, res.stderr)
 	}
 	return out.Code, out.Error
+}
+
+func besideCallLog(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		if e.Name() != "calls" {
+			out = append(out, e.Name())
+		}
+	}
+	return out
 }
 
 func lines(t *testing.T, r repo, path string) []string {
@@ -491,11 +508,13 @@ func TestAMistypedFlagIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 	before := lines(t, r, r.log)
 
 	res := run(t, r, "add", "--kind", "decision", "--titel", "Typo", "--about", "auth")
-	if res.code == 0 {
-		t.Fatal("a mistyped flag must be refused")
+	code, msg := errorCode(t, res)
+	if res.code != 2 || code != "unknown_flag" {
+		t.Fatalf("a mistyped flag must be refused as unknown_flag at exit 2, got exit %d code %q\n%s%s",
+			res.code, code, res.stdout, res.stderr)
 	}
-	if !strings.Contains(res.stderr, "titel") {
-		t.Errorf("the refusal should name the flag it did not recognise, got %q", res.stderr)
+	if !strings.Contains(msg, "titel") {
+		t.Errorf("the refusal should name the flag it did not recognise, got %q", msg)
 	}
 	if after := lines(t, r, r.log); len(after) != len(before) {
 		t.Fatalf("a refused add must write nothing, log went from %d to %d lines", len(before), len(after))
@@ -750,6 +769,7 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 	// `kinds` reads no log, so it is run bare: with no --store to point it
 	// anywhere, it still has nothing to open.
 	cmd := exec.Command(memoryBin, "kinds")
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
 	stdout, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("kinds: %v\n%s", err, stdout)
@@ -858,6 +878,7 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 // looks like documentation and behaves like a lie.
 func TestTheAdvertisedAllowlistIsTheOneLinkEnforces(t *testing.T) {
 	cmd := exec.Command(memoryBin, "kinds")
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
 	stdout, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("kinds: %v\n%s", err, stdout)
@@ -2126,8 +2147,8 @@ func TestDryRunPrintsTheSameReportAndWritesNothing(t *testing.T) {
 	if !preview.DryRun || len(preview.Promoted) != 1 || preview.Promoted[0] != pref {
 		t.Fatalf("the preview must name what a real run would move: %+v", preview)
 	}
-	if _, err := os.Stat(filepath.Join(r.home, ".ai-kit")); !os.IsNotExist(err) {
-		t.Errorf("a preview that creates its destination is not a preview: %v", err)
+	if left := besideCallLog(t, filepath.Join(r.home, ".ai-kit")); len(left) > 0 {
+		t.Errorf("a preview that creates its destination is not a preview: %v", left)
 	}
 
 	// Now against a destination that exists, so "nothing was written" is a claim

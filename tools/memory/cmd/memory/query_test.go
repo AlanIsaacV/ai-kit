@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -166,8 +165,8 @@ func TestQueryScopeBothAnswersFromTheRepoLogWhenThereIsNoUserLog(t *testing.T) {
 	r := throwawayRepo(t)
 	first := add(t, r, "RS256 over HS256")
 	second := add(t, r, "Asymmetric signing")
-	if _, err := os.Stat(filepath.Dir(r.user)); !os.IsNotExist(err) {
-		t.Fatalf("the throwaway HOME has to start with no .ai-kit/ at all, stat said %v", err)
+	if left := besideCallLog(t, filepath.Dir(r.user)); len(left) > 0 {
+		t.Fatalf("the throwaway HOME has to start with nothing in .ai-kit/ but the call log, found %v", left)
 	}
 
 	records, _ := scopedAnswer(t, runBare(t, r, "query", "--scope", "both"))

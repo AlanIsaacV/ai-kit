@@ -1037,7 +1037,7 @@ func TestCriterion4BareStateEmitsExactlyTheFieldsItEmitsToday(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	want := []string{"anomalies", "count", "current", "derived_over", "excluded", "objectives",
+	want := []string{"anomalies", "count", "current", "derived_over", "excluded", "interpreted", "objectives",
 		"objectives_from", "path", "scope"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("the single-repo document is %v, and it has to stay %v", keys, want)
@@ -1200,7 +1200,7 @@ func TestCriterion8NeitherModeWritesAnything(t *testing.T) {
 	addObjective(t, beta, "The objective in the second repository")
 	repoIn(t, s, "group/gamma")
 
-	beforeRoot, beforeHome := snapshot(t, s.root), snapshot(t, s.home)
+	beforeRoot, beforeHome := snapshot(t, s.root), withoutCallLog(snapshot(t, s.home))
 
 	modes := [][]string{{}, {"--text"}, {"--all"}, {"--text", "--here"}}
 	for pass := 0; pass < 2; pass++ {
@@ -1210,7 +1210,17 @@ func TestCriterion8NeitherModeWritesAnything(t *testing.T) {
 	}
 
 	sameBytes(t, "under the root", beforeRoot, snapshot(t, s.root))
-	sameBytes(t, "under HOME", beforeHome, snapshot(t, s.home))
+	sameBytes(t, "under HOME", beforeHome, withoutCallLog(snapshot(t, s.home)))
+}
+
+func withoutCallLog(files map[string]string) map[string]string {
+	calls := filepath.Join(".ai-kit", "calls") + string(filepath.Separator)
+	for rel := range files {
+		if strings.HasPrefix(rel, calls) {
+			delete(files, rel)
+		}
+	}
+	return files
 }
 
 func TestCriterion9ErrorsStayJSONInBothModes(t *testing.T) {

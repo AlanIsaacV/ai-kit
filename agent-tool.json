@@ -1,0 +1,30 @@
+{
+  "tools": [
+    {
+      "name": "memory",
+      "records": { "kind": "jsonl", "path": "~/.ai-kit/calls/memory.jsonl" },
+      "workarounds": {
+        "commands": ["\\.ai-kit/memory\\.jsonl\\b", "\\bsqlite3\\b.*\\bmemory\\.db\\b"],
+        "paths": ["**/.ai-kit/memory.jsonl", "**/.ai-kit/memory.db"]
+      },
+      "metric": {
+        "name": "silent_failure_rate",
+        "computation": {
+          "source": "transcripts",
+          "numerator": "memory search invocations with a flag after the term that exited 0",
+          "denominator": "memory search invocations"
+        },
+        "better": "lower"
+      },
+      "baseline": {
+        "value": 0.4676,
+        "numerator": 137,
+        "denominator": 293,
+        "date": "2026-11-07",
+        "window": { "from": "2026-10-08", "to": "2026-11-07" },
+        "roots": ["~/.claude/projects", "~/.claude-p/projects"],
+        "dedup": "sessionId"
+      }
+    }
+  ]
+}

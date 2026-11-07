@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,7 +32,7 @@ Usage:
   memory add       --batch PATH|- [--plan SLUG] [--repo-root PATH]
   memory link      --type TYPE --from ID --to ID
   memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--id IDS] [--since TS] [--until TS] [--current] [--count] [--fields KEYS] [--body-lines N] [--limit N]
-  memory search    TEXT [--plan SLUG] [--current] [--limit N]
+  memory search    [--plan SLUG] [--current] [--limit N] [--] TEXT
   memory areas     [--kind KINDS] [--plan SLUG]
   memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--id IDS] [--verdict V] [--path S] [--current] [--all] [--repo-root PATH]
   memory edges     [--type TYPES] [--from ID] [--to ID] [--since TS] [--until TS] [--count] [--limit N]
@@ -39,6 +40,7 @@ Usage:
   memory promote   [--ids ID[,ID...]] [--kind KIND[,KIND...]] --to user [--dry-run]
   memory validate  [--all]
   memory kinds
+  memory --version
 
 Common flags:
   --scope repo|user        which log to act on (default: repo). 'query' alone also
@@ -138,57 +140,107 @@ them.
 Every command prints JSON on stdout, on success and on failure alike, except
 'state --text' which prints the summary. A failure is JSON in every mode,
 '--text' included. Exit 0 means the command ran; exit 1 means it refused, and
-the JSON says why. 'validate' is the one command where exit 1 is a verdict
-rather than a refusal: it ran, and either a log failed validation (ok: false) or
-a location it was asked to sweep could not be created (init_failed). Those two
+the JSON says why; exit 2 means it did not understand the call — an unknown
+flag, a malformed value, an argument a command does not read, or a flag after
+the text of 'search', which goes after '--' when it begins with '-'.
+'validate' is the one command where exit 1 is a verdict rather than a refusal:
+it ran, and either a log failed validation (ok: false) or a location it was
+asked to sweep could not be created (init_failed). Those two
 are reported separately, because a directory nobody can write to says nothing
 about whether the records in it are well-formed.
 `
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
-	}
+	os.Exit(execute(os.Args[1:]))
+}
 
-	var err error
-	switch os.Args[1] {
+func execute(args []string) int {
+	thisCall = &call{start: time.Now()}
+	if len(args) > 0 {
+		thisCall.operation = args[0]
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			thisCall.collection = false
+			thisCall.outcome, thisCall.detail = "error", "panic"
+			thisCall.write()
+			panic(r)
+		}
+		thisCall.write()
+	}()
+	return finish(dispatch(args))
+}
+
+func dispatch(args []string) error {
+	if len(args) == 0 {
+		fmt.Fprint(os.Stderr, usage)
+		return parseFail("missing_command", "memory needs a subcommand: run memory help for the list")
+	}
+	rest := args[1:]
+	switch args[0] {
 	case "init":
-		err = cmdInit(os.Args[2:])
+		return cmdInit(rest)
 	case "add":
-		err = cmdAdd(os.Args[2:])
+		return cmdAdd(rest)
 	case "link":
-		err = cmdLink(os.Args[2:])
+		return cmdLink(rest)
 	case "query":
-		err = cmdQuery(os.Args[2:])
+		return cmdQuery(rest)
 	case "search":
-		err = cmdSearch(os.Args[2:])
+		return cmdSearch(rest)
 	case "areas":
-		err = cmdAreas(os.Args[2:])
+		return cmdAreas(rest)
 	case "anchors":
-		err = cmdAnchors(os.Args[2:])
+		return cmdAnchors(rest)
 	case "edges":
-		err = cmdEdges(os.Args[2:])
+		return cmdEdges(rest)
 	case "state":
-		err = cmdState(os.Args[2:])
+		return cmdState(rest)
 	case "promote":
-		err = cmdPromote(os.Args[2:])
+		return cmdPromote(rest)
 	case "validate":
-		err = cmdValidate(os.Args[2:])
+		return cmdValidate(rest)
 	case "kinds":
-		err = cmdKinds(os.Args[2:])
+		return cmdKinds(rest)
+	case "--version":
+		if len(rest) > 0 {
+			return parseFail("unexpected_argument", "--version takes no argument, got %q", rest[0])
+		}
+		emit(map[string]string{"version": buildVersion()})
+		return nil
 	case "-h", "--help", "help":
 		fmt.Print(usage)
-		return
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", os.Args[1], usage)
-		os.Exit(2)
+		return nil
 	}
+	fmt.Fprint(os.Stderr, usage)
+	return parseFail("unknown_command", "unknown command %q: run memory help for the list", args[0])
+}
 
-	if err != nil {
-		emitError(err)
-		os.Exit(1)
+func finish(err error) int {
+	if err == nil {
+		thisCall.succeeded()
+		return 0
 	}
+	var p *printed
+	if errors.As(err, &p) {
+		if p.code == "" {
+			thisCall.succeeded()
+		} else {
+			thisCall.refused(p.code)
+		}
+		return p.exit
+	}
+	emitError(err)
+	code, exit := "error", 1
+	var ce *cliError
+	if errors.As(err, &ce) {
+		code = ce.Code
+		if ce.Exit != 0 {
+			exit = ce.Exit
+		}
+	}
+	thisCall.refused(code)
+	return exit
 }
 
 // ---------------------------------------------------------------- output ---
@@ -203,6 +255,7 @@ func emit(v any) {
 type cliError struct {
 	Code string
 	Msg  string
+	Exit int
 }
 
 func (e *cliError) Error() string { return e.Msg }
@@ -210,6 +263,17 @@ func (e *cliError) Error() string { return e.Msg }
 func fail(code, format string, args ...any) error {
 	return &cliError{Code: code, Msg: fmt.Sprintf(format, args...)}
 }
+
+func parseFail(code, format string, args ...any) error {
+	return &cliError{Code: code, Msg: fmt.Sprintf(format, args...), Exit: 2}
+}
+
+type printed struct {
+	code string
+	exit int
+}
+
+func (p *printed) Error() string { return p.code }
 
 func emitError(err error) {
 	code := "error"
@@ -239,8 +303,8 @@ func (c *common) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.dir, "dir", "", "start directory for repo discovery")
 }
 
-// parseFlags is fs.Parse plus one refusal and the store, and every subcommand
-// calls it instead of calling fs.Parse itself.
+// parseFlags is fs.Parse plus its refusals and the store, and every subcommand
+// calls it, or parseFlagsAndText, instead of calling fs.Parse itself.
 //
 // The refusal is for an argument in flag position that begins with `-` and
 // contains a space. That is one argument where the command line meant two, and
@@ -260,20 +324,65 @@ func (c *common) bind(fs *flag.FlagSet) {
 // There is no escape hatch. A caller who genuinely means an argument of that
 // shape is passing it as a flag's value, which this never looks at.
 func parseFlags(fs *flag.FlagSet, args []string) error {
-	store := fs.String("store", memory.DefaultStorePath, "the store every log lives in")
+	positional, _, err := parseArgs(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(positional) > 0 {
+		return parseFail("unexpected_argument", "%s takes no positional argument, got %q: every value goes "+
+			"behind the flag it belongs to, as --flag value; run memory %s -h for the flags it takes",
+			fs.Name(), positional[0], fs.Name())
+	}
+	return useStore(fs)
+}
+
+func parseFlagsAndText(fs *flag.FlagSet, args []string) ([]string, error) {
+	positional, ended, err := parseArgs(fs, args)
+	if err != nil {
+		return nil, err
+	}
+	if !ended {
+		for _, a := range positional {
+			if len(a) < 2 || a[0] != '-' {
+				continue
+			}
+			name, _, _ := strings.Cut(a, "=")
+			return nil, parseFail("flag_after_text", "%s comes after %s's text %q, and a flag there would be "+
+				"searched for as text: put every flag before the text, as memory %s %s ... %q; text that "+
+				"begins with - goes after --", name, fs.Name(), positional[0], fs.Name(), name, positional[0])
+		}
+	}
+	if err := useStore(fs); err != nil {
+		return nil, err
+	}
+	return positional, nil
+}
+
+func useStore(fs *flag.FlagSet) error {
+	if err := memory.UseStore(fs.Lookup("store").Value.String()); err != nil {
+		return fail("bad_store", "%s", err.Error())
+	}
+	return nil
+}
+
+func parseArgs(fs *flag.FlagSet, args []string) ([]string, bool, error) {
+	fs.String("store", memory.DefaultStorePath, "the store every log lives in")
+	fs.SetOutput(io.Discard)
+	ended := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		// Where the flag package stops parsing, this stops looking: `--` ends the
 		// flags, and so does the first argument that is not one — `search`'s text,
-		// for instance, which may say anything.
+		// for instance.
 		if a == "--" {
+			ended = true
 			break
 		}
 		if len(a) < 2 || a[0] != '-' {
 			break
 		}
 		if strings.ContainsAny(a, " \t") {
-			return fail("unsplit_argument",
+			return nil, false, fail("unsplit_argument",
 				"argument %q is in flag position, begins with - and contains a space: it is one argument "+
 					"where the command line meant two. Did an unquoted variable fail to split? Pass the flag "+
 					"and its value as separate arguments.", a)
@@ -292,12 +401,30 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 		i++ // the next argument is this flag's value, and a value is never inspected
 	}
 	if err := fs.Parse(args); err != nil {
-		return err
+		if errors.Is(err, flag.ErrHelp) {
+			fs.SetOutput(os.Stderr)
+			fs.Usage()
+			return nil, false, &printed{exit: 0}
+		}
+		return nil, false, flagError(fs, err)
 	}
-	if err := memory.UseStore(*store); err != nil {
-		return fail("bad_store", "%s", err.Error())
+	return fs.Args(), ended, nil
+}
+
+func flagError(fs *flag.FlagSet, err error) error {
+	msg := err.Error()
+	code := "bad_flags"
+	switch {
+	case strings.HasPrefix(msg, "flag provided but not defined"):
+		code = "unknown_flag"
+	case strings.HasPrefix(msg, "flag needs an argument"):
+		code = "missing_flag_value"
+	case strings.HasPrefix(msg, "invalid value"), strings.HasPrefix(msg, "invalid boolean value"):
+		code = "bad_flag_value"
+	case strings.HasPrefix(msg, "bad flag syntax"):
+		code = "bad_flag_syntax"
 	}
-	return nil
+	return parseFail(code, "%s; run memory %s -h for the flags it takes", msg, fs.Name())
 }
 
 // locate resolves a location without creating it. Nearly everything goes through
@@ -359,6 +486,32 @@ func materialize(loc memory.Location) error {
 		return fail("init_failed", "%s", err.Error())
 	}
 	return nil
+}
+
+func (c *common) interpreted(m map[string]any) map[string]any {
+	m["scope"] = c.scope
+	m["dir"] = effectiveDir(c.dir)
+	m["store"] = memory.CurrentStore()
+	thisCall.echo = m
+	return m
+}
+
+func effectiveDir(dir string) string {
+	if dir != "" {
+		return dir
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return wd
+}
+
+func effectiveThreshold(t int) int {
+	if t == 0 {
+		return memory.DefaultThreshold
+	}
+	return t
 }
 
 func (c *common) checkScopeFlags() error {
@@ -450,7 +603,7 @@ func logAt(l memory.Log) memory.Location {
 // ------------------------------------------------------------- subcommands ---
 
 func cmdInit(args []string) error {
-	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	if err := parseFlags(fs, args); err != nil {
@@ -474,7 +627,7 @@ func cmdInit(args []string) error {
 }
 
 func cmdAdd(args []string) error {
-	fs := flag.NewFlagSet("add", flag.ExitOnError)
+	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	kind := fs.String("kind", "", "record kind (see `memory kinds`)")
@@ -560,7 +713,7 @@ func cmdAdd(args []string) error {
 	// be taken back — the only place to stop it is here.
 	if ps := memory.ValidateEntry(e); len(ps) > 0 {
 		emit(map[string]any{"error": "record rejected", "code": "invalid_record", "problems": ps})
-		os.Exit(1)
+		return &printed{code: "invalid_record", exit: 1}
 	}
 
 	if err := writeLog(loc).Append(e); err != nil {
@@ -749,7 +902,7 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 	if len(problems) > 0 {
 		emit(map[string]any{"error": "batch rejected", "code": "invalid_batch",
 			"path": loc.Path, "problems": problems})
-		os.Exit(1)
+		return &printed{code: "invalid_batch", exit: 1}
 	}
 	if len(written) == 0 {
 		return fail("empty_batch", "%s holds no entries: a batch that writes nothing is a batch whose "+
@@ -928,7 +1081,7 @@ func buildBatchEntry(c *common, base memory.Origin, anchorRepo, plan string, bl 
 }
 
 func cmdLink(args []string) error {
-	fs := flag.NewFlagSet("link", flag.ExitOnError)
+	fs := flag.NewFlagSet("link", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	typ := fs.String("type", "", "edge type (see `memory kinds`)")
@@ -957,7 +1110,7 @@ func cmdLink(args []string) error {
 	}
 	if ps := memory.ValidateEdge(edge); len(ps) > 0 {
 		emit(map[string]any{"error": "edge rejected", "code": "invalid_edge", "problems": ps})
-		os.Exit(1)
+		return &printed{code: "invalid_edge", exit: 1}
 	}
 
 	// Refuse a dangling edge at write time. A dangling edge fails silently
@@ -1022,7 +1175,7 @@ var queryHintAdvice = []string{
 const scopeBoth = "both"
 
 func cmdQuery(args []string) error {
-	fs := flag.NewFlagSet("query", flag.ExitOnError)
+	fs := flag.NewFlagSet("query", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	fs.Lookup("scope").Usage = "repo|user|both; both reads the repo log and the user log as one answer"
@@ -1072,10 +1225,16 @@ func cmdQuery(args []string) error {
 		Limit:       *limit,
 		Threshold:   *threshold,
 	}
+	interp := c.interpreted(map[string]any{
+		"plan": plan, "id": nonNil(idList), "about": nonNil(f.About), "kind": nonNil(splitList(*kinds)),
+		"slug": *slug, "text": *text, "since": f.Since, "until": f.Until,
+		"current": *current, "count": *count, "fields": nonNil(splitList(*fields)), "body_lines": *bodyLines,
+		"limit": *limit, "threshold": effectiveThreshold(*threshold),
+	})
 	if c.scope == scopeBoth {
-		return runQueryBoth(&c, f, proj)
+		return runQueryBoth(&c, f, interp, proj)
 	}
-	return runQuery(&c, f, proj)
+	return runQuery(&c, f, interp, proj)
 }
 
 var searchHintAdvice = []string{
@@ -1084,16 +1243,17 @@ var searchHintAdvice = []string{
 }
 
 func cmdSearch(args []string) error {
-	fs := flag.NewFlagSet("search", flag.ExitOnError)
+	fs := flag.NewFlagSet("search", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "return at most N, most recent first")
 	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
-	if err := parseFlags(fs, args); err != nil {
+	words, err := parseFlagsAndText(fs, args)
+	if err != nil {
 		return err
 	}
-	text := strings.Join(fs.Args(), " ")
+	text := strings.Join(words, " ")
 	if strings.TrimSpace(text) == "" {
 		return fail("missing_text", "search needs text: memory search \"key rotation\"")
 	}
@@ -1101,10 +1261,14 @@ func cmdSearch(args []string) error {
 	if err != nil {
 		return err
 	}
+	interp := c.interpreted(map[string]any{
+		"plan": plan, "text": text, "current": *current,
+		"limit": *limit, "threshold": effectiveThreshold(*threshold),
+	})
 	return runQuery(&c, memory.Filter{
 		Plan: plan, Text: text, CurrentOnly: *current, HintAdvice: searchHintAdvice,
 		Limit: *limit, Threshold: *threshold,
-	})
+	}, interp)
 }
 
 // areaReport is one scope's enumeration. Count is how many distinct areas the
@@ -1131,7 +1295,7 @@ type areaReport struct {
 // is that what is in it came from somewhere else. So there is no `--scope` here:
 // this command has nothing to choose between.
 func cmdAreas(args []string) error {
-	fs := flag.NewFlagSet("areas", flag.ExitOnError)
+	fs := flag.NewFlagSet("areas", flag.ContinueOnError)
 	var c common
 	// Bound by hand rather than through common.bind, which would also bind a
 	// --scope this command does not honour.
@@ -1146,6 +1310,10 @@ func cmdAreas(args []string) error {
 		return err
 	}
 	f := memory.Filter{Plan: plan, Kinds: toKinds(splitList(*kinds))}
+	interp := map[string]any{
+		"plan": plan, "kind": nonNil(splitList(*kinds)), "dir": effectiveDir(c.dir), "store": memory.CurrentStore(),
+	}
+	thisCall.echo = interp
 
 	stored, err := memory.ReadStore("")
 	if err != nil {
@@ -1169,7 +1337,12 @@ func cmdAreas(args []string) error {
 		reports = append(reports, areaReport{Path: loc.Path, Scope: loc.Scope, Count: len(areas), Areas: areas})
 	}
 
-	emit(map[string]any{"plan": plan, "kinds": nonNil(splitList(*kinds)), "scopes": reports})
+	total := 0
+	for _, r := range reports {
+		total += r.Count
+	}
+	thisCall.found(total, total, false, false)
+	emit(map[string]any{"plan": plan, "kinds": nonNil(splitList(*kinds)), "scopes": reports, "interpreted": interp})
 	return nil
 }
 
@@ -1185,7 +1358,7 @@ func cmdAreas(args []string) error {
 // Exit 0 whatever the verdicts are. `changed` is an answer, not a refusal, and
 // the exit code in this CLI says whether the command ran.
 func cmdAnchors(args []string) error {
-	fs := flag.NewFlagSet("anchors", flag.ExitOnError)
+	fs := flag.NewFlagSet("anchors", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	about := fs.String("about", "", "comma-separated tags; a tag ending in / matches by path prefix")
@@ -1221,11 +1394,18 @@ func cmdAnchors(args []string) error {
 	if err != nil {
 		return err
 	}
+	interp := c.interpreted(map[string]any{
+		"plan": plan, "id": nonNil(idList), "about": nonNil(splitList(*about)), "kind": nonNil(splitList(*kinds)),
+		"slug": *slug, "text": *text, "verdict": string(wantVerdict), "path": *path,
+		"current": *current, "all": *all, "repo_root": strings.TrimSpace(*repoRoot),
+		"limit": *limit, "threshold": -1,
+	})
 	var loc memory.Location
 	var locs []memory.Location
 	var held [][]memory.Line
 	var stored []memory.Line
 	if *all {
+		delete(interp, "scope")
 		if err := c.checkScopeFlags(); err != nil {
 			return err
 		}
@@ -1313,12 +1493,14 @@ func cmdAnchors(args []string) error {
 	records := memory.FilterChecks(checks, memory.CheckFilter{Verdict: wantVerdict, Path: *path})
 
 	out := map[string]any{
-		"plan":    plan,
-		"matched": res.Count,
-		"checked": len(checks),
-		"counts":  counts,
-		"records": records,
+		"plan":        plan,
+		"matched":     res.Count,
+		"checked":     len(checks),
+		"counts":      counts,
+		"records":     records,
+		"interpreted": interp,
 	}
+	thisCall.found(res.Count, len(records), res.Truncated, false)
 	if *all {
 		out["logs"] = nonNil(pathsOf(locs))
 	} else {
@@ -1390,7 +1572,7 @@ func isDir(path string) bool {
 
 func needsStore(f memory.Filter) bool { return f.AdmitsObjectives() || f.CurrentOnly }
 
-func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
+func runQuery(c *common, f memory.Filter, interp map[string]any, proj ...memory.Projection) error {
 	var loc memory.Location
 	var lines, stored []memory.Line
 	var err error
@@ -1406,7 +1588,7 @@ func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
 	} else if loc, lines, err = c.load(); err != nil {
 		return err
 	}
-	out := queryAnswer(memory.QueryIn(lines, stored, f), f, proj...)
+	out := queryAnswer(memory.QueryIn(lines, stored, f), f, interp, proj...)
 	out["path"], out["scope"] = loc.Path, loc.Scope
 	emit(out)
 	return nil
@@ -1416,7 +1598,7 @@ func runQuery(c *common, f memory.Filter, proj ...memory.Projection) error {
 // that outside a git repository the refusal `--scope repo` gives comes before the
 // user location is created. Both are resolved the way `areas` loads them: two
 // known locations, where a missing user log is an empty one rather than a refusal.
-func runQueryBoth(c *common, f memory.Filter, proj memory.Projection) error {
+func runQueryBoth(c *common, f memory.Filter, interp map[string]any, proj memory.Projection) error {
 	locs := make([]memory.Location, 0, 2)
 	paths := make([]string, 0, 2)
 	for _, s := range []memory.Scope{memory.ScopeRepo, memory.ScopeUser} {
@@ -1444,7 +1626,7 @@ func runQueryBoth(c *common, f memory.Filter, proj memory.Projection) error {
 			logs = append(logs, lines)
 		}
 	}
-	out := queryAnswer(memory.QueryEachIn(logs, stored, f), f, proj)
+	out := queryAnswer(memory.QueryEachIn(logs, stored, f), f, interp, proj)
 	out["scope"], out["paths"] = scopeBoth, paths
 	emit(out)
 	return nil
@@ -1452,7 +1634,7 @@ func runQueryBoth(c *common, f memory.Filter, proj memory.Projection) error {
 
 // queryAnswer is every key of a query's answer except the ones that say which log
 // was read.
-func queryAnswer(res memory.Result, f memory.Filter, proj ...memory.Projection) map[string]any {
+func queryAnswer(res memory.Result, f memory.Filter, interp map[string]any, proj ...memory.Projection) map[string]any {
 	records := any(res.Records)
 	if len(proj) > 0 {
 		records = proj[0].Apply(res.Records)
@@ -1460,8 +1642,10 @@ func queryAnswer(res memory.Result, f memory.Filter, proj ...memory.Projection) 
 	out := map[string]any{
 		"plan":  f.Plan,
 		"count": res.Count, "returned": res.Returned, "truncated": res.Truncated,
-		"records": records,
+		"records":     records,
+		"interpreted": interp,
 	}
+	thisCall.found(res.Count, res.Returned, res.Truncated, f.CountOnly)
 	if res.Hint != "" {
 		out["hint"] = res.Hint
 	}
@@ -1490,7 +1674,7 @@ func queryAnswer(res memory.Result, f memory.Filter, proj ...memory.Projection) 
 // change the answers rather than the view: an objective's parent, its children
 // and the current objective are properties of the log, not of the question.
 func cmdState(args []string) error {
-	fs := flag.NewFlagSet("state", flag.ExitOnError)
+	fs := flag.NewFlagSet("state", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	id := fs.String("id", "", "report one objective instead of every one")
@@ -1503,7 +1687,9 @@ func cmdState(args []string) error {
 	if *all && *here {
 		return fail("conflicting_scope", "state takes --all or --here, not both")
 	}
+	interp := c.interpreted(map[string]any{"id": *id, "text": *text, "here": *here, "all": *all})
 	if *all || (*text && !*here) {
+		delete(interp, "scope")
 		if err := c.checkScopeFlags(); err != nil {
 			return err
 		}
@@ -1514,7 +1700,7 @@ func cmdState(args []string) error {
 		if err := refuseNamedScope(fs, &c, subject, alternative); err != nil {
 			return err
 		}
-		return stateAcrossLogs(*id, *text)
+		return stateAcrossLogs(*id, *text, interp)
 	}
 
 	load := c.load
@@ -1547,6 +1733,7 @@ func cmdState(args []string) error {
 		return nil
 	}
 
+	thisCall.found(len(rep.Objectives), len(rep.Objectives), false, false)
 	emit(map[string]any{
 		"path": loc.Path, "scope": loc.Scope,
 		"objectives_from": loc.Path,
@@ -1556,6 +1743,7 @@ func cmdState(args []string) error {
 		"excluded":        rep.Excluded,
 		"current":         rep.Current,
 		"anomalies":       rep.Anomalies,
+		"interpreted":     interp,
 	})
 	return nil
 }
@@ -1601,7 +1789,7 @@ func pathsOf(locs []memory.Location) []string {
 	return paths
 }
 
-func stateAcrossLogs(id string, text bool) error {
+func stateAcrossLogs(id string, text bool, interp map[string]any) error {
 	locs, held, stored, err := everyLog()
 	if err != nil {
 		return err
@@ -1636,14 +1824,16 @@ func stateAcrossLogs(id string, text bool) error {
 	}
 
 	merged := memory.MergeReports(reports)
+	thisCall.found(len(merged.Objectives), len(merged.Objectives), false, false)
 	emit(map[string]any{
-		"logs":       nonNil(paths),
-		"count":      len(merged.Objectives),
-		"objectives": merged.Objectives,
-		"excluded":   merged.Excluded,
-		"current":    merged.Current,
-		"anomalies":  merged.Anomalies,
-		"ideas":      memory.WaitingIdeas(logs),
+		"logs":        nonNil(paths),
+		"count":       len(merged.Objectives),
+		"objectives":  merged.Objectives,
+		"excluded":    merged.Excluded,
+		"current":     merged.Current,
+		"anomalies":   merged.Anomalies,
+		"ideas":       memory.WaitingIdeas(logs),
+		"interpreted": interp,
 	})
 	return nil
 }
@@ -1709,7 +1899,7 @@ var edgesHintAdvice = []string{
 }
 
 func cmdEdges(args []string) error {
-	fs := flag.NewFlagSet("edges", flag.ExitOnError)
+	fs := flag.NewFlagSet("edges", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	types := fs.String("type", "", "comma-separated edge types (see `memory kinds`); a type outside the closed set is refused")
@@ -1732,12 +1922,18 @@ func cmdEdges(args []string) error {
 	if err != nil {
 		return err
 	}
+	interp := c.interpreted(map[string]any{
+		"type": nonNil(splitList(*types)), "from": *from, "to": *to,
+		"since": strings.TrimSpace(*since), "until": strings.TrimSpace(*until),
+		"count": *count, "limit": *limit, "threshold": effectiveThreshold(*threshold),
+	})
 	loc, err := c.resolve()
 	if err != nil {
 		return err
 	}
 	endpoint := *from != "" || *to != ""
 	if endpoint {
+		delete(interp, "scope")
 		if err := refuseNamedScope(fs, &c, "the search for an edge at --from/--to",
 			"drop --from/--to to list one log's edges"); err != nil {
 			return err
@@ -1770,8 +1966,10 @@ func cmdEdges(args []string) error {
 
 	out := map[string]any{
 		"count": res.Count, "returned": res.Returned, "truncated": res.Truncated,
-		"edges": res.Edges,
+		"edges":       res.Edges,
+		"interpreted": interp,
 	}
+	thisCall.found(res.Count, res.Returned, res.Truncated, *count)
 	if endpoint {
 		out["logs"] = logs
 	} else {
@@ -1785,7 +1983,7 @@ func cmdEdges(args []string) error {
 }
 
 func cmdPromote(args []string) error {
-	fs := flag.NewFlagSet("promote", flag.ExitOnError)
+	fs := flag.NewFlagSet("promote", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	ids := fs.String("ids", "", "comma-separated entry ids to promote")
@@ -1820,7 +2018,7 @@ func cmdPromote(args []string) error {
 			"error": fmt.Sprintf("kind %q is not promotable as a class: --kind takes one of %s", k, joinKinds(memory.PromotableKinds())),
 			"code":  "kind_not_promotable", "kind": string(k), "promotable": memory.PromotableKinds(),
 		})
-		os.Exit(1)
+		return &printed{code: "kind_not_promotable", exit: 1}
 	}
 	target := memory.Scope(*to)
 	switch target {
@@ -1917,7 +2115,7 @@ func nonNil(s []string) []string {
 }
 
 func cmdValidate(args []string) error {
-	fs := flag.NewFlagSet("validate", flag.ExitOnError)
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
 	all := fs.Bool("all", false, "validate every log in the store")
@@ -2000,13 +2198,13 @@ func cmdValidate(args []string) error {
 	// the narrower claim it always was, about the records, so the two remain
 	// distinguishable for whoever does read the output.
 	if !ok || len(notCreated) > 0 {
-		os.Exit(1)
+		return &printed{exit: 1}
 	}
 	return nil
 }
 
 func cmdKinds(args []string) error {
-	fs := flag.NewFlagSet("kinds", flag.ExitOnError)
+	fs := flag.NewFlagSet("kinds", flag.ContinueOnError)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}

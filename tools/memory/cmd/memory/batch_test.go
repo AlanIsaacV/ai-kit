@@ -628,7 +628,8 @@ func TestASearchTextThatLooksLikeAFlagIsRefused(t *testing.T) {
 	// stay distinguishable: no space, so the guard passes it through, and the flag
 	// package refuses it as an undefined flag with its own exit code.
 	res = run(t, r, "search", "-about")
-	if res.code != 2 || !strings.Contains(res.stderr, "not defined") {
+	code, msg = errorCode(t, res)
+	if res.code != 2 || code != "unknown_flag" || !strings.Contains(msg, "-about") {
 		t.Errorf("a text beginning with - was never usable: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
 }

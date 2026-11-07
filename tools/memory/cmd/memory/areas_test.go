@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -322,6 +323,7 @@ func TestAreasBoundsByPlanTheWayQueryDoes(t *testing.T) {
 // a caller meets the CLI's whole surface.
 func TestAreasIsListedInTheUsage(t *testing.T) {
 	cmd := exec.Command(memoryBin)
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatal("running with no subcommand should exit non-zero")
@@ -337,11 +339,13 @@ func TestAreasIsListedInTheUsage(t *testing.T) {
 func TestAreasRefusesAScopeItCannotHonour(t *testing.T) {
 	r := throwawayRepo(t)
 	res := runBare(t, r, "areas", "--scope", "user")
-	if res.code == 0 {
-		t.Fatalf("--scope must be refused rather than accepted and ignored:\n%s", res.stdout)
+	code, msg := errorCode(t, res)
+	if res.code != 2 || code != "unknown_flag" {
+		t.Fatalf("--scope must be refused as unknown_flag at exit 2 rather than accepted and ignored, "+
+			"got exit %d code %q\n%s", res.code, code, res.stdout)
 	}
-	if !strings.Contains(res.stderr, "scope") {
-		t.Errorf("the refusal should name the flag it did not understand:\n%s", res.stderr)
+	if !strings.Contains(msg, "scope") {
+		t.Errorf("the refusal should name the flag it did not understand:\n%s", msg)
 	}
 }
 
