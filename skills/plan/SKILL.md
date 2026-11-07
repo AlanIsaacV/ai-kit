@@ -398,6 +398,10 @@ their pick, so left standing it is `you chose this`.
 
 ### 5 — Decide whether this objective is executable, then write the draft
 
+When this objective builds or changes a tool an agent consumes, read
+[the agent-tool standard](references/agent-tools.md) now: its baseline goes into
+`## Premise`, and its checklist items become this objective's criteria.
+
 **First, say what would have to be true for this to be worth building at all.**
 The five parts below ask how big this objective is and what shape it has; not one
 of them asks whether it is true. A perfectly sized objective resting on a premise
