@@ -77,7 +77,11 @@ Five rules, each about one way an answer can let a misunderstanding pass.
 
 A change to an answer's shape can break the agents and skills that parse it today.
 Adding members does not; renaming, moving or removing one does, and a tool
-objective that does it names the break and who consumes the shape.
+objective that does it names the break and who consumes the shape. So does refusing
+call syntax the tool used to accept, such as a flag after a positional once rule 2
+holds: the answer's shape is unchanged, yet every skill and agent that invokes the
+tool that way now gets `invalid`, so the objective names that syntax with the skills
+and agents that use it.
 
 ## The six outcomes
 
@@ -108,12 +112,12 @@ are the reason it exists.
 |---|---|
 | `at` | When the call arrived, RFC 3339 in UTC. |
 | `tool` | The tool's name as `agent-tool.json` declares it. |
-| `version` | The version the tool reports about itself: the revision its binary was built from, which a Go build embeds as `vcs.revision`. The CLI prints the same string on `--version`, so a record can be matched to code. |
+| `version` | The version the tool reports about itself: the revision its binary was built from, which a Go build embeds as `vcs.revision`, or a release tag that maps to exactly one commit, as with an image built without `.git` that reports the semver tag CI injects. The CLI prints the same string on `--version`, so a record can be matched to code. |
 | `session` | The session that made the call, or empty when it is not known. Never invented. |
 | `operation` | The subcommand or MCP tool called; as typed when it was not recognised. |
 | `interpreted` | The same object the answer echoed under rule 3, or null when the call did not get far enough to have one or the operation does not filter. |
 | `outcome` | One of the six. |
-| `outcome_detail` | The finer word under it: the `code` of an `invalid`, `refused` or `error` answer, or the gateway's own outcome. Empty when there is nothing finer to say. |
+| `outcome_detail` | The finer word under it. For a CLI, the `code` of an `invalid`, `refused` or `error` answer. Behind cerberus-gw, the gateway's own outcome as the mapping table gives it, with the answer's `code` kept beside it in the row's `code`. Empty when there is nothing finer to say. |
 | `count` | The total found, before any truncation; null when the operation returns no collection or the total is unknown. |
 | `returned` | How many results the answer carried; null where `count` is. |
 | `latency_ms` | Wall time from arrival to answer, an integer. |
@@ -155,27 +159,36 @@ rules already require. The gateway reads them into the row; a result without the
 stays `ok`, with `count` null and `no_envelope` as its `outcome_detail`, so the
 share of calls nobody can classify is itself countable.
 
-The gateway has no `invalid` today, and only the backend knows that it did not
-understand a call. A backend signals it with an `IsError` result whose JSON body is
-`{error, code, outcome}`, with `outcome` set to `invalid`; a refusal of the
-backend's own, such as a statement its policy rejects, sets it to `refused`. With
-no `outcome` member, an `IsError` result is an `error`.
+The gateway's stored outcome has no `invalid`. It classifies a call it did not
+understand itself — an unknown tool, a malformed argument of its own such as the
+ticket, bad arguments to its own `request_access` — as `invalid` with a code, and
+answers it with the same `{error, code, outcome}` body a backend uses. Past the
+gateway, only the backend knows that it did not understand a call. A backend
+signals it with an `IsError` result whose JSON body is `{error, code, outcome}`,
+with `outcome` set to `invalid`; a refusal of the backend's own, such as a
+statement its policy rejects, sets it to `refused`. With no `outcome` member, an
+`IsError` result is an `error`. Its `code` is a stable word of one shape — a
+letter, then up to 63 letters, digits, `_`, `.` or `-` — and a `code` of any other
+shape is recorded with no code.
 
 The session is joined, not recorded. The gateway already returns its row id to the
 caller as a `trace:` line and under `_meta`, and both land in the transcript; the
 row is tied to its session by finding that id in a transcript, so the row needs no
 session column.
 
-The gateway's current outcomes map to the six like this, keeping the original as
-`outcome_detail` rather than renaming what is stored:
+The gateway's current outcomes map to the six like this, keeping its own outcome as
+`outcome_detail` rather than renaming what is stored, and the answer's code beside
+it as `code`. The first row is checked first, because a call the gateway did not
+understand stopped at the first stage whatever it stored:
 
-| Gateway outcome | Outcome | `outcome_detail` |
-|---|---|---|
-| `ok` | `truncated` when the envelope says `truncated` or `returned` is below `count`; else `empty` when `count` is 0; else `ok` | empty, or `no_envelope` |
-| `tool_error` | the body's `outcome` when it is `invalid` or `refused`; else `error` | `tool_error` |
-| `backend_error` | `error` | `backend_error` |
-| `unavailable` | `error` | `unavailable` |
-| `refused` | `refused` | `refused` |
+| Gateway outcome | Outcome | `outcome_detail` | `code` |
+|---|---|---|---|
+| whatever it stores today, for a call the gateway itself did not understand | `invalid` | the stored outcome, unchanged | the gateway's own; cerberus-gw uses `unknown_tool`, `bad_ticket` and `bad_arguments` |
+| `ok` | `truncated` when the envelope says `truncated` or `returned` is below `count`; else `empty` when `count` is 0; else `ok` | empty, or `no_envelope` | empty, or `no_envelope` |
+| `tool_error` | the body's `outcome` when it is `invalid` or `refused`; else `error` | `tool_error` | the body's `code`, when it has one |
+| `backend_error` | `error` | `backend_error` | empty |
+| `unavailable` | `error` | `unavailable` | empty |
+| `refused` | `refused` | `refused` | empty |
 
 The row's other fields map the same way: `at` is its `at`, `tool` its backend and
 tool, `operation` its tool, `latency_ms` its duration, and `version` the gateway's
@@ -191,9 +204,14 @@ together, and two tools in one repository share a release.
 
 Each tool in the list carries:
 
-- **`name`**, the same string its records carry as `tool`.
+- **`name`**, the same string its records carry as `tool`. A declaration for the
+  gateway itself, whose records are every row of the audit and carry the backends'
+  names, is named after the gateway and matched to its rows through `records`, not
+  through `tool`.
 - **`records`**, where its call records live: `{"kind": "jsonl", "path": ...}` for a
   CLI, or `{"kind": "cerberus-gw", "backend": ...}` for a tool behind the gateway.
+  A declaration for the gateway itself names `"backend": "*"`, every row of the
+  audit, while a backend names its own backend.
 - **`workarounds`**, what routing around it looks like in a transcript: `commands`,
   regular expressions matched against the command of a Bash tool call, and `paths`,
   globs matched against the paths a file-reading tool call was given. A direct read
@@ -317,8 +335,10 @@ from is in brackets.
   `tool`, `version`, `session`, `operation`, `interpreted`, `outcome`,
   `outcome_detail`, `count`, `returned` and `latency_ms`. [The call record]
 - [ ] Each record's `outcome` is one of `ok | empty | truncated | invalid | refused |
-  error`, decided by the first stage that stopped the call, with the answer's
-  `code` as `outcome_detail`. [The six outcomes]
+  error`, decided by the first stage that stopped the call; a CLI's record carries
+  the answer's `code` as `outcome_detail`, and behind cerberus-gw `outcome_detail`
+  is the gateway's own outcome as the mapping table gives it, with the answer's
+  `code` beside it. [The six outcomes]
 - [ ] The tool reports its version, and the record's `version` is the same string.
   [The call record]
 - [ ] A CLI appends its record to `~/.ai-kit/calls/<tool>.jsonl`, takes `session`
@@ -328,8 +348,9 @@ from is in brackets.
 - [ ] A tool behind cerberus-gw answers in the envelope — `count`, `returned`,
   `truncated`, `interpreted` — and signals `invalid` or `refused` through the
   `outcome` member of an `IsError` body; the gateway classifies its row by the
-  mapping table and keeps the original outcome as `outcome_detail`. [Where each
-  family writes it, behind cerberus-gw]
+  mapping table, keeping its own outcome as `outcome_detail` and the answer's code
+  as `code`, and classifies a call it did not understand itself as `invalid`.
+  [Where each family writes it, behind cerberus-gw]
 - [ ] No record keeps result content or more personal data than the tool's existing
   audit, and no existing log is removed. [The call record]
 - [ ] The repository's root carries `agent-tool.json` listing the tool with
@@ -340,4 +361,6 @@ from is in brackets.
 - [ ] The objective's draft carries an open question for the after-measurement,
   naming the metric and the baseline. [Before and after]
 - [ ] Any change to an existing answer shape that renames, moves or removes a member
-  is named in the objective's draft with the consumers it breaks. [The answer rules]
+  is named in the objective's draft with the consumers it breaks, and any call
+  syntax the tool newly refuses is named there with the skills and agents that
+  invoke it that way. [The answer rules]
