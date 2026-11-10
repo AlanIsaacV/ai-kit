@@ -120,11 +120,10 @@ two axes, a stack other than the three below, an app public by design with no lo
 
 ai-kit's `evidence` (`tools/evidence`) runs gitleaks 8.30.1, osv-scanner 2.7.0 and
 govulncheck v1.8.0, plus three regex rules over workflows: an unpinned `uses:` or
-image, `credentials_json`, and `pull_request_target`. It reports only what one
-change introduced: secrets in added lines only, dependencies and workflows at head
-minus base. It has no whole-tree mode and no JavaScript advisories. None of the
-logic flaws ranked first here falls under its rules, and a scanner that did not run
-is not a clean result.
+image, `credentials_json`, and `pull_request_target`. For review it reports what one
+change introduced; for the audit, `--tree` reports all it finds in one exported tree,
+except git history and what gitleaks skips by default. No logic flaw ranked
+first here falls under its rules, and a check not run or partial is not a clean result.
 
 ## 1. Who gets in
 
@@ -328,10 +327,11 @@ HIGH: whoever moves the tag runs code with the key. The rest is MEDIUM.
 - **Images.** Base images pinned by digest: no `latest`, no tag alone.
 
 **Node.** `package-lock.json` with `npm ci`; `npm install` in a deploy script
-resolves fresh, and `postinstall` scripts run. `evidence` has no JavaScript scanner.
+resolves fresh, and `postinstall` scripts run. osv-scanner reads Node lockfiles.
 
 **Python/FastAPI.** `uv.lock` with `uv sync --frozen`, or requirements with hashes;
-a bare `pip install` of names resolves fresh. osv-scanner reads Python lockfiles.
+a bare `pip install` of names resolves fresh. osv-scanner reads `uv.lock` only when
+the root Dockerfile runs `uv sync`.
 
 **Go, MCP servers included.** `go.sum` committed. govulncheck is call-graph aware,
 so what it reports is reached. A `replace` directive to a fork is a dependency
@@ -425,8 +425,8 @@ item without one has no scanner evidence.
   [2. Untrusted input reaching something powerful]
 - [ ] 3.1 (M3) The tree holds no `.env`, service-account JSON, private key,
   keystore, token, DSN with a password or real secret as a settings default; history
-  was scanned for live secrets, or the report says not. Scanner: gitleaks, added
-  lines only. [3. Secrets and sensitive data]
+  was scanned for live secrets, or the report says not. Scanner: gitleaks, the
+  tree but not its history. [3. Secrets and sensitive data]
 - [ ] 3.2 No secret is baked into an image layer, shipped to the browser, logged, or
   passed whole to a child process that does not need it.
   [3. Secrets and sensitive data]
@@ -451,10 +451,10 @@ item without one has no scanner evidence.
   accounts with more than one owner. [4. Where it runs and who owns it]
 - [ ] 5.1 A lockfile is committed and every install uses it. [5. Supply chain]
 - [ ] 5.2 Advisories were checked with the stack's scanner, and the report names any
-  stack that had none. Scanner: govulncheck, osv-scanner (Rust, Python), new
-  dependencies only; none for JavaScript. [5. Supply chain]
+  stack that had none. Scanner: govulncheck, osv-scanner (Rust, JavaScript,
+  Python); a manifest with no lockfile the deploy uses is not run. [5. Supply chain]
 - [ ] 5.3 Every third-party action in a workflow is pinned by full commit SHA.
-  Scanner: workflow rule, added lines only. [5. Supply chain]
+  Scanner: workflow rule. [5. Supply chain]
 - [ ] 5.4 Workflows reach the cloud without a static key (`credentials_json`), run
   no pull request code under `pull_request_target`, and set minimal `permissions:`.
   Scanner: workflow rules for the first two. [5. Supply chain]
