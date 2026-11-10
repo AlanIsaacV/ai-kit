@@ -14,7 +14,7 @@ directories above that skill directory. The entrypoint's
 `references/runtime.md` links to this file. Agent wrappers also provide the
 absolute path to this file and their contract.
 
-Resolve references to `agents/<role>.md`, sibling `skills/` and ai-kit's own
+Resolve references to `agents/<role>.md`, sibling `skills/`, `standards/` and ai-kit's own
 `tools/memory/` documentation against that clone root, never against the target
 repository. Each skill's `agents/openai.yaml` is display metadata, not a role
 contract. Resolve project source paths, `.ai-kit/` artifacts and `repo_root`
