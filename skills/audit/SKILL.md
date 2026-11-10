@@ -1,6 +1,6 @@
 ---
 name: audit
-description: "Rate one repository at one ref against ai-kit's safe-to-expose standard and say whether it is fit to expose to the internet. Takes a local repository and a ref, any commit-ish, `HEAD` by default. It exports the commit with `git archive` to a temporary directory without touching the repository, detects the stacks from the manifests, runs `evidence --tree` over the export, and launches four read-only `audit-lens` agents in parallel, one per group of axes (1 who gets in | 2 untrusted input reaching something powerful | 3-4 secrets and where it runs | 5-6 supply chain and resources, with the scanner evidence), each given the standard cut before its Calibration section. It checks every returned `path:line` against the export, merges and de-duplicates findings by anchor, decides the six mandatory controls and the verdict by the standard's bar, and prints in the conversation: a verdict line, `fit to expose` or `not fit to expose` with every confirmed Critical and High and every absent control; the mandatory controls; confirmed findings ranked CRITICAL > HIGH > MEDIUM and then by checklist item, each with `path:line`, the exposure path, the missing control and the exploit; suspected findings with the fact that would confirm each; the scanner evidence check by check; the readings chosen where the standard is ambiguous; and everything not read, git history included. Read-only over the audited repository: nothing reaches its working tree, its `.git` or its memory log, nothing from its code runs, and no live system of the app is contacted. Use when somebody asks whether an app can be put on the internet. Triggers on: 'auditá este repo', 'auditá esta app', 'está lista para exponer', 'se puede exponer esta app', 'es segura para exponer', 'audit this repo', 'audit this app', 'is this app safe to expose', 'is this fit to expose', 'can this go on the internet'. It writes no fix and reviews no change, which is `review`'s job; it never edits, never commits and never invokes `plan`, `work` or `debug`."
+description: "Rate one repository at one ref against ai-kit's safe-to-expose standard and say whether it is fit to expose to the internet. Takes a local repository and a ref, any commit-ish, `HEAD` by default. It exports the commit with `git archive` to a temporary directory without touching the repository, detects the stacks from the manifests, runs `evidence --tree` over the export, and launches four read-only `audit-lens` agents in parallel, one per group of axes (1 who gets in | 2 untrusted input reaching something powerful | 3-4 secrets and where it runs | 5-6 supply chain and resources, with the scanner evidence), each given the standard cut before its Calibration section. It checks every returned `path:line` against the export, merges findings with its `merge.py` script, which joins two only when they share their primary item and a line of an anchor, decides the six mandatory controls and the verdict by the standard's bar, and prints in the conversation: a verdict line, `fit to expose` or `not fit to expose` with every confirmed Critical and High and every absent control; the mandatory controls; confirmed findings ranked CRITICAL > HIGH > MEDIUM and then by primary item, each with its primary item first, `path:line`, the exposure path, the missing control and the exploit; suspected findings with the fact that would confirm each; the scanner evidence check by check; the readings chosen where the standard is ambiguous; and everything not read, git history included. Read-only over the audited repository: nothing reaches its working tree, its `.git` or its memory log, nothing from its code runs, and no live system of the app is contacted. Use when somebody asks whether an app can be put on the internet. Triggers on: 'auditá este repo', 'auditá esta app', 'está lista para exponer', 'se puede exponer esta app', 'es segura para exponer', 'audit this repo', 'audit this app', 'is this app safe to expose', 'is this fit to expose', 'can this go on the internet'. It writes no fix and reviews no change, which is `review`'s job; it never edits, never commits and never invokes `plan`, `work` or `debug`."
 ---
 
 # audit
@@ -19,8 +19,8 @@ the read is the audit and the scanners are evidence beside it.
 This skill is the door and the orchestrator. It settles the repository and the
 commit, exports the commit to a temporary directory, detects the stacks, cuts the
 standard, runs `evidence --tree`, launches four `audit-lens` readers in parallel,
-checks and merges what they return, decides the mandatory controls and the
-verdict, cleans up and prints the report. The lenses read and return; none of
+checks what they return, merges it with `merge.py`, decides the mandatory controls
+and the verdict, cleans up and prints the report. The lenses read and return; none of
 them decides the verdict.
 
 ## Hard rules
@@ -161,7 +161,7 @@ evidence_path: <work-dir>/evidence.json
 
 ### 7 — Check, merge and decide
 
-An agent's own account is not the report. Three things are done here, in order.
+An agent's own account is not the report. Four things are done here, in order.
 
 **Every anchor has to exist at the commit.** That is each entry of every
 finding's `anchors` and every control's `anchors`. Paste one line per anchor into
@@ -176,25 +176,67 @@ secret reaches the conversation. An anchor exists when its first line prints
 `present` and its last line prints at all. Any other anchor is dropped: no
 output, `blank`, an error, or a path outside `code`. A finding or a control keeps
 the anchors that exist; a finding left with none is dropped. Every dropped anchor
-is kept for the report with its lens and what it was attached to.
+is kept for the report with its lens and what it was attached to. A finding marked
+`confirmed` with no exposure path, no missing control or no exploit is `suspected`
+and NEEDS REVIEW, with the missing fact as `would_confirm`.
 
-**Merge.** Two findings are one when they share at least one item and an anchor of
-one overlaps an anchor of the other: same path, line ranges that meet. The merged
-finding keeps the fields of the higher severity, by CRITICAL > HIGH > MEDIUM >
-NEEDS REVIEW, the union of both `items` and `anchors`, and every lens that
-reported it. A finding marked `confirmed` with no exposure path, no missing control
-or no exploit is `suspected` and NEEDS REVIEW, with the missing fact as
-`would_confirm`.
+**Write the four answers.** Each lens's JSON goes, whole, into its own file in
+`<work-dir>`, written with the host's file-writing tool: `lens-1.json`,
+`lens-2.json`, `lens-3-4.json` and `lens-5-6.json`. It is the answer as the lens
+returned it, with the two changes the check above made: the dropped anchors and
+findings are gone, and a finding it made suspected says so.
+
+**Merge with the script.** Run it over the four files:
+
+```bash
+python3 -I "<ai-kit clone>/skills/audit/merge.py" "<work-dir>/lens-1.json" "<work-dir>/lens-2.json" "<work-dir>/lens-3-4.json" "<work-dir>/lens-5-6.json"
+```
+
+It prints JSON at exit 0: `count`, and `findings`, each with its `primary_item`,
+`items`, `severity`, `confidence`, `title`, `anchors`, `exposure_path`,
+`missing_control`, `exploit`, `would_confirm` when it has one, and the `lenses`
+that reported it. Those findings, in that order, are the findings of the report;
+nothing is merged, split or reordered by hand. Its rule is the one
+`agents/audit-lens.md` gives the lenses. Two findings are one only when they have
+the same `primary_item` and an anchor of one shares at least one line of the same
+path with an anchor of the other; adjacent ranges do not meet, and items tagged
+from other axes never count. Each join is decided on two findings as their lenses
+returned them, never on items or anchors a join added; a chain of direct joins on
+one primary item ends as one finding. In every finding, an anchor inside another
+anchor's range of the same path is dropped. A joined finding keeps the title,
+severity, confidence, exposure path, missing control, exploit and `would_confirm`
+of the higher severity, by CRITICAL > HIGH > MEDIUM > NEEDS REVIEW, and on equal
+severity of the earlier finding in that lens. Findings of different lenses never
+merge, because each lens reports only its own axes. It carries the union of
+`items` and `anchors` and every lens that reported it. The findings come ordered
+by severity, then by primary item compared as numbers, so that 2.10 follows 2.9.
+
+At a non-zero exit it prints `{error, code}` instead, with the lens file in
+`error`. A code about a whole file or the command — `lens-missing`,
+`lens-unreadable`, `lens-not-json`, `lens-invalid`, `duplicate-focus`,
+`unknown-flag`, `usage` — is a file or a command this step wrote wrong, and it is
+written again. Every other code — `primary-item-missing`,
+`primary-item-not-in-items`, `primary-item-outside-focus`, `finding-invalid`,
+`anchor-invalid` — names one finding, `findings[<n>]` of that file, that the lens
+returned outside its contract. That finding is removed from the file, never
+corrected, and kept for the report with its lens, its title (`findings[<n>]` when
+it has none), the `error` and the `code`, and its `items`, `severity` and
+`confidence` as the file held them; then the script runs again.
+
+**A refused blocker** is a finding the script refused that its lens file held as
+`confidence` `confirmed` with `severity` `CRITICAL` or `HIGH`. Its items are the
+`items` it declared when they are a non-empty list of checklist numbers such as
+2.5, and none otherwise. Any other refused finding counts toward nothing below.
 
 **Decide the mandatory controls**, each by its items: M1 1.1, M2 1.2, M3 3.1, M4
 4.1, M5 2.5 and 2.6, M6 4.2. A control is **absent** when any lens returned it
-`absent`, when a confirmed finding sits on one of its items, or when no lens
-returned it `present` with an anchor that survived. Otherwise it is **present**.
-Not found is absent.
+`absent`, when a confirmed finding or a refused blocker sits on one of its items,
+or when no lens returned it `present` with an anchor that survived. Otherwise it
+is **present**. Not found is absent.
 
 **Decide the verdict.** **fit to expose** only when no confirmed CRITICAL or HIGH
-finding is left and all six controls are present. Otherwise **not fit to expose**.
-Suspected findings never block.
+finding is left, no refused blocker exists and all six controls are present.
+Otherwise **not fit to expose**. Suspected findings never block.
 
 ### 8 — Clean up
 
@@ -215,8 +257,9 @@ Audit of `<target-repo>` at `<ref>` (`<sha>`)
 Stacks: <stacks>
 
 VERDICT: <fit to expose | not fit to expose>
-- [CRITICAL] <item> <title> `<path>:<line>`
-- [HIGH] <item> <title> `<path>:<line>`
+- [CRITICAL] <primary item> <title> `<path>:<line>`
+- [HIGH] <primary item> <title> `<path>:<line>`
+- [<CRITICAL | HIGH>] <first declared item> <title>, refused by the merge: <code>
 - M<n> absent: <the control's name>
 
 ## Mandatory controls
@@ -258,26 +301,34 @@ Scanners: <name> <version> (data of <database_date>)
 - Item <item> (lens <focus>): not assessable: <reason>
 - `<path>` (lens <focus>): <reason>
 - Dropped anchor `<anchor>` (lens <focus>, <finding title or control>): not at <sha>.
+- Finding not merged (lens <focus>, <title>): <error>
 ```
 
 - **The verdict line names everything that decides it**: after `not fit to
-  expose`, every confirmed CRITICAL and HIGH and every absent control, one line
-  each. After `fit to expose`, nothing.
+  expose`, every confirmed CRITICAL and HIGH, every refused blocker and every
+  absent control, one line each and in that order, the refused blockers in the
+  order the script refused them. A refused blocker shows the first item it
+  declared, or `no items` when it has none, and stays under Not read as well.
+  After `fit to expose`, nothing.
 - **The controls table has all six rows**, M1 to M6, each with the anchor that
   survived and the lenses that returned it; an absent control nobody anchored
   reads `not found` in the anchor column.
-- **Confirmed findings are ranked** CRITICAL, then HIGH, then MEDIUM, and within a
-  level by the lowest checklist item they touch, compared as numbers so that 2.10
-  follows 2.9. Suspected findings are ordered by item the same way. Each finding
-  keeps every anchor that survived step 7.
+- **Every finding line starts with its primary item.** `<items>` is the
+  `primary_item` first and then the rest of its `items` in checklist order; the
+  verdict line shows the primary item alone.
+- **Findings keep the order `merge.py` printed**: confirmed CRITICAL, then HIGH,
+  then MEDIUM, within a level by primary item compared as numbers so that 2.10
+  follows 2.9; suspected findings by primary item the same way. Each finding shows
+  the anchors `merge.py` returned for it, and the lenses it names.
 - **The scanner section holds facts from the JSON and nothing else**: each check's
   status, its reason when it has one, its scope, every entry of `found` one per
   line built only from its fields, and for dependencies every target with its
   status. A check that is not `ran` shows no count. It says no `clean`, no `safe`:
   no word that grades the app.
 - **Not read** lists everything the four `files_not_read` named, every item a lens
-  returned `not-assessable`, every stack not covered and every dropped anchor,
-  however long it gets. The git history and ignored-files lines are always there.
+  returned `not-assessable`, every stack not covered, every dropped anchor and
+  every finding the script refused, however long it gets. The git history and
+  ignored-files lines are always there.
 - **An empty section is a real result.** No suspected findings, no readings
   chosen: say that none came up, in one line, and never pad.
 
@@ -286,7 +337,8 @@ Add nothing after it: no fix, no next step offered.
 ## Key principles
 
 - **The bar is the standard's, and so is every rating.** The lenses rate by its
-  rubric and Iron Law; this skill only merges, checks anchors and applies the bar.
+  rubric and Iron Law; this skill only checks anchors, runs the merge script and
+  applies the bar.
 - **A lens that has seen the answers is not a reader.** Calibration stays out of
   every copy a lens reads.
 - **What can be checked is checked here.** Every anchor is read off the export, and

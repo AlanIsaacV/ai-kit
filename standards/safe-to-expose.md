@@ -63,20 +63,20 @@ the same two facts, because the bar counts only confirmed findings.
 
 | Severity | Condition |
 |---|---|
-| CRITICAL | Reachable by a caller with no login, or by anyone after a login that fails open, and reaches another user's data, the app's secrets, a command or code run on the host, or a fetch inside the network. Or a committed secret that is live and opens a production system. Or an object-level gap on money or PII. |
+| CRITICAL | Reachable by a caller with no login, and reaches another user's data, the app's secrets, a command or code run on the host, or a fetch inside the network. Or a login that fails open when its configuration is missing, one unset variable on the VM away; that finding names the sinks it opens, each rated by the login its own route requires. Or a committed secret that is live and opens a production system. Or an object-level gap on money or PII. |
 | HIGH | The same sinks, reachable by any logged-in user: another user's data or files, injection, SSRF, a page the server renders running the user's script. Or the host's sinks — its files and secrets, a command or code run on it, a fetch inside the network — reachable only by an admin role: no role in the app is meant to hold the host. Or a confirmed secret or injection with a real path to exploit. |
 | MEDIUM | A real weakness with limited or indirect impact: it needs the server already compromised (a plaintext dump no route serves, whatever it holds), it leaks hashes rather than secrets, sensitive data in logs, permissive CORS, a vulnerable dependency off any exposed path, a root container, unbounded resource use behind the login. |
 | NEEDS REVIEW | The Iron Law is not met: the path or the missing control could not be confirmed. Name the missing fact. |
 
-Severity follows confirmed impact. A login that fails open when configuration is
-missing is rated as if it were missing: one unset variable on the VM is all it
-takes. Likewise a login method shipped switched off, on once a variable is set, is
-rated as if on and counts toward M1 and M2. A sink that only another confirmed
-finding reaches, a backup behind a file-read flaw or a secret file alike, is rated
-in that finding, not raised on its own. Never inflate to be safe, never bury a
-confirmed hole. Two readers of one commit must agree on every Critical and High:
-rate by the table's condition, not by how alarming the code looks, and when torn,
-rate at what the confirmed facts support and name the fact that would move it.
+Severity follows confirmed impact. A sink is rated by the login its own route
+requires; a login that fails open when configuration is missing is its own finding,
+rated as if it were missing. A login method shipped switched off, on once a variable
+is set, is rated as if on and counts toward M1 and M2. A sink that only another
+confirmed finding reaches, a backup behind a file-read flaw or a secret file alike,
+is rated in that finding, not raised on its own. Never inflate to be safe, never
+bury a confirmed hole. Two readers of one commit must agree on every Critical and
+High: rate by the table's condition, not by how alarming the code looks, and when
+torn, rate at what the confirmed facts support and name the fact that would move it.
 
 ## The fit-to-expose bar
 
@@ -187,8 +187,8 @@ it, never from a tool argument; over stdio it has no network caller.
 Untrusted is anything the app's own code did not write: request fields, uploads,
 pasted links, third-party API responses, and model output, which carries whatever
 the pages the model read told it. Powerful is a shell, SQL, a browser, an
-interpreter, the filesystem, an outbound fetch, rendered HTML. With no login,
-CRITICAL; from any logged-in user, HIGH; only through the app's own server, MEDIUM.
+interpreter, the filesystem, an outbound fetch, rendered HTML. By its route's login:
+none, CRITICAL; any logged-in user, HIGH; only through the app's own server, MEDIUM.
 
 - **Shells.** Start processes from an argv array with no shell. On Windows a
   `.cmd` or `.bat` target always runs through `cmd.exe`, which reinterprets every
