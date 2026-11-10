@@ -1,11 +1,10 @@
 # Safe to expose — what a trii app meets before the internet reaches it
 
-What a trii app has to show before it is reached from the internet. Read by the
-`audit` skill once it exists, and by any agent or person asked whether a repository
-is fit to expose; nothing loads it automatically yet. The premise: **the serious
-gaps in trii's apps are logic flaws — who gets in, and untrusted input reaching
-something powerful — and a read guided by six ranked axes finds them where scanners
-do not.** The axes are in the order they bite.
+Read by the `audit` skill once it exists, and by any agent or person asked whether a
+repository is fit to expose; nothing loads it automatically yet. The premise: **the
+serious gaps in trii's apps are logic flaws — who gets in, and untrusted input
+reaching something powerful — and a read guided by six ranked axes finds them where
+scanners do not.** The axes are in the order they bite.
 
 ## How to apply it
 
@@ -66,13 +65,15 @@ the same two facts, because the bar counts only confirmed findings.
 |---|---|
 | CRITICAL | Reachable by a caller with no login, or by anyone after a login that fails open, and reaches another user's data, the app's secrets, a command or code run on the host, or a fetch inside the network. Or a committed secret that is live and opens a production system. Or an object-level gap on money or PII. |
 | HIGH | The same sinks, reachable by any logged-in user: another user's data or files, injection, SSRF, a page the server renders running the user's script. Or the host's sinks — its files and secrets, a command or code run on it, a fetch inside the network — reachable only by an admin role: no role in the app is meant to hold the host. Or a confirmed secret or injection with a real path to exploit. |
-| MEDIUM | A real weakness with limited or indirect impact: it needs the server already compromised, it leaks hashes rather than secrets, sensitive data in logs, permissive CORS, a vulnerable dependency off any exposed path, a root container, unbounded resource use behind the login. |
+| MEDIUM | A real weakness with limited or indirect impact: it needs the server already compromised (a plaintext dump no route serves, whatever it holds), it leaks hashes rather than secrets, sensitive data in logs, permissive CORS, a vulnerable dependency off any exposed path, a root container, unbounded resource use behind the login. |
 | NEEDS REVIEW | The Iron Law is not met: the path or the missing control could not be confirmed. Name the missing fact. |
 
 Severity follows confirmed impact. A login that fails open when configuration is
 missing is rated as if it were missing: one unset variable on the VM is all it
 takes. Likewise a login method shipped switched off, on once a variable is set, is
-rated as if on and counts toward M1 and M2. Never inflate to be safe, never bury a
+rated as if on and counts toward M1 and M2. A sink that only another confirmed
+finding reaches, a backup behind a file-read flaw or a secret file alike, is rated
+in that finding, not raised on its own. Never inflate to be safe, never bury a
 confirmed hole. Two readers of one commit must agree on every Critical and High:
 rate by the table's condition, not by how alarming the code looks, and when torn,
 rate at what the confirmed facts support and name the fact that would move it.
@@ -112,9 +113,8 @@ Cloud Armor coverage (3.1); TLS policy at the edge (3.6); detection (3.7); GitHu
 organisation settings such as rulesets, 2FA and secret scanning (3.3); registry
 scanning of images (3.8); and the host itself (3.9).
 
-Not settled in this version, and recorded as not assessable with the reason: a
-finding that falls on two axes, a stack other than the three below, and an app
-that is public by design and has no login.
+Not settled in this version, and so not assessable with the reason: a finding on
+two axes, a stack other than the three below, an app public by design with no login.
 
 ## Scanners are evidence, not the read
 
@@ -264,9 +264,9 @@ secret opening production is CRITICAL, other live committed secrets HIGH.
   browser, a log line, or a child process's environment that does not need it.
 - **Stored credentials.** Passwords with a slow hash (scrypt, argon2, bcrypt);
   session and API tokens stored as hashes.
-- **Copies.** Backups and exports are listed: where, who can read them, encrypted or
-  not, and what they hold. A plaintext dump of every table is rated by its contents:
-  hashes only, MEDIUM; live tokens, secrets or personal data at scale, HIGH.
+- **Copies.** Backups and exports are listed: where, who reads them, encrypted or
+  not, what they hold. A plaintext dump is MEDIUM whatever it holds unless a route
+  returns it or its files directly, not through another finding.
 - **Logs and errors.** No token, cookie or password in logs, no more personal data
   than the app needs, no stack trace returned to the client.
 
@@ -432,9 +432,9 @@ item without one has no scanner evidence.
   [3. Secrets and sensitive data]
 - [ ] 3.3 Passwords are stored with a slow hash, session and API tokens as hashes.
   [3. Secrets and sensitive data]
-- [ ] 3.4 Every backup and export of the app's data is encrypted or holds nothing
-  usable; a plaintext dump of every table is a finding rated by what the tables
-  hold. [3. Secrets and sensitive data]
+- [ ] 3.4 Every backup and export is encrypted or holds nothing usable; a plaintext
+  dump is MEDIUM whatever it holds unless a route returns it or its files directly,
+  not through another finding. [3. Secrets and sensitive data]
 - [ ] 3.5 Logs and error responses carry no token, cookie, password or stack trace,
   and no more personal data than needed. [3. Secrets and sensitive data]
 - [ ] 4.1 (M4) Every Dockerfile's final stage runs as a non-root user; an app
@@ -488,7 +488,7 @@ behind Caddy on a public domain, as its deploy guide says (`DESPLIEGUE.md:17-19,
 | 5 | Owner check splits the raw path on `/`, so `tomas/<own key>/../../…` passes | `motor/src/lab.mjs:291-299` | 1 | 1.7 | HIGH: a logged-in creator reads other people's raw takes |
 | 6 | Login fails open: with no https public URL, Google or SMTP configured, every caller is a superadmin | `motor/src/acceso.mjs:39,312` | 1 | 1.1 (M1) | CRITICAL: anyone on the internet gets every right, one unset variable away |
 | 7 | `modelo` passed unescaped through `cmd.exe` when the connector's Claude is a `.cmd` | `motor/src/claude-local.mjs:103,114` | 2 | 2.1 | MEDIUM: the value comes from the server, so the exploit needs the server already taken; the payoff is a command on each connected colleague's computer |
-| 8 | Daily backup dumps every table as plaintext `.json.gz`; the tables hold scrypt hashes and token hashes, not the secrets, and beside them personal data: the team roster with emails and roles, Claude usage per person, and Manychat's log of Instagram commenters' usernames and comments | `motor/src/db.mjs:338-341,394-396`, `motor/src/db/esquema.mjs:50-52,59-63,69-73,80-82`, `motor/src/manychat.mjs:112,169`, `DESPLIEGUE.md:25` | 3 | 3.4 | MEDIUM: what its hashes earn; the personal data is named but not yet rated |
+| 8 | Daily backup dumps every table as plaintext `.json.gz` into `.lab/respaldos/`; the tables hold scrypt hashes and token hashes, not the secrets, and beside them personal data: the team roster with emails and roles, Claude usage per person, and Manychat's log of Instagram commenters' usernames and comments | `motor/src/db.mjs:338-341,394-396`, `motor/src/db/esquema.mjs:50-52,59-63,69-73,80-82,108`; roster: `equipo` entries in `docs` (`motor/src/db/esquema.mjs:18-25`, `motor/src/acceso.mjs:230`); usage per person: `uso` and its `quien` column (`motor/src/db/esquema.mjs:28-40`); `motor/src/manychat.mjs:112,169`, `DESPLIEGUE.md:25`; written at `motor/src/lab.mjs:54,1598,1660` | 3 | 3.4 | MEDIUM, by axis 3's rule on copies and the rubric's "needs the server already compromised", whatever it holds: no route serves the files or their folder — `/medio` refuses dot-folders and any `.gz` (`motor/src/lab.mjs:116-129,1606-1609`), `/foto/` serves only profile photos by a fixed pattern (`:1161-1162`), `/api/respaldo` returns the file's path, not its contents (`:1596-1599`), row 5's traversal hands a file to the video motor, not back to the caller (`:797-799,1415`), and Caddy only proxies to the app (`DESPLIEGUE.md:281-289`); row 1's file read reaches them, so by the Severity rule on a sink only another confirmed finding reaches, they are rated in row 1 |
 | 9 | Credentials committed to `trii-co` repositories: an active service-account key with admin roles, a hardcoded Django `SECRET_KEY` on a public service, mTLS and FIX private keys | `diagnostico-2026-09-18.md:79-95` | 3 | 3.1 (M3) | CRITICAL: live, and opens production systems |
 | 10 | `be-webhooks` public receiver ingests financial notifications with no token, HMAC or IP allowlist | `diagnostico-2026-09-18.md:120-126` | 1 | 1.5 | CRITICAL: anyone injects broker notifications |
 | 11 | End-user auth is a per-handler `sk2` check, with no central control and no inventory of routes without it | `diagnostico-2026-09-18.md:139-142` | 1 | 1.4 | MEDIUM: the pattern; each route it misses is its own finding |
