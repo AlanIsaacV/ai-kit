@@ -41,6 +41,9 @@ type workflowFinding struct {
 }
 
 func (s *session) workflows(files []fileDiff) Check {
+	if s.mode == ModeTree {
+		return s.treeWorkflows()
+	}
 	head, err := workflowFindings(s.head)
 	if err != nil {
 		return notRun("the workflow files at head could not be read")
@@ -50,11 +53,7 @@ func (s *session) workflows(files []fileDiff) Check {
 		return notRun("the workflow files at base could not be read")
 	}
 
-	check := Check{
-		Status:   StatusRan,
-		Scanners: []Scanner{newScanner("evidence", Version, Version, "native rules", StatusNotApplicable)},
-		New:      []Finding{},
-	}
+	check := workflowCheck()
 	if !hasWorkflowFiles(s.head) {
 		check.Status = StatusNotApplicable
 		check.Reason = "no workflow file at head"
@@ -101,6 +100,32 @@ func (s *session) workflows(files []fileDiff) Check {
 	sortFindings(check.New)
 	check.Inherited = &inherited
 	return check
+}
+
+func (s *session) treeWorkflows() Check {
+	found, err := workflowFindings(s.head)
+	if err != nil {
+		return notRun("the workflow files in the tree could not be read")
+	}
+	check := workflowCheck()
+	if !hasWorkflowFiles(s.head) {
+		check.Status = StatusNotApplicable
+		check.Reason = "no workflow file in the tree"
+		return check
+	}
+	for _, finding := range found {
+		check.New = append(check.New, Finding{Rule: finding.rule, Path: finding.path, Line: finding.line, Detail: finding.shown})
+	}
+	sortFindings(check.New)
+	return check
+}
+
+func workflowCheck() Check {
+	return Check{
+		Status:   StatusRan,
+		Scanners: []Scanner{newScanner("evidence", Version, Version, "native rules", StatusNotApplicable)},
+		New:      []Finding{},
+	}
 }
 
 func baseName(renames map[string]string, path string) string {

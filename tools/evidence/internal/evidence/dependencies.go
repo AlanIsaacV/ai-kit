@@ -28,6 +28,9 @@ type scan struct {
 func (s *session) dependencies(ctx context.Context) Check {
 	targets, err := detectTargets(s.head)
 	if err != nil {
+		if s.mode == ModeTree {
+			return notRun("the tree could not be walked")
+		}
 		return notRun("the exported head could not be walked")
 	}
 	check := Check{Status: StatusNotApplicable, Scanners: []Scanner{}, New: []Finding{}}
@@ -94,11 +97,14 @@ func (s *session) scanTarget(ctx context.Context, t target) ([]Finding, int, Sca
 
 	head, err := scanTree(ctx, s.head, t)
 	if err != nil {
+		if s.mode == ModeTree {
+			return nil, 0, Scanner{}, "", err
+		}
 		return nil, 0, Scanner{}, "", fmt.Errorf("at head: %w", err)
 	}
 
 	var base scan
-	if len(head.advisories) > 0 && existsAtBase(s.base, t.path) {
+	if s.mode == ModeChange && len(head.advisories) > 0 && existsAtBase(s.base, t.path) {
 		base, err = scanTree(ctx, s.base, t)
 		if err != nil {
 			return nil, 0, Scanner{}, "", fmt.Errorf("at base: %w", err)

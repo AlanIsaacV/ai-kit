@@ -15,19 +15,28 @@ import (
 	"github.com/alanv/ai-kit/tools/evidence/internal/evidence"
 )
 
-const usage = `evidence — facts on what one change introduces
+const usage = `evidence — facts on what one change introduces, or on what one tree holds
 
 Usage:
   evidence --head DIR --base DIR --diff FILE
+  evidence --tree DIR
 
   --head DIR    an export of the code at the head of the change
   --base DIR    an export of the code at its base
   --diff FILE   the unified git diff from base to head
+  --tree DIR    an export of the code at one commit, scanned whole; it cannot be
+                combined with --head, --base or --diff
 
-Prints one JSON report on three checks, restricted to what the change introduces:
-secrets in added lines, new dependency advisories, and insecure workflow lines.
-Each check says whether it ran, and why not when it did not. A finding already
-at the base is counted as inherited and not listed.
+With --head, --base and --diff, prints one JSON report marked "mode": "change" on
+three checks, restricted to what the change introduces: secrets in added lines,
+new dependency advisories, and insecure workflow lines. A finding already at the
+base is counted as inherited and not listed.
+
+With --tree, prints one JSON report marked "mode": "tree" on the same three
+checks over the whole tree: secrets in every file, every dependency advisory and
+every insecure workflow line, each listed under "found". Git history is not read.
+
+Each check says whether it ran, and why not when it did not.
 
 Exit 0 whenever a report was printed, whatever it says. Non-zero on a usage or an
 input error, or when a signal stopped the run. The report holds no verdict.
@@ -42,6 +51,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("evidence", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	tree := flags.String("tree", "", "")
 	head := flags.String("head", "", "")
 	base := flags.String("base", "", "")
 	diff := flags.String("diff", "", "")
@@ -53,7 +63,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s\n\n%s", err, usage)
 		return 2
 	}
-	if *head == "" || *base == "" || *diff == "" || flags.NArg() > 0 {
+	change := *head != "" || *base != "" || *diff != ""
+	if *tree != "" && change {
+		fmt.Fprintf(stderr, "--tree cannot be combined with --head, --base or --diff\n\n%s", usage)
+		return 2
+	}
+	if (*tree == "" && (*head == "" || *base == "" || *diff == "")) || flags.NArg() > 0 {
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
@@ -61,7 +76,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGABRT)
 	defer stop()
 
-	report, err := evidence.Run(ctx, evidence.Options{Head: *head, Base: *base, Diff: *diff, Budget: budget})
+	report, err := evidence.Run(ctx, evidence.Options{Tree: *tree, Head: *head, Base: *base, Diff: *diff, Budget: budget})
 	if err != nil {
 		fmt.Fprintln(stderr, "evidence: "+strings.TrimSpace(err.Error()))
 		return 1

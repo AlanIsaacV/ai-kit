@@ -29,7 +29,7 @@ const (
 var (
 	osvScannerVersion = regexp.MustCompile(`(?m)^osv-scanner version:\s*(\S+)`)
 	osvDatabaseLine   = regexp.MustCompile(`(?m)^Loaded (\S+) local db from (.+)$`)
-	osvDatabaseNames  = map[string]string{ecosystemRust: "crates.io", ecosystemPython: "PyPI"}
+	osvDatabaseNames  = map[string]string{ecosystemRust: "crates.io", ecosystemPython: "PyPI", ecosystemJavaScript: "npm"}
 )
 
 type osvOutput struct {

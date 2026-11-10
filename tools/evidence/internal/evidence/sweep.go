@@ -20,6 +20,7 @@ const (
 	reasonUnplaced = "gitleaks named a value that could not be placed in the report"
 	reasonSwept    = "every string went through gitleaks and what it recognised is replaced; this covers what gitleaks recognises, and a value it does not recognise stays as it was"
 	reasonUnread   = reasonSwept + "; the added lines could not be read, so a value known only from the keyword beside it there is not replaced"
+	reasonTreeRead = reasonSwept + "; the tree could not be read for secrets, so a value known only from the keyword beside it there is not replaced"
 )
 
 func unswept(reason string) Report {
@@ -51,8 +52,11 @@ func (s *session) sweep(ctx context.Context, report Report) Report {
 		return withhold(report, err.Error())
 	}
 	report.Sweep = Sweep{Status: StatusRan, Reason: reasonSwept}
-	if report.Secrets.Status != StatusRan {
+	if report.Secrets.Status != StatusRan && report.Secrets.Status != StatusPartial {
 		report.Sweep.Reason = reasonUnread
+		if report.Mode == ModeTree {
+			report.Sweep.Reason = reasonTreeRead
+		}
 	}
 	return report
 }
@@ -89,6 +93,7 @@ func redactValues(report *Report, leaks []gitleaksLeak, known []string) error {
 }
 func withhold(report Report, reason string) Report {
 	return Report{
+		Mode:         report.Mode,
 		Secrets:      withheld(report.Secrets),
 		Dependencies: withheld(report.Dependencies),
 		Workflows:    withheld(report.Workflows),

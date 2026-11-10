@@ -18,7 +18,7 @@ const (
 	ecosystemPython     = "python"
 	ecosystemJavaScript = "javascript"
 
-	reasonJavaScript = "advisories for JavaScript are outside this cut"
+	reasonNoNodeLock = "a package.json with no package-lock.json, yarn.lock, pnpm-lock.yaml or bun.lock beside it or above it states no resolved version"
 	reasonNoCargo    = "a Cargo.toml with no Cargo.lock states no resolved version"
 	reasonNested     = "the image installs the root uv.lock, and this one is not it"
 	reasonUvNoLock   = "the root Dockerfile runs uv sync but there is no root uv.lock"
@@ -38,6 +38,7 @@ var (
 		"testdata":         true,
 		"__pycache__":      true,
 	}
+	nodeLockfiles   = map[string]bool{"package-lock.json": true, "yarn.lock": true, "pnpm-lock.yaml": true, "bun.lock": true}
 	pythonManifests = regexp.MustCompile(`^(?:pyproject\.toml|Pipfile|Pipfile\.lock|poetry\.lock|setup\.py|requirements[^/]*\.txt)$`)
 	uvSync          = regexp.MustCompile(`\buv\s+(?:-\S+\s+)*sync\b`)
 	pipInstall      = regexp.MustCompile(`\bpip3?\s+install\b`)
@@ -77,7 +78,7 @@ func detectTargets(root string) ([]target, error) {
 	}
 
 	var targets []target
-	var cargoLocks, cargoManifests, uvLocks []string
+	var cargoLocks, cargoManifests, nodeLocks, nodeManifests, uvLocks []string
 	otherPython := false
 	for _, file := range found {
 		switch name := path.Base(file); {
@@ -90,14 +91,18 @@ func detectTargets(root string) ([]target, error) {
 			cargoManifests = append(cargoManifests, file)
 		case name == "uv.lock":
 			uvLocks = append(uvLocks, file)
+		case nodeLockfiles[name]:
+			nodeLocks = append(nodeLocks, file)
+			targets = append(targets, target{ecosystem: ecosystemJavaScript, path: file})
 		case name == "package.json":
-			targets = append(targets, target{ecosystem: ecosystemJavaScript, path: file, reason: reasonJavaScript})
+			nodeManifests = append(nodeManifests, file)
 		case pythonManifests.MatchString(name):
 			otherPython = true
 		}
 	}
 
-	targets = append(targets, unlockedCargo(cargoManifests, cargoLocks)...)
+	targets = append(targets, unlocked(ecosystemRust, reasonNoCargo, cargoManifests, cargoLocks)...)
+	targets = append(targets, unlocked(ecosystemJavaScript, reasonNoNodeLock, nodeManifests, nodeLocks)...)
 	targets = append(targets, pythonTargets(root, uvLocks, otherPython)...)
 	slices.SortFunc(targets, func(a, b target) int {
 		return cmp.Or(cmp.Compare(a.path, b.path), cmp.Compare(a.ecosystem, b.ecosystem))
@@ -105,7 +110,7 @@ func detectTargets(root string) ([]target, error) {
 	return targets, nil
 }
 
-func unlockedCargo(manifests, locks []string) []target {
+func unlocked(ecosystem, reason string, manifests, locks []string) []target {
 	covered := map[string]bool{}
 	for _, lock := range locks {
 		covered[path.Dir(lock)] = true
@@ -128,7 +133,7 @@ func unlockedCargo(manifests, locks []string) []target {
 			continue
 		}
 		covered[path.Dir(manifest)] = true
-		targets = append(targets, target{ecosystem: ecosystemRust, path: manifest, reason: reasonNoCargo})
+		targets = append(targets, target{ecosystem: ecosystem, path: manifest, reason: reason})
 	}
 	return targets
 }
