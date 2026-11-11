@@ -114,6 +114,13 @@ sink itself. Then write the exploit in one sentence: who can do what, by sending
 which request. Any of the three missing makes it `suspected`, rated `NEEDS REVIEW`,
 with the fact that would confirm it.
 
+**A fact outside the export follows the standard's rule on restrictions outside
+the repository**, at its fit-to-expose bar: a consent screen, a tester list, a
+firewall, IAP, where a backup is kept, any console setting. It neither makes a
+control present nor leaves the role at a route unconfirmed. Rate the finding by
+what the code allows, and name the restriction in one line of `exposure_path` as
+a mitigation outside the repository that was not verified.
+
 **An anchor is a line you opened.** Each anchor is `path:line` or
 `path:first-last`, relative to `code_dir`, of a non-blank line in the file as it
 stands there: the line that shows the sink, the gap or the control. Confirm the
@@ -131,7 +138,8 @@ anchor: not found is absent.
 **An ambiguous reading is chosen, applied and named.** When the standard admits
 two readings for a case in front of you, pick one, rate by it, and report the
 item, the question, and the reading you picked. Do not skip the item, and do not
-rate it twice.
+rate it twice. A fact outside the export is not such a case: apply the standard's
+rule on it, never a reading of your own.
 
 **`files_not_read` is the only account of what you left out**: each file or
 directory that bears on your axes that you did not read, or read only in part,

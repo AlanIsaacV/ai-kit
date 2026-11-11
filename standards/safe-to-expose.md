@@ -50,7 +50,9 @@ rated as exploitable rests on two facts the reader verified in the code:
 
 1. **The exposure path.** A chain traced from a route the app serves — an HTTP
    route, an MCP tool, a webhook, or a job such a route enqueues — to the sink,
-   with the role a caller needs at the route.
+   with the role a caller needs at the route. The role is read off the code; a
+   restriction configured outside the repository does not leave it unconfirmed
+   (see `## The fit-to-expose bar`).
 2. **The missing control.** The handler, its router or dependency, any global
    middleware and the sink itself were read, and the guard is not there.
 
@@ -88,6 +90,14 @@ An app is **fit to expose** when both hold:
    reader found it in the code or the repository's deploy files. Not found is
    absent.
 
+An access restriction configured only outside the repository — an OAuth consent
+screen and its tester list, a firewall, IAP, where a backup is kept, any console
+setting — is not a control, whatever the repository's docs say of it. A finding
+it would narrow is rated by what the code allows and keeps that severity, and
+names the restriction in one line as a mitigation outside the repository that was
+not verified. Every item it bears on, a mandatory control's included, is rated on
+what the repository shows.
+
 | Control | Present when | Items |
 |---|---|---|
 | M1. Login fails closed when its configuration is missing | With any login setting missing or empty, the app refuses to start or refuses every request; no code path gives a caller it could not identify a user or a role. | 1.1 |
@@ -111,7 +121,9 @@ plaintext secrets in Cloud Run environment variables (2.4); IAM owners, keys and
 roles, and the default Compute service account every service shares (3.4, 2.5);
 Cloud Armor coverage (3.1); TLS policy at the edge (3.6); detection (3.7); GitHub
 organisation settings such as rulesets, 2FA and secret scanning (3.3); registry
-scanning of images (3.8); and the host itself (3.9).
+scanning of images (3.8); and the host itself (3.9). Nor does it cover OAuth
+consent screens and their tester lists, or any other setting kept in a console:
+findings they would narrow stay rated by the code, as the bar says.
 
 Not settled in this version, and so not assessable with the reason: a finding on
 two axes, a stack other than the three below, an app public by design with no login.

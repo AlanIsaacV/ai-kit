@@ -226,13 +226,15 @@ it has none), the `error` and the `code`, and its `items`, `severity` and
 **A refused blocker** is a finding the script refused that its lens file held as
 `confidence` `confirmed` with `severity` `CRITICAL` or `HIGH`. Its items are the
 `items` it declared when they are a non-empty list of checklist numbers such as
-2.5, and none otherwise. Any other refused finding counts toward nothing below.
+2.5, and none otherwise. Its primary item is the `primary_item` it declared when
+that is a checklist number, and none otherwise. Any other refused finding counts
+toward nothing below.
 
 **Decide the mandatory controls**, each by its items: M1 1.1, M2 1.2, M3 3.1, M4
 4.1, M5 2.5 and 2.6, M6 4.2. A control is **absent** when any lens returned it
-`absent`, when a confirmed finding or a refused blocker sits on one of its items,
-or when no lens returned it `present` with an anchor that survived. Otherwise it
-is **present**. Not found is absent.
+`absent`, when a confirmed finding or a refused blocker has its primary item among
+the control's items, or when no lens returned it `present` with an anchor that
+survived. Otherwise it is **present**. Not found is absent.
 
 **Decide the verdict.** **fit to expose** only when no confirmed CRITICAL or HIGH
 finding is left, no refused blocker exists and all six controls are present.
