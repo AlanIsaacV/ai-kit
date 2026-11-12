@@ -111,6 +111,15 @@ confessing to; it is whose turn it is.
 - `untestable-as-written` — the criterion itself cannot fail as phrased ("it
   works well"). A defect in the criterion, not in the code. Say so.
 
+Those six are the whole set, and the `Protects` line a criterion carries adds
+none and moves none. **It is never graded and it never changes a verdict.** It
+says what the criterion is for, and that is context for the person triaging a
+miss, not for you: a statement that is false is `not-met` whether its kind is
+`proxy` or `hard-limit`, and a 520-line file against a 500-line cap is `not-met`
+however readable it still is. What the triage needs from you is the size of the
+miss, which is `measured` under **Return this** — the user weighs it against the
+`Protects` line, and you report it without weighing anything.
+
 "Nothing contradicts it" is not evidence. The line between
 `untestable-as-written` and `unverified` is the whole guard: the first means no
 amount of reading would settle it, the second means more reading would. If more
@@ -293,6 +302,7 @@ about this system that you do not.
       "fidelity_required": "real-dependency",
       "fidelity_achieved": "mocked",
       "evidence": "<file:line, test name, or output snippet>",
+      "measured": "<what was observed against the bar, in the criterion's own unit — required whenever the verdict is not met>",
       "note": "<why, when the two fidelities differ or the verdict is not met>"
     }
   ],
@@ -302,6 +312,13 @@ about this system that you do not.
   "open_questions": ["<conditions nobody covered — for the user, not for you>"]
 }
 ```
+
+**`measured` is what you observed against the bar, in the criterion's own
+unit**, and it is required on every criterion whose verdict is not `met`:
+"520 lines against at most 500", "CRITICAL in both runs, primary item 1.9 against
+1.2". It is a reading, not a judgment — no "close enough", no margin — and it is
+what lets the user see at triage how far the miss was without reopening your
+evidence to find out.
 
 `ready-to-close` requires zero `not-met` **and zero `handed-over`**. Unverified
 criteria do not block on their own, but the count belongs in `summary` — an

@@ -34,7 +34,9 @@ source, no `docs/`, no commits, no subagents.
   asked about and heard nothing back on arrives as exactly that, unanswered, and
   that is a state to write down rather than a gap in the field. It also carries
   any acceptance criterion the user **dropped**, quoted with their reason — the
-  one input that makes the graded list shorter than the approved one. It carries the
+  one input that makes the graded list shorter than the approved one — and any
+  criterion the user **accepted as not-met**, quoted with `verify`'s `measured`
+  value and their own words. It carries the
   objective's own open records this turn settled too, each with the record's id
   and what settled it, which is what tells you to write the `answers` edge. When
   `work` performed the landing itself at the close — a local install inside its
@@ -324,11 +326,20 @@ on disk.
   built from what is there rather than from optimism:
   `verify_result` and `triage_outcome` always, `review_result` when a review ran.
   A close with no review is not a thinner close and does not get hedged; it
-  simply has nothing from a review to say. The state edge points *at* it, so it
-  is spelled `"from"`:
+  simply has nothing from a review to say.
+
+  **A criterion the user accepted as not-met is named in the body, one by one.**
+  `triage_outcome` carries each: the criterion quoted, `verify`'s `measured`
+  value, the user's own words. Write all three, and count it as not-met — never
+  among the met ones. The close is `met` because the user chose to close on the
+  miss, not because the miss went away, and this body is the only place that
+  says so: the `met` edge beside it reads the same as a clean pass. No other
+  record and no other edge carries it.
+
+  The state edge points *at* the closing record, so it is spelled `"from"`:
 
 ```jsonl
-{"kind":"review-finding","title":"<what this turn's checking actually established>","body":"<criteria met, criteria unverified, criteria handed over and what came back on each, what the user accepted>","about":["<area>"],"edges":[{"type":"met","from":"<objective_id>"}]}
+{"kind":"review-finding","title":"<what this turn's checking actually established>","body":"<criteria met, criteria unverified, criteria handed over and what came back on each, each criterion accepted as not-met with its measured value and the user's words, what else the user accepted>","about":["<area>"],"edges":[{"type":"met","from":"<objective_id>"}]}
 ```
 
   **`handed-over` is counted on its own and folded into neither of the other

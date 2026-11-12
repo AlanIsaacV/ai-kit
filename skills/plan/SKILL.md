@@ -657,6 +657,7 @@ the landing, not this objective.>
 
 ## Acceptance criteria
 1. <Observable statement that can fail.>
+   - **Protects**: <what breaks if the statement is false> — **kind**: hard-limit | proxy
    - **Verified by**: <the specific check> — **fidelity required**: real-dependency | integration | mocked | code-read | you-run
 2. ...
 
@@ -840,6 +841,36 @@ confirmed in step 6's gate, as its own question.
 **A parent declares no `## Irreversible`**, for the same reason it declares no
 level: it is not what gets built, and each executable child declares its own.
 
+**Each criterion says what it protects, on a `Protects` line above `Verified by`.**
+It names what breaks if the statement is false, and its `kind` is one of two:
+
+- **`hard-limit`** — breaking it breaks something named: a host that refuses the
+  file, a caller that crashes, a record that goes missing.
+- **`proxy`** — it stands in for something else, named: 500 lines so the list
+  gets read, the same severity in two runs so the audit is reproducible.
+
+A criterion that is both — a cap that protects a host limit and readability at
+once — is a `hard-limit`, because something named breaks. The line is for the
+moment a criterion comes back `not-met`: `work`'s triage sets it beside the size
+of the miss, and a proxy whose purpose was served is accepted rather than fixed
+for a round nobody needed. Written then, the purpose would come from somebody who
+already knows the answer; written here, it is on the record before anyone has an
+interest in it.
+
+**A criterion stricter than what its `Protects` line names is written at the level
+it protects, whenever that level can be checked.** "Two audit runs agree on
+primary item, anchor and severity" protects a reproducible audit, and what that
+needs is the same verdict, and every Critical or High of one run appearing in the
+other as Critical or High — so that is the criterion. The stricter bar fails on a
+HIGH against a CRITICAL that changes nothing anybody does, and each such failure
+is a round spent defending a proxy. The stricter bar stays only when the
+protected level cannot be checked, and then its kind is `proxy`.
+
+**You write the kind, the user corrects it at step 6's gate, and it freezes with
+the criterion.** Neither `work` nor `verify` reclassifies it: a kind the thread
+that built the work could move once the result is in is a criterion that thread
+could soften, which is what the freeze exists to stop.
+
 **The fidelity line on each criterion is the load-bearing part.** It is decided
 here, with the user, before anyone has an interest in the answer. Naming one
 above `mocked` is what makes it impossible for verification to later report the
@@ -984,13 +1015,16 @@ The form is fixed, and the parts are always these, in this order:
 > <`## Out of scope`, and on a first cut what `## Cut` moved out>
 >
 > **Criterios de aceptación**
-> <`## Acceptance criteria`, each criterion with its `Verified by` and its fidelity>
+> <`## Acceptance criteria`, each criterion with its `Protects` line, its
+> `Verified by` and its fidelity>
 >
 > El draft quedó en `.ai-kit/plans/<slug>/draft-objective.md`, y lo de arriba es
 > copia textual, así que no hace falta abrirlo. Estos criterios y la fidelidad que
 > pide cada uno son los únicos contra los que se va a verificar después, y no se
-> cambian una vez que arrancamos. Contame por chat qué está mal, o decime que va —
-> el archivo lo reescribo yo con lo que me digas, no hace falta que lo edites.
+> cambian una vez que arrancamos. Lo mismo vale para lo que protege cada uno y si
+> es `hard-limit` o `proxy`: si un kind está mal, es acá donde se corrige. Contame
+> por chat qué está mal, o decime que va — el archivo lo reescribo yo con lo que
+> me digas, no hace falta que lo edites.
 
 **Each item under `## Irreversible` is then asked as its own question, in this same
 gate.** Right after the message, in `AskUserQuestion`: one question per item, naming

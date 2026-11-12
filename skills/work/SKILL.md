@@ -906,10 +906,10 @@ Read the merged result against four things:
   comes back `handed-over`, naming the script and the instructions, because
   `verify` cannot run what belongs to the person — so it is unresolved rather
   than fallen short, it is counted apart from the unverified ones for that
-  reason, and step 8 is where it gets asked about. **Left unresolved it is the
-  one verdict short of `not-met` that keeps the objective from closing `met`**:
-  step 9 closes it `blocked` instead, so the count travels there rather than
-  being spent in this round.
+  reason, and step 8 is where it gets asked about. **Left unresolved it keeps the
+  objective from closing `met`**: step 9 closes it `blocked` instead, so the
+  count travels there rather than being spent in this round. A `not-met` does not
+  work that way — it goes to step 8's three exits, and one of them closes `met`.
 - Any `unverified` criterion is named to the user explicitly, with its count.
   "Ready to close, two criteria unverified" is an honest sentence; silence
   about them is not.
@@ -1029,13 +1029,36 @@ that beside fixing it, in these words, because the difference is the whole point
 
 > ¿Esto lo arreglamos, o el criterio ya no tiene sentido?
 
-Their answer travels to step 9 in `triage_outcome` — the criterion quoted, their
+That is the question for `unverified` and `untestable-as-written`. A `not-met`
+gets the one below instead, which keeps this drop and adds a third exit.
+
+A drop travels to step 9 in `triage_outcome` — the criterion quoted, their
 reason in their own words — and `record` writes the `decision`. **You do not
 decide this, and you do not lean on a criterion that merely came back hard.** A
 criterion this thread talked the user out of is a criterion this thread graded
-itself against, which is the single thing the freeze exists to prevent. Ask, take
-the answer, and if they want it kept, it stays `not-met` and the turn goes back to
-a fix.
+itself against, which is the single thing the freeze exists to prevent.
+
+**A `not-met` criterion has a third exit: accept it as not-met and close.** It is
+the one the user has been taking without a written rule — the miss is real, it is
+not worth a round, and the objective closes anyway. Put each `not-met` in front
+of them in one line carrying verify's `measured`, the criterion's `Protects` line
+as the draft has it, and what another round would cost, then ask, in these words:
+
+> <el criterio> — medido: <`measured`> · protege: <la línea `Protects`> · otra
+> ronda: <lo que costaría arreglarlo>
+> ¿Lo arreglamos, lo aceptamos como not-met y cerramos, o el criterio ya no tiene sentido?
+
+Recommend by the kind the draft froze, and never reclassify it here: accept for
+a `proxy`, fix for a `hard-limit`. **You may recommend accepting and you never
+recommend a drop.** Accepting moves nothing — the criterion stays `not-met` and
+the failure goes into the closing record by name — while a drop takes it off the
+list the objective is graded against, which is the move the freeze keeps out of
+this thread's hands. It is still asked inside this round, beside everything else
+in it, and never as a round of its own.
+
+Fixed, and the turn goes back to a fix. Accepted, and it travels to step 9 in
+`triage_outcome` — the criterion quoted, its `measured` value, the user's words
+— and on its account the close is `met`. Dropped, as above.
 
 **A criterion that stopped making sense is dropped. A premise that stopped being
 true is not a drop at all.** Sometimes what the parts or the verification bring
@@ -1097,8 +1120,8 @@ words, in this round:
 
 - **They ran it and it passed.** The criterion is met. Carry what they observed
   to step 9 in their own words.
-- **They ran it and it failed.** That is a `not-met` criterion, and the turn goes
-  back to a fix rather than on to the close.
+- **They ran it and it failed.** That is a `not-met` criterion, with what they
+  observed as its `measured`, and it takes the three exits above like any other.
 - **It is not going to be run.** That is a decision, and it is kept as a
   `wont-fix` in their own words like any other "not worth it" — and once that is
   on disk the criterion stops holding the objective, because what closes it is
@@ -1225,10 +1248,9 @@ nothing remote beyond pulling what a manifest declares, and it reads no env file
 Running an install is not writing code, so rule 2 is not broken by it. What it
 returns decides the close: it went through and the check is green, and the
 landing has happened — `met` stays available, and what was run and what came back
-travels to `record` in `triage_outcome`; it failed, and that is a fix, the same
-as a criterion that came back `not-met`, and the turn goes back to one rather than
-on to the close. `committed` and `merged` never take this branch whoever the
-draft names, because no agent commits or pushes — `agents/implement.md` rule 9 —
+travels to `record` in `triage_outcome`; it failed, and that is a fix, and the
+turn goes back to one rather than on to the close. `committed` and `merged` never
+take this branch whoever the draft names, because no agent commits or pushes — `agents/implement.md` rule 9 —
 and neither does anything that reaches production or a remote system.
 
 **Otherwise, and it has not happened, it is stated and not asked.** No question
@@ -1274,7 +1296,7 @@ objective_id: <the executable objective's id>
 plan_slug: <tree-slug>
 verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON — empty when step 7 did not run>
-triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; each criterion the user dropped, quoted from the draft, with their reason in their own words; each open record above that this turn settled, with its id and what settled it; and, when this step performed the landing, what it ran and what came back>
+triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; each criterion the user dropped, quoted from the draft, with their reason in their own words; each criterion the user accepted as not-met, quoted from the draft, with verify's `measured` and their own words; each open record above that this turn settled, with its id and what settled it; and, when this step performed the landing, what it ran and what came back>
 closing_state: <met | blocked | cancelled | separated>
 confirmed_hypothesis:
 on_demand_kinds:
@@ -1377,6 +1399,12 @@ Either one and `closing_state` is `blocked`, pointing at the `open-question` tha
 names what is unrun — the same pair step 5 already writes for an external wall,
 and `record` already writes that question for a handover nobody reported on and
 for a landing that has not happened.
+
+**A criterion the user accepted as not-met in step 8 does not take `met` away.**
+It is not unrun: it ran, it failed, and the user chose to close on it in their own
+words. On its account `closing_state` is `met`, and the failure is not lost in
+it — `record` names that criterion in the closing `review-finding` with its
+`measured` value and what the user said, out of `triage_outcome`.
 
 `blocked` is an **open** state in this log rather than a closing one, which is
 what makes this a pause and not a failure: the objective keeps its approval, it
