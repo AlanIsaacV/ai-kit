@@ -72,8 +72,14 @@ the same two facts, because the bar counts only confirmed findings.
 
 Severity follows confirmed impact. A sink is rated by the login its own route
 requires; a login that fails open when configuration is missing is its own finding,
-rated as if it were missing. A login method shipped switched off, on once a variable
-is set, is rated as if on and counts toward M1 and M2. A sink that only another
+rated as if it were missing. A login that admits any account of an identity
+provider — any Google account, any GitHub account, any holder of a token minted for
+the app's client — without the code checking which account it is, by email,
+domain, `hd`, an allowlist or a lookup of a known user, is no login: its sinks are
+rated by the CRITICAL row, not as reachable by any logged-in user, and a restriction
+on who holds such accounts kept outside the repository does not change that. A
+login method shipped switched off, on once a variable is set, is rated as if on and
+counts toward M1 and M2. A sink that only another
 confirmed finding reaches, a backup behind a file-read flaw or a secret file alike,
 is rated in that finding, not raised on its own. Never inflate to be safe, never
 bury a confirmed hole. Two readers of one commit must agree on every Critical and
@@ -141,7 +147,9 @@ first here falls under its rules, and a check not run or partial is not a clean 
 
 Whether the app knows who is calling, refuses whoever it should, and keeps each
 caller to what is theirs. A route with no login that reaches data is CRITICAL; a
-logged-in user reaching another user's data or files is HIGH.
+logged-in user reaching another user's data or files is HIGH. A login that admits
+any account of a provider without the code checking which account it is counts as
+no login (see `### The rubric`).
 
 - **Login fails closed (M1).** The dangerous shape is a branch that, with the login
   configuration absent, treats the caller as a local user with full rights because

@@ -220,8 +220,8 @@ written again. Every other code — `primary-item-missing`,
 `anchor-invalid` — names one finding, `findings[<n>]` of that file, that the lens
 returned outside its contract. That finding is removed from the file, never
 corrected, and kept for the report with its lens, its title (`findings[<n>]` when
-it has none), the `error` and the `code`, and its `items`, `severity` and
-`confidence` as the file held them; then the script runs again.
+it has none), the `error` and the `code`, and its `items`, `primary_item`,
+`severity` and `confidence` as the file held them; then the script runs again.
 
 **A refused blocker** is a finding the script refused that its lens file held as
 `confidence` `confirmed` with `severity` `CRITICAL` or `HIGH`. Its items are the
