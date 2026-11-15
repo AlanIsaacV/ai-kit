@@ -561,7 +561,9 @@ its children inherit it.>
 
 ## Landing condition
 <One of `worktree` | `committed` | `merged` | `deployed` | `user-saw-it`, and who
-does it. A parent declares this once for everything underneath it.>
+does it. A parent declares this once for everything underneath it. Above
+`worktree`, one line follows per check a child needs the deployed system for,
+added when that child is written.>
 
 ## How this serves the objective above
 <One line. A root objective serves the request that opened it.>
@@ -636,7 +638,9 @@ what could not be reconstructed.>
 does it. Never written as an acceptance criterion. Under an ancestor that declares
 a landing above `worktree`, this objective writes `worktree`, and may add that it
 arrives with that ancestor, named by its title: the ancestor is what waits for
-the landing, not this objective.>
+the landing, not this objective. A check of this objective that needs the
+deployed system is not a criterion here either: it is one line in that
+ancestor's `## Landing condition`.>
 
 ## How this serves the objective above
 <One line. A root objective serves the request that opened it.>
@@ -892,6 +896,16 @@ second: what it might reach includes a database or endpoint configured in the
 environment, so it is written as one that touches production.
 Where the objective has to arrive is not one of them: that is
 `## Landing condition`, below, and it is never written as a criterion.
+**Under an ancestor that declares a landing above `worktree`, a check that needs
+the deployed system is not a `you-run` criterion of the child** — "in production,
+…", "on the Pi, …", a run of what ships. Only that ancestor can have the deploy,
+so written on the child it holds a verified slice open on an act that is not the
+child's. Add it instead as one line to that ancestor's `## Landing condition`
+while writing the child — the ancestor's draft carries no freeze — and the
+ancestor waits for it with its landing. So `you-run` on a child is left for a
+check that needs the user's own access and not the deployed system, and a check
+that needs the deployed system is `you-run` only on the objective that is itself
+the one that lands.
 Which criteria get the value is read off the check rather than off how risky it
 feels, and a criterion that gets it is written `you-run` here, because no agent
 is going to execute it and any other fidelity written on it comes back
@@ -950,13 +964,16 @@ on a first cut contradicts what the cut is for, so it is `deployed` or
 **Declare it on the objective that actually arrives, and let the children under
 it write `worktree`.** A parent whose children are five slices of one service
 declares `deployed` once, on itself; the children write `worktree` in their own
-drafts — saying they arrive with that parent, by its title, when that helps the
-reader — and the parent is what waits for the deploy. Put the landing on every
-child instead and a nineteen-commit tree needs nineteen pushes before anything
-closes, which is the friction that gets a rule deleted rather than followed. So
-ask which objective in this tree is the one that has to arrive — usually the one
-whose `## Success criteria` somebody outside the room would recognise — and put
-it there.
+drafts — always, never `deployed` again under an ancestor that already declares
+it, and saying they arrive with that parent, by its title, when that helps the
+reader — and the parent is what waits for the deploy. What a child would check on
+the deployed system goes into that parent's `## Landing condition` as one line,
+added when the child is written, the way the `you-run` paragraph above says.
+Put the landing on every child instead and a nineteen-commit tree needs nineteen
+pushes before anything closes, which is the friction that gets a rule deleted
+rather than followed. So ask which objective in this tree is the one that has to
+arrive — usually the one whose `## Success criteria` somebody outside the room
+would recognise — and put it there.
 
 What happens to the landing at the close is `work`'s step 9, and how an ancestor
 that declares one waits for it is `## After the close: the ancestor that lands` in

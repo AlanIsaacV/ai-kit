@@ -112,36 +112,40 @@ elsewhere can still bind what this turn changes.
 
 #### Read what this tree already owes, before anything gets chosen
 
-`memory state` above reports every objective's `state`, and any of them reading
-`blocked` is an objective this loop stopped rather than closed. What it is waiting
-on is the record the block points at:
+`memory state` above reports every objective's `state`. One reading `verified` is
+an objective whose agents' work is done and verified, waiting on something the
+user owes — a `you-run` check nobody ran, a landing condition that has not
+happened. One reading `blocked` is an objective a real question or an external
+wall stopped. What each waits on is the record its edge points at:
 
 ```bash
 memory state --text
 ```
 
-That prints **Blocked on a question or a decision**, grouped by the record each
-objective waits on, over every log in the store rather than this tree alone. It is
-the ledger for the debt step 9 writes — a `you-run` check nobody ran, a landing
-condition that has not happened — and reading it *here* is what makes the debt
-something the next turn pays rather than something the last turn recorded.
+That prints the `verified` objectives in a section of their own, each with the
+`owed` record that names its debt on one line, and **Blocked on a question or a
+decision** grouped by the record each blocked objective waits on — over every log
+in the store rather than this tree alone. The `verified` section is the ledger for
+the debt step 9 writes, and reading it *here* is what makes the debt something the
+next turn pays rather than something the last turn recorded.
 
-**Name every blocked objective in this tree before step 2 chooses anything**, one
-line each, with what it waits on. The ask is short because there are only ever
-three answers: they ran it or landed it and it held, it failed, or it is not
-going to happen. The first closes that objective `met` this turn, before a new one
-starts; the second is a fix; the third is a `wont-fix` in their own words and then
-the close.
+**Name every `verified` and every blocked objective in this tree before step 2
+chooses anything**, one line each: what a `verified` one owes, what a blocked one
+waits on. For a `verified` one the ask is short because there are only ever three
+answers: they ran it or landed it and it held, it failed, or it is not going to
+happen. The first closes that objective `met` this turn, before a new one starts;
+the second is a fix; the third is a `wont-fix` in their own words and then the
+close.
 
-That `met` goes through `inbox`'s close, which quotes the user, answers the
-question and then runs the walk `record` runs to block the ancestor that lands —
-not a raw `memory link`, for the reason step 9 sends an objective with a parent
-there. A root, with no parent, may take the raw link step 9 shows.
+That `met` goes through `inbox`'s close, which quotes the user in a `decision`
+that answers the `owed` record, writes the `met` on a later line and then runs the
+walk `record` runs to the ancestor that lands — not a raw `memory link`, for the
+reasons step 9 sends every objective there, a root included.
 
-> Antes de elegir: `<title>` quedó bloqueado esperando `<lo que falta correr o
+> Antes de elegir: `<title>` quedó verificado esperando `<lo que falta correr o
 > desplegar>`. ¿Lo corriste o lo desplegaste, falló, o no se va a hacer?
 
-**Nothing forces them to pay it now.** "Later" leaves the objective blocked and
+**Nothing forces them to pay it now.** "Later" leaves the objective `verified` and
 this turn goes on to something else. What changed is that the debt was named
 before the next one was taken on, which is the whole distance between one unpaid
 check and seven. Several in one tree is a count and one line, not a list — it is
@@ -907,7 +911,7 @@ Read the merged result against four things:
   `verify` cannot run what belongs to the person — so it is unresolved rather
   than fallen short, it is counted apart from the unverified ones for that
   reason, and step 8 is where it gets asked about. **Left unresolved it keeps the
-  objective from closing `met`**: step 9 closes it `blocked` instead, so the
+  objective from closing `met`**: step 9 closes it `verified` instead, so the
   count travels there rather than being spent in this round. A `not-met` does not
   work that way — it goes to step 8's three exits, and one of them closes `met`.
 - Any `unverified` criterion is named to the user explicitly, with its count.
@@ -1129,7 +1133,7 @@ words, in this round:
 
 Silence is none of the three, and it is no longer this thread's to resolve by
 moving on. It leaves the criterion `handed-over`, and step 9 closes the objective
-`blocked` on the open question naming the unrun check — the objective staying
+`verified` on the `owed` record naming the unrun check — the objective staying
 open and the ask coming back at the top of the next turn, which is what step 1's
 ledger is for. Seven of these in a row closed `met` because the default in this
 round was to carry on; the default is now that the objective waits.
@@ -1254,10 +1258,10 @@ take this branch whoever the draft names, because no agent commits or pushes —
 and neither does anything that reaches production or a remote system.
 
 **Otherwise, and it has not happened, it is stated and not asked.** No question
-and nothing waiting on an answer: `closing_state` is `blocked`, `record` writes
-the question that names the landing and points the edge at it, and the close
-message carries one line saying what it waits on, with the command that closes it
-once it has happened — both below, under the `blocked` close.
+and nothing waiting on an answer: `closing_state` is `verified`, `record` writes
+the `owed` record that names the landing and points the edge at it, and the close
+message carries one line saying what it owes, with how to close it once it has
+happened — both below, under the `verified` close.
 
 Before the handoff, read what this objective has left open:
 
@@ -1297,7 +1301,7 @@ plan_slug: <tree-slug>
 verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON — empty when step 7 did not run>
 triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; each criterion the user dropped, quoted from the draft, with their reason in their own words; each criterion the user accepted as not-met, quoted from the draft, with verify's `measured` and their own words; each open record above that this turn settled, with its id and what settled it; and, when this step performed the landing, what it ran and what came back>
-closing_state: <met | blocked | cancelled | separated>
+closing_state: <met | verified | blocked | cancelled | separated>
 confirmed_hypothesis:
 on_demand_kinds:
 existing_closing_record:
@@ -1386,7 +1390,8 @@ and one whose work continues outside this parent `separated`. Those two point at
 a `decision` instead, and neither counts toward the parent's completion — and none
 of these is reached on a turn whose verification came back `blocked`, which is
 `verify` reporting that it graded nothing at all and which step 6 stops before
-this step. That is a verdict and not a state, and it is not the `blocked` below.
+this step. That is a verdict and not a state, and it is not the `blocked` state
+step 5 writes for an external wall.
 
 **`met` is unavailable while anything this objective still owes is unrun.** Two
 things put it there, and both resolve the same way:
@@ -1395,10 +1400,14 @@ things put it there, and both resolve the same way:
 - a `## Landing condition` above `worktree` that has not happened yet — the one
   the landing check above stated rather than performed.
 
-Either one and `closing_state` is `blocked`, pointing at the `open-question` that
-names what is unrun — the same pair step 5 already writes for an external wall,
-and `record` already writes that question for a handover nobody reported on and
-for a landing that has not happened.
+Either one, or both, and nothing else between the close and `met`, and
+`closing_state` is `verified`: `record` writes one `owed` record deriving from the
+objective that names each debt in its body, and a `verified` edge to it. It writes
+no `open-question` and no `blocked` edge for those debts. `blocked` is not this:
+it stays for what step 5 writes, an external wall or a question that stops the
+work. `closing_state` is `blocked` only when an open question stops the work at
+this close, and `record` puts the edge on the `open-question` that names it —
+never for a landing or an unreported handover, which are `verified`.
 
 **A criterion the user accepted as not-met in step 8 does not take `met` away.**
 It is not unrun: it ran, it failed, and the user chose to close on it in their own
@@ -1406,39 +1415,29 @@ words. On its account `closing_state` is `met`, and the failure is not lost in
 it — `record` names that criterion in the closing `review-finding` with its
 `measured` value and what the user said, out of `triage_outcome`.
 
-`blocked` is an **open** state in this log rather than a closing one, which is
+`verified` is an **open** state in this log rather than a closing one, which is
 what makes this a pause and not a failure: the objective keeps its approval, it
-stays a candidate for `--current`, `approved_for_execution → blocked → met` is a
-sequence the log resolves to `met`, and `memory state --text` lists it under
-**Blocked on a question or a decision** grouped by the record it waits on. That
-listing is the ledger step 1 reads at the top of the next turn, which is when this
-gets paid. Nothing in the CLI changes for any of it.
+stays a candidate for `--current`, it holds its parent open the way any open child
+does, and `memory state --text` lists it in a section of its own — not under
+**Blocked on a question or a decision** — with its `owed` record's title on one
+line. That listing is the ledger step 1 reads at the top of the next turn, which
+is when this gets paid. Nothing reads `verified` as `met`: it goes to `met` only
+on the user's word.
 
 Say it in one line, as a pause rather than an apology and never as a question,
-and **hand over what closes it**. Which one depends on whether the objective has
-a `parent`.
+and **hand over what closes it**: one sentence to `inbox`, whether the objective
+has a `parent` or not. `inbox` writes one `decision` quoting the user that answers
+the `owed` record, and the `met` on a later line, and then runs the walk `record`
+runs to the ancestor that lands. A raw `memory link --type met` is not offered,
+for a root either: it leaves the `owed` record unanswered forever, and on an
+objective with a parent it runs no walk, so a parent whose deploy never happened
+would read `met` derived from its children:
 
-It has one: the close goes through `inbox`, because a `met` on this objective can
-be the last close its parent was waiting on, and `inbox` follows its close with
-the walk `record` runs to block the ancestor that lands. A raw `memory link`
-runs no walk, and a parent whose deploy never happened would read `met` derived
-from its children:
-
-> El objetivo queda `blocked` esperando `<el chequeo o el aterrizaje>`. El código
-> está hecho y verificado en todo lo demás. Cuando lo corras o lo despliegues y
+> El objetivo queda `verified` esperando `<el chequeo o el aterrizaje>`: el código
+> está hecho y verificado, y lo que falta lo debés vos. Aparece en su propia
+> sección de `inbox`, no entre los bloqueados. Cuando lo corras o lo despliegues y
 > esté bien, cerralo con `inbox` — "lo desplegué y funciona" alcanza, no hace
 > falta abrir una sesión para esto.
-
-It has none — a root, with no ancestor to block — and the command that closes it
-is the whole handover:
-
-> El objetivo queda `blocked` esperando `<el chequeo o el aterrizaje>`. El código
-> está hecho y verificado en todo lo demás. Cuando lo corras o lo despliegues y
-> esté bien, cerralo vos — no hace falta abrir una sesión para esto:
->
-> ```bash
-> memory link --type met --from <objective-id> --to <closing-record-id>
-> ```
 
 **When `## Premise` names the cut itself as its falsifier, that landing is the
 premise's verdict as well as the objective's arrival**, so name the other answer
@@ -1448,16 +1447,11 @@ in the same breath:
 > nadie, que no era esto lo que hacía falta — no lo cierres `met`. Decímelo y lo
 > cerramos `cancelled`, que es el resultado más barato que puede tener esto.
 
-For a root, both ids are in your hand already: the objective's, and the closing
-`review-finding` the subagent just wrote. **Paste them in literally.** A command
-with angle brackets left in it is a command somebody opens a session to get
-filled in, which is the entire cost this branch exists to remove.
-
 **Reopening a session to say "it worked" is waste, and this is what removes it.**
-The debt is real and it holds the objective open, but paying it is one append to
-the log (one sentence to `inbox`, or one `link` for a root) by the person who
-already ran the check — not a turn that reloads the tree, re-reads the draft,
-re-reads the log and spends a whole context to write a single edge. Step 1's ledger is for the checks they never got to, not for the
+The debt is real and it holds the objective open, but paying it is one sentence
+to `inbox` by the person who already ran the check — not a turn that reloads the
+tree, re-reads the draft, re-reads the log and spends a whole context to write a
+single edge. Step 1's ledger is for the checks they never got to, not for the
 ones they did.
 
 #### Confirm the close landed, do not trust the report
@@ -1470,9 +1464,9 @@ Read the objective's `state` out of what comes back rather than out of the
 subagent's report. A `link` that refused inside a subagent still printed JSON and
 still exited, so "closed" in a report is a claim and this is the evidence.
 
-- It reads the state you asked for — `met`, `blocked`, `cancelled` or
-  `separated`. The close landed. `blocked` landing is the close landing: the
-  objective is open on purpose and waiting on a named record, which is a
+- It reads the state you asked for — `met`, `verified`, `blocked`, `cancelled`
+  or `separated`. The close landed. `verified` landing is the close landing: the
+  objective is open on purpose and waiting on a named `owed` record, which is a
   different thing from the edge never having been written. Before step 10, give the user the subagent's `failures` and
   `not_recorded` in one line: a state edge that landed says the objective closed,
   not that everything this turn agreed to write got written. Anything the user
@@ -1481,7 +1475,7 @@ still exited, so "closed" in a report is a claim and this is the evidence.
   offered that option and are owed the news that it did not happen. Nothing in
   either list and one line says so.
 - It still reads `approved_for_execution`, or anything else from before the
-  close — including `blocked` when that is not the state you asked for:
+  close — including `blocked` or `verified` when that is not the state you asked for:
   **the close did not land.** The objective is open whatever the report
   said. Say so to the user in one line, show the subagent's `failures`, and
   relaunch `record` with the same handover — `missing` naming exactly what did
@@ -1529,29 +1523,30 @@ ask the user. A disagreement there is a real question about what counts as done,
 not something to settle on the objective's behalf.
 
 **An ancestor this close left waiting on its landing gets one line of its own.**
-Any close but `blocked` can leave one there: a parent whose last open child
+Any close but `verified` can leave one there: a parent whose last open child
 closes `cancelled` or `separated` derives `met` from the children it counts as
 done just as it does after a `met`, and `record` walks up after all three.
 When the parent has nothing outstanding and its draft declares a landing above
-`worktree`, `record` blocked it on "The landing condition has not happened: …"
-instead of leaving it to read derived `met` — or blocked a further ancestor, when
-the parent declares no landing and itself counted as done. Which one is in
-`record`'s `edges`: the `blocked` edge whose `from` is not this objective. The
-parent's state above says `blocked` when it was the parent; for a further
-ancestor, `memory state --id <that ancestor's id>`. Say it in one line, naming
-the condition as that ancestor's draft states it, and hand over the close the way
-the `blocked` close above does:
+`worktree`, `record` wrote it an `owed` record naming the landing and a `verified`
+edge to it instead of leaving it to read derived `met` — or did that on a further
+ancestor, when the parent declares no landing and itself counted as done. Which
+one is in `record`'s `edges`: the `verified` edge whose `from` is not this
+objective. The parent's state above says `verified` when it was the parent; for a
+further ancestor, `memory state --id <that ancestor's id>`. Say it in one line,
+naming the condition as that ancestor's draft states it, and hand over the close
+the way the `verified` close above does:
 
-> `<título del ancestro>` queda `blocked` esperando `<el aterrizaje, como lo dice
-> su draft>`: sus hijos están cerrados. Cuando haya pasado, decíselo a `inbox` —
-> "lo desplegué y funciona" alcanza — y lo cierra desde ahí, sin abrir una sesión.
+> `<título del ancestro>` queda `verified` esperando `<el aterrizaje, como lo dice
+> su draft>`: sus hijos están cerrados y verificados, y lo que falta lo debés vos.
+> Aparece en su propia sección de `inbox`, no entre los bloqueados. Cuando haya
+> pasado, decíselo a `inbox` — "lo desplegué y funciona" alcanza — y lo cierra
+> desde ahí, sin abrir una sesión.
 
 `inbox` is the door because the ancestor has no closing record of its own to
-point a `met` at: it writes the `decision` quoting the user, answering the
-question and carrying the ancestor's `met`, in one write. A
-`memory link --type met --from <the ancestor's id>` to a record of their own that
-says it happened closes it as well, when that ancestor is a root: a raw `link`
-runs no walk, so one with a parent of its own goes through `inbox`. Nothing is asked here either — the children are done and
+point a `met` at: it writes the `decision` quoting the user that answers the
+ancestor's `owed` record, and the ancestor's `met` on a later line pointing at
+that `decision`. That holds for a root ancestor too: a raw `link` would leave the
+`owed` record unanswered. Nothing is asked here either — the children are done and
 the tree is waiting on an act that is not this session's.
 
 A root objective has no parent to look up. Point `--id` at the objective you just
@@ -1610,9 +1605,10 @@ user's — suggest candidates, do not promote on your own.
   comes back handed over rather than met, and the close asks them how it went.
 - **An unrun check holds the objective open.** A fidelity nobody ever pays is not
   a fidelity, it is a way of approving without evidence — so `handed-over` and an
-  unmet landing condition close the objective `blocked` rather than `met`, and the
-  next turn opens by naming what is owed. Waiting is not failing, and the debt is
-  cleared by running the check or by deciding in words that it never will be.
+  unmet landing condition close the objective `verified` rather than `met`, never
+  `blocked`, and the next turn opens by naming what is owed. Waiting is not
+  failing, and the debt is cleared by running the check or by deciding in words
+  that it never will be.
 - **Parts are drawn by what would collide, not by size.** Implementation splits
   by the files parts write, verification by criteria that settle without waiting
   on another part's evidence or verdict, review along the parts implementation

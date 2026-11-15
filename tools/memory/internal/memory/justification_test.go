@@ -6,7 +6,7 @@ import (
 )
 
 // The allowlist as decision 01KZ30RR7THXNEWMEST0T7CFHN states it, read back one
-// state at a time. Written as a table rather than as five assertions because
+// state at a time. Written as a table rather than as six assertions because
 // what matters is the whole shape: which kinds may justify a state, and — just
 // as much — which may not.
 func TestEachStateNamesTheKindsThatMayJustifyIt(t *testing.T) {
@@ -16,6 +16,7 @@ func TestEachStateNamesTheKindsThatMayJustifyIt(t *testing.T) {
 		EdgeCancelled:            {KindDecision},
 		EdgeSeparated:            {KindDecision},
 		EdgeBlocked:              {KindDecision, KindOpenQuestion},
+		EdgeVerified:             {KindOwed},
 	}
 	for typ, kinds := range want {
 		got := Justifications(typ)
@@ -32,7 +33,7 @@ func TestEachStateNamesTheKindsThatMayJustifyIt(t *testing.T) {
 		}
 	}
 	if len(JustifiedEdgeTypes()) != len(want) {
-		t.Errorf("expected exactly the five states to carry a rule, got %v", JustifiedEdgeTypes())
+		t.Errorf("expected exactly the six states to carry a rule, got %v", JustifiedEdgeTypes())
 	}
 }
 

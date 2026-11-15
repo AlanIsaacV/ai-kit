@@ -6,7 +6,7 @@ import "fmt"
 // state edge.
 //
 // A state edge says a record moved — approved, met, cancelled, separated,
-// blocked — and the second endpoint is the record that says why. Without a
+// blocked, verified — and the second endpoint is the record that says why. Without a
 // rule, the endpoint drifts into being decorative: a `met` pointing at the
 // thing that was met, which asserts a transition with nothing behind it and
 // reads exactly like one that was earned. So each state names the kinds that
@@ -26,7 +26,8 @@ var justifications = map[EdgeType]map[Kind]bool{
 	// An open question is the honest shape of most blocks: the thing being
 	// waited on is usually not yet decided, and pointing at a decision that
 	// does not exist yet is how a block becomes prose again.
-	EdgeBlocked: {KindOpenQuestion: true, KindDecision: true},
+	EdgeBlocked:  {KindOpenQuestion: true, KindDecision: true},
+	EdgeVerified: {KindOwed: true},
 }
 
 // NeedsJustification reports whether an edge type has to point at a record of a

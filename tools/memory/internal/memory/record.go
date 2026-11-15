@@ -35,7 +35,7 @@ const SchemaVersion1 = 1
 // The kinds and every field are version 1's, which is why validateEntryV2 names
 // entryKindsV1 rather than declaring a set of its own.
 //
-// The edge types are not. Version 2 later gained five more of them — the state
+// The edge types are not. Version 2 later gained six more of them — the state
 // edges — and gaining them did not need a version 3, because widening a closed
 // set makes no record already written illegal. Only narrowing does, and
 // narrowing is what a bump is for. See edgeTypesV2.
@@ -160,6 +160,7 @@ const (
 	// convention sits there rather than in a validation rule.
 	KindPreference Kind = "preference"
 	KindIdea       Kind = "idea"
+	KindOwed       Kind = "owed"
 
 	// Structural.
 	KindEdge Kind = "edge"
@@ -185,7 +186,7 @@ var entryKindsV1 = map[Kind]bool{
 
 // entryKindsV3 is the closed set of entry kinds as schema version 3 defines it:
 // version 1's eleven without `unit`, plus the kinds widened in since —
-// `hypothesis`, then `gotcha`, then `preference`, then `idea`. Dropping `unit` is the whole of
+// `hypothesis`, then `gotcha`, then `preference`, then `idea`, then `owed`. Dropping `unit` is the whole of
 // what the bump changed; every widening came afterwards, appended to this set in
 // place, because widening takes nothing back from any record on disk and so needs no
 // version of its own. The narrowing and the widenings are listed apart here on
@@ -205,6 +206,7 @@ var entryKindsV3 = map[Kind]bool{
 	KindAssumption: true, KindOpenQuestion: true, KindWontFix: true, KindDeadEnd: true,
 	KindADR: true, KindPostmortem: true, KindReviewFinding: true,
 	KindHypothesis: true, KindGotcha: true, KindPreference: true, KindIdea: true,
+	KindOwed: true,
 }
 
 // anchoredKindsV3 is the kinds version 3 will not write without at least one
@@ -345,7 +347,8 @@ const (
 	// under whatever it sat below. The work goes on; it goes on elsewhere.
 	EdgeSeparated EdgeType = "separated"
 	// EdgeBlocked points a record at what is holding it up.
-	EdgeBlocked EdgeType = "blocked"
+	EdgeBlocked  EdgeType = "blocked"
+	EdgeVerified EdgeType = "verified"
 )
 
 // edgeTypesV1 is the closed set of edge types as schema version 1 defines it,
@@ -356,7 +359,7 @@ var edgeTypesV1 = map[EdgeType]bool{
 }
 
 // edgeTypesV2 is the closed set of edge types as schema version 2 defines it:
-// version 1's six, plus the five that say what state a record is in.
+// version 1's six, plus the six that say what state a record is in.
 //
 // The widening happened inside version 2 rather than in a version 3, because
 // adding a value to a closed set is additive — it makes no record on disk
@@ -376,11 +379,11 @@ var edgeTypesV2 = map[EdgeType]bool{
 	EdgeImplements: true, EdgeDerivesFrom: true, EdgeSupersedes: true,
 	EdgeAnswers: true, EdgeCausedBy: true, EdgeRelatesTo: true,
 	EdgeApprovedForExecution: true, EdgeMet: true, EdgeCancelled: true,
-	EdgeSeparated: true, EdgeBlocked: true,
+	EdgeSeparated: true, EdgeBlocked: true, EdgeVerified: true,
 }
 
 // edgeTypes is the current schema's set: version 2's, which is version 1's six
-// widened by the five state types. See entryKinds for what repointing this is
+// widened by the six state types. See entryKinds for what repointing this is
 // for.
 //
 // Version 3 left it here. It narrowed the entry kinds and nothing else, so there

@@ -51,7 +51,8 @@ const (
 	// StateBlocked says something external is being waited on. Blocked by an
 	// open child is a different thing, derived from the tree and never written;
 	// see Tree.BlockedByOpenChild.
-	StateBlocked State = "blocked"
+	StateBlocked  State = "blocked"
+	StateVerified State = "verified"
 )
 
 // stateEdges maps each state edge type onto the state that transition leaves a
@@ -59,7 +60,7 @@ const (
 // and moves no record anywhere.
 //
 // It is spelled out rather than read off the justification allowlist, which
-// happens to have the same five keys today. The two answer different questions —
+// happens to have the same six keys today. The two answer different questions —
 // "what may justify this transition" and "what state does this transition leave
 // the record in" — and tying one to the other would let a change to either
 // silently change the other. TestEveryStateEdgeTypeResolvesToAState holds them in
@@ -70,6 +71,7 @@ var stateEdges = map[EdgeType]State{
 	EdgeCancelled:            StateCancelled,
 	EdgeSeparated:            StateSeparated,
 	EdgeBlocked:              StateBlocked,
+	EdgeVerified:             StateVerified,
 }
 
 // Open reports whether work on a record in this state is still live.

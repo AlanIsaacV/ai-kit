@@ -1,6 +1,6 @@
 ---
 name: record
-description: "Write the memory records and edges that close one objective: what the turn decided, what it had to assume, what it left open, the `wont-fix` records triage produced, the closing `review-finding` and the state edge, and — when a close that is not `blocked` leaves an ancestor whose draft declares a landing with nothing outstanding — the `blocked` that keeps that ancestor waiting on its landing. Use as the last step of the `work` skill, once implementation, verification and triage with the user are done. It reads the objective's draft and the diff itself rather than being handed a summary, and it writes to the log through the `memory` CLI only — never to project source."
+description: "Write the memory records and edges that close one objective: what the turn decided, what it had to assume, what it left open, the `wont-fix` records triage produced, the closing `review-finding` and the state edge, the `owed` record a `verified` close waits on, and — when a close that is neither `verified` nor `blocked` leaves an ancestor whose draft declares a landing with nothing outstanding — the `owed` record and `verified` edge that keep that ancestor waiting on its landing. Use as the last step of the `work` skill, once implementation, verification and triage with the user are done. It reads the objective's draft and the diff itself rather than being handed a summary, and it writes to the log through the `memory` CLI only — never to project source."
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -42,8 +42,8 @@ source, no `docs/`, no commits, no subagents.
   `work` performed the landing itself at the close — a local install inside its
   own account — it carries what was run and what came back, which the closing
   record says beside the criteria.
-- `closing_state` — `met`, `blocked`, `cancelled` or `separated`: which state
-  edge to write.
+- `closing_state` — `met`, `verified`, `blocked`, `cancelled` or `separated`:
+  which state edge to write.
   The orchestrator decided this with the user; you write it, you do not choose it.
 - `confirmed_hypothesis` — the id and the claim of the `hypothesis` record whose
   verdict is `confirmed`, when this objective came out of a `debug`
@@ -109,10 +109,15 @@ the one case that goes through `link`, with both ids taken from your inputs:
 memory link --type met --from <objective_id> --to <existing_closing_record>
 ```
 
-When the edge that landed this way is any state but `blocked`, the walk up to the
-ancestor that lands still follows it, exactly as below: it reads the log as it
-now stands, so an ancestor an earlier run already blocked reads `blocked` and
-stops it before anything is written twice.
+A `verified` edge never points at `existing_closing_record`: it points at the
+`owed` record and rides on that record's line. When `missing` names a `verified`
+state, the `owed` line is what is missing, and it is the one line you write, as a
+batch of its own exactly as the `verified` close below spells it.
+
+When the edge that landed this way is any state but `verified` or `blocked`, the
+walk up to the ancestor that lands still follows it, exactly as below: it reads
+the log as it now stands, so an ancestor an earlier run already moved to
+`verified` reads `verified` and stops it before anything is written twice.
 
 ## Read the artifacts yourself
 
@@ -189,9 +194,9 @@ in:
 {"kind":"open-question","title":"<what was left genuinely open>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
 ```
 
-**Every `decision`, `assumption` and `open-question` you write for this close
-carries that `derives_from` edge to `objective_id`, with one exception:** the
-landing question that "After the close: the ancestor that lands" writes derives
+**Every `decision`, `assumption`, `open-question` and `owed` you write for this
+close carries that `derives_from` edge to `objective_id`, with one exception:**
+the `owed` record that "After the close: the ancestor that lands" writes derives
 from the ancestor and only from it, because the debt it names is the ancestor's.
 The edge is what makes "what did this objective leave open" a question the log
 answers on its own, instead of a claim this subagent makes about its own work — and it is
@@ -245,20 +250,18 @@ Three kinds, and every one of them has a reader:
   Read by `work` step 1, which puts carried-in assumptions in front of the user
   before the next objective is chosen.
 - **`open-question`** — something left genuinely open, including conditions
-  verification raised that nobody decided, and a `handed-over` criterion the user
-  never reported a result for. That last one is the only part of an unanswered
-  handoff a later turn can act on: the closing record is history, while `work`
-  step 1 reads open questions back out and puts them in front of the user, which
-  is how a check nobody ran gets asked for again instead of closed over.
+  verification raised that nobody decided. A `handed-over` criterion the user
+  never reported a result for is not one of these: it is owed by the user rather
+  than open, and it goes in the `owed` record the `verified` close below writes.
 
 Those three are exactly the kinds the `derives_from` edge above goes on. A
 question or an assumption is read back per objective at the close, and that list
 is the whole point of the edge; a `decision` carries it for the reason it is
 written at all, being the account of how this objective came to be shaped the way
 it is, which is worth little to a reader who cannot tell which objective shaped
-it. The edge does not extend past those three — a `postmortem` derives from its
-hypothesis and an `adr` from whatever produced it, each as its own section below
-says.
+it. Past those three it goes on the `owed` record and nowhere else — a
+`postmortem` derives from its hypothesis and an `adr` from whatever produced it,
+each as its own section below says.
 
 That is the default set: three kinds and no others. Two kinds join it
 conditionally, and each condition is a test that can fail:
@@ -320,9 +323,12 @@ on disk.
   turn discussed it.
 
 - **The closing `review-finding` and the state edge.** You write both, and they are
-  one line. The closing record says what this turn's checking actually
-  established — criteria met, criteria unverified with their count, criteria
-  `handed-over` with a count of their own, what the user accepted in triage —
+  one line. The exceptions are `verified`, whose state edge rides on the `owed`
+  line because `verified` accepts only an `owed`, and `blocked`, whose edge rides
+  on the `open-question` line that names the wall — both below. The closing
+  record says what this turn's checking actually established — criteria met,
+  criteria unverified with their count, criteria `handed-over` with a count of
+  their own, what the user accepted in triage —
   built from what is there rather than from optimism:
   `verify_result` and `triage_outcome` always, `review_result` when a review ran.
   A close with no review is not a thinner close and does not get hedged; it
@@ -353,32 +359,25 @@ on disk.
   handed over, the user was asked, and no result came back. Left out instead, an
   append-only close carries no trace that anybody was ever meant to run it.
 
-  **And that silence also gets a record of its own: one `open-question` per
-  criterion.** Read which criteria were handed over out of
-  `verify_result.criteria[].verdict` — `verify` returns one entry per criterion
-  and grades it from a closed set of six values, so `handed-over` is something
-  you look up rather than something you decide. Whether the user reported back is
-  the half that is not structured: it exists only as prose in `triage_outcome`,
-  and that is what you read for silence. A criterion `triage_outcome` speaks to
-  has a result, however it went; a criterion it does not mention, or mentions
-  only to say nobody got to it, is one nobody has run. Write one record for each
-  of those, naming that criterion in the title, carrying the same `derives_from`
-  edge every other record on this close carries:
+  **And that silence is a debt the objective still owes.** Read which criteria
+  were handed over out of `verify_result.criteria[].verdict` — `verify` returns
+  one entry per criterion and grades it from a closed set of six values, so
+  `handed-over` is something you look up rather than something you decide.
+  Whether the user reported back is the half that is not structured: it exists
+  only as prose in `triage_outcome`, and that is what you read for silence. A
+  criterion `triage_outcome` speaks to has a result, however it went; a criterion
+  it does not mention, or mentions only to say nobody got to it, is one nobody has
+  run. Each of those is one line in the body of the `owed` record the `verified`
+  close below writes, and gets no `open-question` of its own.
 
-```jsonl
-{"kind":"open-question","title":"Nobody reported a result for the handed-over criterion: <the criterion, as verify quoted it>","body":"`verify` graded it `handed-over`. The script and the instructions are at <the paths verify's evidence names>. It was put to the user in triage and no result came back.","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
-```
-
-  It is the same batch file and no extra command — a line beside the others. The
-  sentence in the closing record's body stays exactly as it is; this joins it
-  rather than replacing it, and the reason is that a sentence in a body cannot be
-  counted. Of the 253 `review-finding` records across 33 logs, 76 mention a
-  handover: 16 say plainly that nobody reported, 1 says it was run, and 59 cannot
-  be classified by their text at all. The kind is what makes it actionable — the
-  default set above already says why an `open-question` is the one part of an
-  unanswered handoff a later turn picks up. One per criterion rather than one
-  listing all of them, because a record naming a single criterion is one a later
-  turn can answer and close on its own.
+  The sentence in the closing record's body stays exactly as it is; the `owed`
+  line joins it rather than replacing it, and the reason is that a sentence in a
+  body cannot be counted. Of the 253 `review-finding` records across 33 logs, 76
+  mention a handover: 16 say plainly that nobody reported, 1 says it was run, and
+  59 cannot be classified by their text at all. The kind is what makes it
+  actionable: an `owed` record is what the `verified` state points at, what
+  `memory state --text` prints under a heading of its own, and what `inbox`
+  answers when the user says how it went.
 
   **The record and the edge on one line is the whole point of writing this as a
   batch.** As two commands they were two runs, and the failure was not symmetric:
@@ -398,40 +397,51 @@ on disk.
   it. Write the state `closing_state` names and no other: whether the objective
   is met is not yours to decide.
 
-  **`blocked` is the fourth, and it is the one that is not a close.** It is what
-  `work` sends when the objective still owes a run nobody made — a criterion
-  `verify` graded `handed-over` that `triage_outcome` reports no result for, or a
-  `## Landing condition` in the draft above `worktree` that has not happened. The
-  objective stays open, keeps its approval, and waits. Write the closing
-  `review-finding` exactly as you would for any other close — the turn's checking
-  did establish something and that is what the record says — and then point a
-  `blocked` edge at the `open-question` naming what is unrun instead of a `met`
-  edge at the finding.
-
-  That question is one you are already writing when the debt is an unreported
-  handover: the `open-question` line above, one per criterion. Point the edge at
-  it. When the debt is the landing condition instead, nothing has written that
-  question yet, so write it — read `## Landing condition` out of the draft, name
-  the condition and the objective in the title, and carry the same `derives_from`
-  edge every other record on this close carries:
+  **`verified` is the fourth, and it is not a close.** It is what `work` sends
+  when the only things between this close and `met` are debts the user owes: a
+  `## Landing condition` in the draft above `worktree` that has not happened, and
+  criteria `verify` graded `handed-over` that `triage_outcome` reports no result
+  for — either of them, or both. The objective stays open, keeps its approval, and
+  waits on the user rather than on a question. Write the closing `review-finding`
+  exactly as you would for any other close, with no state edge on its line — the
+  turn's checking did establish something and that is what the record says — and
+  then one `owed` record naming every debt, with the `verified` edge on its line:
 
 ```jsonl
-{"kind":"open-question","title":"The landing condition has not happened: <the condition, as the draft states it>","body":"The draft requires <condition>. The work is verified in the worktree and nothing has <merged | pushed | deployed> it. This is the objective's own condition of arrival, not a check that fell short.","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
+{"kind":"owed","title":"<each debt in a few words, the landing first, separated by semicolons>","body":"Landing condition: <the condition, as the draft states it>. The work is verified in the worktree and nothing has <merged | pushed | deployed> it.\nHanded-over criterion: <the criterion, as verify quoted it>. The script and the instructions are at <the paths verify's evidence names>; it was put to the user in triage and no result came back.","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"},{"type":"verified","from":"<objective_id>"}]}
 ```
 
-  `blocked` accepts an `open-question` or a `decision`, and both endpoints of the
-  edge are in the same batch only if you wrote the question in it — which you did,
-  so it is the one place a state edge here points at a line of this same file. If
-  both debts are present, one edge is enough and it points at either: `work` reads
-  the whole list back out of `memory state` afterwards, and the objective is
-  blocked once however many things it waits on.
+  One line of the body per debt: the `Landing condition:` line when the landing
+  has not happened, one `Handed-over criterion:` line for each criterion nobody
+  reported on, and no line for a debt that is not there. One record per close
+  rather than one per debt, because the objective waits once on everything it
+  owes, and its title is the one line `memory state --text` prints for it under
+  **Verified, waiting on what you owe** — so the title says what is owed in words
+  the user recognises without opening the body.
 
-  A `blocked` close counts toward no parent as done, the same as `cancelled` and
-  `separated`, and for a different reason: not that the work went elsewhere but
-  that it is not finished. Only `blocked` holds the parent open; `cancelled` and
-  `separated` do not, which is why the walk below runs after them. Do not soften
-  it in the closing record's body — the reason the objective is waiting is the
-  most useful sentence on it.
+  No `open-question` and no `blocked` edge for these debts. `verified` accepts an
+  `owed` and nothing else, and both ends of the edge are on that one line. The
+  debt is settled on the user's word, through `inbox`: a `decision` quoting them that
+  answers the `owed` record, and `met` after it. Nothing infers that a landing
+  happened.
+
+  **`blocked` is the fifth, and it stays for what stops the work.** `work` sends
+  it when an open question stops the close — a real blocker, not an owed result:
+  not something the user owes but something the work cannot go on without, the
+  same kind of wall step 5 blocks on. Write the closing `review-finding` as for any
+  other close, with no state edge on its line, and put the `blocked` edge on the
+  `open-question` line of this close that names that wall, as
+  `{"type":"blocked","from":"<objective_id>"}` beside its `derives_from`.
+  `blocked` accepts an `open-question` or a `decision`. A landing that has not
+  happened and a handed-over check nobody reported on are never that question:
+  they are `verified`.
+
+  A `verified` or `blocked` close counts toward no parent as done, the same as
+  `cancelled` and `separated`, and for a different reason: not that the work went
+  elsewhere but that it is not finished. Only `verified` and `blocked` hold the
+  parent open; `cancelled` and `separated` do not, which is why the walk below
+  runs after them. Do not soften it in the closing record's body — the reason the
+  objective is waiting is the most useful sentence on it.
 
 ## After the close: the ancestor that lands
 
@@ -440,12 +450,13 @@ declares the commit, merge or deploy once for everything underneath it, and its
 children declare `worktree` and close `met` on green. `memory state` derives that
 parent `met` the moment its last child closes, and it reads no draft to do it —
 so left alone, a tree whose deploy never happened reads finished. When this
-close's batch went in and the state it wrote is anything but `blocked`, walk up
-and block the ancestor that has not arrived. `cancelled` and `separated` are not
-counted toward the parent, but they are not outstanding either: a parent whose
-last open child closes `cancelled` or `separated` derives `met` all the same, as
-long as one child counts as done. A `blocked` child stays in the parent's
-`completion.outstanding`, so after a `blocked` close there is nothing to walk.
+close's batch went in and the state it wrote is anything but `verified` or
+`blocked`, walk up and move the ancestor that has not arrived to `verified`.
+`cancelled` and `separated` are not counted toward the parent, but they are not
+outstanding either: a parent whose last open child closes `cancelled` or
+`separated` derives `met` all the same, as long as one child counts as done. A
+`verified` or `blocked` child stays in the parent's `completion.outstanding`, so
+after either close there is nothing to walk.
 
 **This is a write of its own, after the close's batch has landed, never a line of
 `close.jsonl`.** A parent's own state edge beats the derived `met` only when it is
@@ -469,8 +480,8 @@ An ancestor is read any further only when its entry has nothing in
 `completion.outstanding` and reads `state` `met` with `state_from` `children`.
 Anything else stops the walk with nothing written: an outstanding child means the tree
 is not done, and a state of its own later than its children — a `met` somebody
-wrote, a `blocked` an earlier close already put there — means somebody already
-said where it stands.
+wrote, a `verified` an earlier close already put there, a `blocked` on a question
+— means somebody already said where it stands.
 
 Open its draft the way `work`'s step 3 finds one, with `root` and `slug` out of
 that same entry pasted in literally:
@@ -485,48 +496,65 @@ Read `## Landing condition` out of the path it prints. Absent or `worktree`, thi
 ancestor arrives wherever its children did: take its own `parent` and repeat from
 the `state` read above, and stop at the root. Exit 1 — no draft — stops the walk
 with nothing written and goes in `not_recorded` naming the ancestor: a landing
-nobody can read is not one to block on, and not one to walk past either.
+nobody can read is not one to wait on, and not one to walk past either.
 
 **Above `worktree`, this is the ancestor that lands, and the walk ends here.**
-Look in that entry's `open_records` for an `open-question` titled "The landing
-condition has not happened: …".
+Ask the log whether an earlier close already left it an `owed` record:
 
-None there: write one line, to a file of its own beside that ancestor's draft
-named `landing-from-<objective_id>.jsonl`, with whatever writes files — the same
-way as `close.jsonl`:
+```bash
+memory edges --type verified --from <ancestor-id> --limit 1
+```
+
+The most recent `verified` edge from the ancestor comes back, or nothing does.
+When one comes back, its `to` is that `owed` record, and whether anything settled
+it is one more read:
+
+```bash
+memory edges --type answers --to <the owed id> --count
+```
+
+No `verified` edge, or a `count` above 0 — the debt was settled before and
+something reopened the tree — and there is no unsettled `owed` to reuse: write
+one line, to a file of its own beside that ancestor's draft named
+`landing-from-<objective_id>.jsonl`, with whatever writes files — the same way as
+`close.jsonl`:
 
 ```jsonl
-{"kind":"open-question","title":"The landing condition has not happened: <the condition, as that ancestor's draft states it>","body":"The draft requires <condition>. It arrives on <the ancestor's title>, not on its children: its children are closed, the last of them <objective_id>, and nothing has <committed | merged | deployed> it. This is the tree's condition of arrival, not a check that fell short.","about":["<the ancestor's areas>"],"edges":[{"type":"derives_from","to":"<ancestor-id>"},{"type":"blocked","from":"<ancestor-id>"}]}
+{"kind":"owed","title":"<the landing, as that ancestor's draft states it, in a few words>","body":"Landing condition: <the condition, as that ancestor's draft states it>. It arrives on <the ancestor's title>, not on its children: its children are closed, the last of them <objective_id>, and nothing has <committed | merged | deployed> it.","about":["<the ancestor's areas>"],"edges":[{"type":"derives_from","to":"<ancestor-id>"},{"type":"verified","from":"<ancestor-id>"}]}
 ```
+
+One `Landing condition:` line per line the ancestor's `## Landing condition`
+carries, since a child's check that needs the deployed system is added there as a
+line of its own.
 
 ```bash
 memory add --dir <root> --plan <plan> --batch "<the directory the draft is in>/landing-from-<objective_id>.jsonl"
 ```
 
-`<root>` and `<plan>` are the ancestor's, out of its entry, so the question goes
+`<root>` and `<plan>` are the ancestor's, out of its entry, so the record goes
 into the ancestor's own log and tree. It derives from the ancestor and not from
 this objective — the line carries that one `derives_from` and no second one to
 `objective_id`, whatever the close's rule above says of its own records — and
-that is the point of it: the debt is the ancestor's, the
-ancestor's `open_records` are where it is read back, and the decision that closes
-it — written through `inbox` when the user says it happened — answers it on the
-ancestor. `blocked` accepts an `open-question` or a `decision`, and both ends of
+that is the point of it: the debt is the ancestor's, and the decision that
+settles it — written through `inbox` when the user says it happened — answers it
+on the ancestor. `verified` accepts an `owed` and nothing else, and both ends of
 the edge are on that one line.
 
-One already there: an earlier close blocked this ancestor on it, and a child that
-closed later — this one — put a newer derived `met` over that block. Do not write
-a second question. Block the ancestor on the one it has:
+A `verified` edge whose `owed` has a `count` of 0: an earlier close left this
+ancestor `verified` on it, and a child that closed later — this one — put a newer
+derived `met` over it. Do not write a second `owed`. Point the ancestor at the one
+it has:
 
 ```bash
-memory link --dir <root> --type blocked --from <ancestor-id> --to <that question's id>
+memory link --dir <root> --type verified --from <ancestor-id> --to <the owed id>
 ```
 
-Either way, `memory state --id <ancestor-id> --all` afterwards reads `blocked`, and
-that read is how you know it landed rather than the exit code alone. The question
-goes in `records` and the edge in `edges`, with the ancestor's id as its `from` —
-which is how `work` tells the ancestor apart from this objective's own state edge
-and names it to the user. A walk that stopped before an ancestor that lands
-writes nothing and reports nothing.
+Either way, `memory state --id <ancestor-id> --all` afterwards reads `verified`,
+and that read is how you know it landed rather than the exit code alone. The
+`owed` record goes in `records` and the edge in `edges`, with the ancestor's id as
+its `from` — which is how `work` tells the ancestor apart from this objective's
+own state edge and names it to the user. A walk that stopped before an ancestor
+that lands writes nothing and reports nothing.
 
 ## The postmortem, when there is a hypothesis to derive one from
 
@@ -680,9 +708,9 @@ A single JSON object at the end of your final message:
   ],
   "closing_record": {"id": "01...", "kind": "review-finding | decision", "title": "..."},
   "state_edge": {
-    "type": "met | blocked | cancelled | separated",
+    "type": "met | verified | blocked | cancelled | separated",
     "from": "<objective_id>",
-    "to": "<closing record id>",
+    "to": "<closing record id, or the owed record's id for verified>",
     "ok": true,
     "error": "<the CLI's message, when ok is false>"
   },
@@ -693,8 +721,8 @@ A single JSON object at the end of your final message:
 ```
 
 The walk up to the ancestor that lands reports through the same fields: its
-question in `records`, its `blocked` edge in `edges` with the ancestor's id as
-`from`. Nothing is added for a walk that wrote nothing.
+`owed` record in `records`, its `verified` edge in `edges` with the ancestor's id
+as `from`. Nothing is added for a walk that wrote nothing.
 
 `status: partial` is the honest answer when some records landed and an edge did
 not. Saying so is worth more than a clean-looking report, because the orchestrator

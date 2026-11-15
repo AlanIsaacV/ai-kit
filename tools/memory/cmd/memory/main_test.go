@@ -796,11 +796,11 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 	// what the write gate accepts — so the narrowing has to show up here, or the
 	// tool advertises a kind it refuses. The ten that are left, plus the kinds
 	// widened into version 3 in place afterwards — `hypothesis`, `gotcha`,
-	// `preference`, then `idea`: a widening owes this list the same update a narrowing does, in
+	// `preference`, `idea`, then `owed`: a widening owes this list the same update a narrowing does, in
 	// the other direction, or the tool hides a value it accepts.
 	wantKinds := []string{"objective", "decision", "deviation", "assumption",
 		"open-question", "wont-fix", "dead-end", "adr", "postmortem", "review-finding",
-		"hypothesis", "gotcha", "preference", "idea"}
+		"hypothesis", "gotcha", "preference", "idea", "owed"}
 	for _, want := range wantKinds {
 		if !slices.Contains(out.EntryKinds, want) {
 			t.Errorf("kind %q went missing from the advertised set: %v", want, out.EntryKinds)
@@ -814,10 +814,10 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 	}
 	// The other direction of the same obligation: a version that *widens* a
 	// closed set has to widen this list with it, or the tool goes on hiding a
-	// value it accepts. Eleven types — version 1's six and the five states.
+	// value it accepts. Twelve types — version 1's six and the six states.
 	want := []string{
 		"implements", "derives_from", "supersedes", "answers", "caused_by", "relates_to",
-		"approved_for_execution", "met", "cancelled", "separated", "blocked",
+		"approved_for_execution", "met", "cancelled", "separated", "blocked", "verified",
 	}
 	if len(out.EdgeTypes) != len(want) {
 		t.Errorf("expected %d edge types, got %d: %v", len(want), len(out.EdgeTypes), out.EdgeTypes)
@@ -838,9 +838,10 @@ func TestKindsAdvertisesTwoScopesAndVersion3sKinds(t *testing.T) {
 		"cancelled":              {"decision"},
 		"separated":              {"decision"},
 		"blocked":                {"decision", "open-question"},
+		"verified":               {"owed"},
 	}
 	if len(out.Justifications) != len(wantJustifications) {
-		t.Errorf("expected the five states to be published, got %v", out.Justifications)
+		t.Errorf("expected the six states to be published, got %v", out.Justifications)
 	}
 	for state, kinds := range wantJustifications {
 		got, published := out.Justifications[state]

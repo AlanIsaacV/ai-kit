@@ -132,7 +132,7 @@ func TestABlockOnAnAnsweredQuestionFallsBackToThePriorState(t *testing.T) {
 // is the decision worth pinning down: the work continues, so the objective is
 // still a candidate for --current.
 func TestSeparatedAndBlockedAreOpenAndOnlyTwoStatesAreTerminal(t *testing.T) {
-	for _, s := range []State{StatePlanned, StateApprovedForExecution, StateBlocked, StateSeparated} {
+	for _, s := range []State{StatePlanned, StateApprovedForExecution, StateBlocked, StateSeparated, StateVerified} {
 		if !s.Open() {
 			t.Errorf("%q is an open state", s)
 		}

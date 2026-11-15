@@ -425,16 +425,16 @@ func TestVersion2TookNothingAwayButTheScope(t *testing.T) {
 // The widening did not leak backwards. edgeTypesV1 is its own map with its own
 // six members, and if the two had been aliased — `edgeTypesV2 = edgeTypesV1`,
 // which is two names for one map, since a map is a reference — this is the test
-// that would notice, because v1's set would have grown to eleven behind its own
+// that would notice, because v1's set would have grown to twelve behind its own
 // back.
 func TestTheWideningDidNotLeakIntoVersion1(t *testing.T) {
-	states := []EdgeType{EdgeApprovedForExecution, EdgeMet, EdgeCancelled, EdgeSeparated, EdgeBlocked}
+	states := []EdgeType{EdgeApprovedForExecution, EdgeMet, EdgeCancelled, EdgeSeparated, EdgeBlocked, EdgeVerified}
 
 	if len(edgeTypesV1) != 6 {
 		t.Fatalf("version 1 knew six edge types and still has to: %v", sortedEdgeTypes(edgeTypesV1))
 	}
-	if len(edgeTypesV2) != 11 {
-		t.Fatalf("version 2 knows version 1's six plus five states: %v", sortedEdgeTypes(edgeTypesV2))
+	if len(edgeTypesV2) != 12 {
+		t.Fatalf("version 2 knows version 1's six plus six states: %v", sortedEdgeTypes(edgeTypesV2))
 	}
 	for _, s := range states {
 		if edgeTypesV1[s] {
@@ -451,7 +451,7 @@ func TestTheWideningDidNotLeakIntoVersion1(t *testing.T) {
 	}
 	// The widening was additive and moved no version. Version 3 moved the current
 	// version afterwards, by narrowing the *kinds*, and it declared no edge set of
-	// its own — so the current edge types are still version 2's eleven, which is
+	// its own — so the current edge types are still version 2's twelve, which is
 	// the claim this test can still make about the widening.
 	if len(edgeTypes) != len(edgeTypesV2) {
 		t.Errorf("the current edge set is still version 2's: %v", EdgeTypes())
@@ -611,10 +611,10 @@ func TestTheUnitRecordsOnDiskAreJudgedByTheVersionTheyDeclare(t *testing.T) {
 func TestVersion3TookNothingAwayButTheUnitKind(t *testing.T) {
 	// Version 1's eleven minus `unit`, and every kind added to this set since. The
 	// count is written as that sum rather than as a number, because the number has
-	// already moved four times — `hypothesis`, `gotcha`, `preference`, then `idea`, widened
+	// already moved five times — `hypothesis`, `gotcha`, `preference`, `idea`, then `owed`, widened
 	// in afterwards — and a literal would have made an additive change look like a
 	// regression in the test that guards the narrowing.
-	widenedIn := []Kind{KindHypothesis, KindGotcha, KindPreference, KindIdea}
+	widenedIn := []Kind{KindHypothesis, KindGotcha, KindPreference, KindIdea, KindOwed}
 	if want := len(entryKindsV1) - 1 + len(widenedIn); len(entryKindsV3) != want {
 		t.Errorf("version 3 knows version 1's eleven minus `unit`, plus %d widened in since: %v",
 			len(widenedIn), sortedKinds(entryKindsV3))

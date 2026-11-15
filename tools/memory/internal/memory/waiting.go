@@ -41,6 +41,7 @@ func WaitingIdeas(logs []LogState) []Idea {
 const (
 	headingPlanned  = "Waiting for your approval"
 	headingBlocked  = "Blocked on a question or a decision"
+	headingVerified = "Verified, waiting on what you owe"
 	headingApproved = "Waiting for you to start it"
 	headingAside    = "Set aside"
 	headingIdeas    = "Ideas"
@@ -68,7 +69,7 @@ type waitSection struct {
 
 func RenderWaiting(logs []LogState, warnings []string) string {
 	items := map[State][]waitItem{}
-	blocked := map[string]*waitGroup{}
+	grouped := map[State]map[string]*waitGroup{StateBlocked: {}, StateVerified: {}}
 	named := map[string]bool{}
 	var anomalies []waitItem
 	total := 0
@@ -81,15 +82,16 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 			total++
 			named[log.Name] = true
 			it := waitItem{repo: log.Name, text: o.Title, id: o.ID}
-			if o.State != StateBlocked {
+			byRecord, isGrouped := grouped[o.State]
+			if !isGrouped {
 				items[o.State] = append(items[o.State], it)
 				continue
 			}
-			key, heading := blockedOn(log.Tree, o.ID)
-			g, ok := blocked[key]
+			key, heading := waitsOn(log.Tree, o.ID)
+			g, ok := byRecord[key]
 			if !ok {
 				g = &waitGroup{key: key, heading: heading}
-				blocked[key] = g
+				byRecord[key] = g
 			}
 			g.items = append(g.items, it)
 		}
@@ -115,7 +117,8 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 
 	sections := []waitSection{
 		{heading: headingPlanned, groups: oneGroup(items[StatePlanned])},
-		{heading: headingBlocked, groups: blockedGroups(blocked)},
+		{heading: headingVerified, groups: recordGroups(grouped[StateVerified])},
+		{heading: headingBlocked, groups: recordGroups(grouped[StateBlocked])},
 		{heading: headingApproved, groups: oneGroup(items[StateApprovedForExecution])},
 		{heading: headingAside, groups: oneGroup(items[StateSeparated])},
 		{heading: headingIdeas, groups: oneGroup(ideas)},
@@ -316,7 +319,7 @@ func wrapList(names []string, width int) []string {
 	return lines
 }
 
-func blockedOn(t *Tree, id string) (string, string) {
+func waitsOn(t *Tree, id string) (string, string) {
 	_, edge := t.StateEdge(id)
 	if edge == nil {
 		return "", "no state edge says what it waits on"
@@ -335,7 +338,7 @@ func oneGroup(items []waitItem) []waitGroup {
 	return []waitGroup{{items: items}}
 }
 
-func blockedGroups(byRecord map[string]*waitGroup) []waitGroup {
+func recordGroups(byRecord map[string]*waitGroup) []waitGroup {
 	out := make([]waitGroup, 0, len(byRecord))
 	for _, g := range byRecord {
 		sortItems(g.items)
