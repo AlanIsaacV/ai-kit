@@ -1,6 +1,6 @@
 ---
 name: inbox
-description: "Say what is waiting on the user across every repository on this host, and let them act on it from here without opening a session in that repository. Lists it with `memory state --all --text` — the objectives waiting on their approval, the ones verified and waiting on what the user owes, the ones blocked on a question, the ones waiting to be started, and the Ideas section — exactly as the CLI prints it, inventing no class of its own. Explains any one item from its draft, its `manual-checks.md` and its open records. Closes a `verified` objective — a handed-over check, or a landing that has not happened on an executable objective or on the parent a tree of slices lands through — from the user's own sentence: finds the objective, shows the `owed` record (or, on an objective blocked before `verified` existed, the owed questions) that sentence settles and what state it will write, and on their go writes one `decision` quoting them into that objective's own log — `met` when it worked, a fresh `blocked` on a new question when it failed, `cancelled` when they drop it, `separated` when it is not for now. Notes an idea in one line into the repository they name, or into the user log when they name none, and drops one with a `decision` that answers it. Use when somebody wants to know what they owe, or to report what happened with something they owed. Triggers on: 'qué tengo pendiente', 'qué me está esperando', 'qué hay pendiente', 'qué me falta cerrar', 'lo desplegué y funciona', 'ya lo probé y anda', 'lo corrí y falló', 'eso ya no va', 'eso para más adelante', 'idea:', 'anotá esta idea', 'descartá esa idea', 'what is waiting on me', 'what do I have pending', 'I deployed it and it works', 'I ran the check and it passed', 'it failed', 'drop that one', 'not now', 'note this idea', 'drop that idea'. It never writes a word the user did not say, never runs a handed-over check itself and never approves an objective for execution — that is `work`'s, in the repository the objective lives in."
+description: "Say what is waiting on the user across every repository on this host, and let them act on it from here without opening a session in that repository. Lists it with `memory state --all --text` — the objectives waiting on their approval, the ones verified and waiting on what the user owes, the ones blocked on a question, the ones waiting to be started, the Ideas section and the adjustments the user asked for — exactly as the CLI prints it, inventing no class of its own. Explains any one item from its draft, its `manual-checks.md` and its open records. Closes a `verified` objective — a handed-over check, or a landing that has not happened on an executable objective or on the parent a tree of slices lands through — from the user's own sentence: finds the objective, shows the `owed` record (or, on an objective blocked before `verified` existed, the owed questions) that sentence settles and what state it will write, and on their go writes one `decision` quoting them into that objective's own log — `met` when it worked, a fresh `blocked` on a new question when it failed, `cancelled` when they drop it, withdrawing what it owed, `separated` when it is not for now. Notes an idea in one line into the repository they name, or into the user log when they name none, and drops one with a `decision` that withdraws it. Notes a change the user asks for, or a 'why does it work like this?' they want revisited, as an `adjustment` in the repository it is about, deriving from the objective it touches when there is one, and closes one with a `decision` quoting them that answers or withdraws it; pointing at an existing question is not a response to it. Use when somebody wants to know what they owe, or to report what happened with something they owed. Triggers on: 'qué tengo pendiente', 'qué me está esperando', 'qué hay pendiente', 'qué me falta cerrar', 'lo desplegué y funciona', 'ya lo probé y anda', 'lo corrí y falló', 'eso ya no va', 'eso para más adelante', 'idea:', 'anotá esta idea', 'descartá esa idea', 'what is waiting on me', 'what do I have pending', 'I deployed it and it works', 'I ran the check and it passed', 'it failed', 'drop that one', 'not now', 'note this idea', 'drop that idea', 'quiero que esto cambie', 'anotá este cambio', 'ese ajuste ya está', 'I want this changed', 'note this change', 'that adjustment is done'. It never writes a word the user did not say, never runs a handed-over check itself and never approves an objective for execution — that is `work`'s, in the repository the objective lives in."
 ---
 
 # inbox
@@ -36,25 +36,31 @@ And a thought about something to do some day has had nowhere to go but an
 objective, which means planning it. An `idea` is one line in a log, listed beside
 everything else that waits, until an objective takes it up or a decision drops it.
 
+A change the user asks for, or a "why does it work like this?" they want
+revisited, is not an idea and not a question to be pointed at: it is an
+`adjustment`, listed as pending until a decision says it was done, explained and
+accepted, or withdrawn.
+
 There is **no state above `met` here, and no queue of things delivered but not yet
 confirmed beyond what a landing condition asked for.** `met` means whatever the
 objective's `## Landing condition` declared. Where the user wanted the deploy on
 the record, the landing condition already put it there as the `owed` record a
-`verified` objective waits on, which this skill closes; where they did not, there
+`verified` objective waits on, or a `blocked` one carries beside its wall, which
+this skill closes; where they did not, there
 is nothing for them to come back and confirm, and a list of such things would
 fill with records that are almost all already deployed or already dead.
 
 ## Hard rules
 
-1. **Nothing is written without the user's words.** A close, a drop, a "not now"
-   and an idea are each written because the user said so in this conversation,
+1. **Nothing is written without the user's words.** A close, a drop, a "not now",
+   an idea and an adjustment are each written because the user said so in this conversation,
    and every `decision` this skill writes quotes them verbatim. Not because the
    listing makes something look finished, not because a commit landed, not because
    a draft reads as delivered.
 2. **What a close will write is shown before it is written, and the user says go.**
-   The objective, the questions it answers, the state edge and the quote — in
-   front of them, then the write. Their sentence says what happened; the go says
-   this is the objective and these are the questions it happened to.
+   The objective, the questions it answers or withdraws, the state edge and the
+   quote — in front of them, then the write. Their sentence says what happened;
+   the go says this is the objective and these are the questions it happened to.
 3. **Never write `approved_for_execution`.** Approving an objective, building it
    and verifying it are `work`'s, run in the repository the objective lives in.
    An item waiting on approval or waiting to be started is explained here and
@@ -70,7 +76,9 @@ fill with records that are almost all already deployed or already dead.
    got (`01M3K54KA3RNRPT9V303YNK4ZT`, 2026-09-28).
 7. **Every write lands in the log its record belongs to.** A close goes into the
    objective's own log under the objective's own plan; an idea goes into the log
-   of the repository it names, or the user log when it names none, with no plan.
+   of the repository it names, or the user log when it names none, with no plan;
+   an adjustment goes into the log of the repository it is about, under the plan
+   of the objective it touches or with no plan when it touches none.
    Never the log of whatever repository this session happens to be standing in.
 8. **A batch file is written with the file-writing tool, never a heredoc, and a
    write is judged by its exit status, then read back.** The user's words go into
@@ -101,16 +109,20 @@ shell is standing in. Leave the brackets unquoted for that reason.
 Where the ids and roots come from:
 
 - **`memory state --all --text`** names every open objective with its log and its
-  id, and every idea with its log and its id.
+  id, every idea with its log and its id, and every open adjustment the same way.
 - **`memory state --all --id <objective-id>`** returns that one objective from any
   log, with its `root` (the working tree its log belongs to), its `slug`, its
-  `plan`, its `state` and its `open_records` — the `open-question` and
-  `assumption` records that derive from it and that nothing has answered.
+  `plan`, its `state` and its `open_records` — the `open-question`, `assumption`,
+  `adjustment` and `owed` records that derive from it and that nothing has
+  settled. Settled means answered, superseded or withdrawn, wherever this skill
+  says it.
 - **`memory state --all`** is the same listing as JSON. `current` carries one
   entry per log with its `repo` and `root`, which is how a repository the user
-  names becomes a `--dir`; `ideas` carries every unanswered idea as
-  `{"root","repo","id","title"}`; the user log's carry `"repo": "user"` and
-  `"root": ""`, since that log has no working tree.
+  names becomes a `--dir`; `ideas` carries every unsettled idea and `adjustments`
+  every unsettled adjustment, each as `{"root","repo","id","title"}`; the user
+  log's carry `"repo": "user"` and `"root": ""`, since that log has no working
+  tree. A single-log `memory state`, without `--all`, carries `root`, `id` and
+  `title` on each and no `repo`, which is why this skill reads `--all`.
 
 ```bash
 memory state --all | python3 -c 'import json, sys
@@ -118,15 +130,22 @@ d = json.load(sys.stdin)
 for c in d["current"]:
     print("log", c["repo"], c.get("root", ""), sep="\t")
 for i in d.get("ideas", []):
-    print("idea", i["repo"], i.get("root", ""), i["id"], i["title"], sep="\t")'
+    print("idea", i["repo"], i.get("root", ""), i["id"], i["title"], sep="\t")
+for a in d.get("adjustments", []):
+    print("adjustment", a["repo"], a.get("root", ""), a["id"], a["title"], sep="\t")'
 ```
 
 The surface is twelve commands and this skill uses five of them: `state`, `add`,
 `link`, and `edges` and `query` to find and read the `owed` record a `verified`
-objective waits on. `memory kinds` stays worth running for which record kind each
+objective waits on — `query` also reads the `owed` a `blocked` objective lists in
+its `open_records`, and an adjustment whole before closing it. `memory kinds` stays worth running for which record kind each
 state edge accepts: `met` a `decision` or a `review-finding`, `verified` an
 `owed` alone, `blocked` an `open-question` or a `decision`, `cancelled` and
-`separated` a `decision` alone.
+`separated` a `decision` alone. It also lists `withdraws`, the edge this skill
+writes from a `decision` to a record it retires without answering — an `owed`,
+an `open-question`, an `idea` or an `adjustment`, never an objective — with the
+reason on a `Reason: obsolete` or `Reason: no-longer-applies` line of that
+decision's body.
 
 ## Steps
 
@@ -138,7 +157,8 @@ memory state --all --text
 
 Show it as it came back, in a code block, then one or two lines in the user's
 language saying what they can do from here: have any one item explained, report
-what happened with one, drop one or set it aside, note an idea. Do not re-sort it,
+what happened with one, drop one or set it aside, note an idea, note a change
+they want or close one they asked for. Do not re-sort it,
 do not collapse **Nothing waiting**, and do not annotate an item with anything the
 listing does not carry.
 
@@ -148,13 +168,20 @@ on, whose title says on one line what is owed — headed the same way whether th
 objective under it is an executable one or a parent whose children have all
 closed. Each of them is one the user can close from here, step 3.
 **Blocked on a question or a decision** is for what stops the work: a question
-nobody has answered, a wall outside it. It also still holds objectives closed
+nobody has answered, a wall outside it. An objective blocked on a wall can owe a
+landing or a handed-over check as well, in an `owed` record `record` wrote beside
+the wall and its `open_records` carry; step 2 explains it and step 3 closes it,
+and the wall stays what the objective is blocked on. It also still holds objectives closed
 before `verified` existed, blocked on an `open-question` titled "Nobody reported a
 result for the handed-over criterion: …" or "The landing condition has not
 happened: …"; those are owed too, nothing migrated them, and step 3 closes them
 the way it always has.
-**Ideas** lists every idea no record answers, each with the name of the log it
-lives in — `user` for the user log — and its id.
+**Ideas** lists every idea no record has settled (answered, superseded or
+withdrawn), each with the name of the log it lives in — `user` for the user log —
+and its id.
+**Adjustments you asked for** lists every `adjustment` nothing has settled, one
+line each, the way Ideas does: the changes the user asked for, and the "why does
+it work like this?" they wanted revisited, until a decision closes them, step 7.
 
 When the user opened with a sentence about one item instead of a question about
 all of them — "lo desplegué y funciona" — this listing is still the first read,
@@ -201,6 +228,14 @@ and its `to` is the record, read whole out of the objective's own log:
 memory query --dir <root> --id <owed-id>
 ```
 
+When its `state` is `blocked`, no `verified` edge names what it owes: a `blocked`
+close that also left a landing or a handed-over check unreported wrote the `owed`
+beside the wall with no state edge on it. It is the entry of kind `owed` in
+`open_records`, and its `id` there is the `<owed-id>` the same `memory query`
+reads whole. A `blocked` objective with no `owed` in `open_records` owes nothing
+through one — what it owes, if anything, is the old-titled questions step 1
+names.
+
 Then explain it from those sources and nothing else, saying which one each part
 came from:
 
@@ -213,12 +248,16 @@ came from:
 - **From `manual-checks.md`**, when there is one: what each check proves, how to
   run it, what a pass looks like, and what it touches when it runs. Read out, never
   run (rule 4).
-- **From the `owed` record**, on a `verified` objective: each debt its body
-  names, one per line — the landing condition, each handed-over criterion nobody
-  reported on. That is the whole of what the user owes it.
+- **From the `owed` record**, on a `verified` objective or a `blocked` one that
+  lists one: each debt its body names, one per line — the landing condition, each
+  handed-over criterion nobody reported on. That is the whole of what the user
+  owes it; on a `blocked` objective the wall is not among it — it is what stops
+  the work, not a result the user owes.
 - **From `open_records`**: the question the objective is blocked on first, then the
-  other open questions by title. Assumptions are named by count and listed only when
-  asked — an objective can carry twenty, and none of them is something the user owes.
+  other open questions and any open adjustment by title. Assumptions are named by
+  count and listed only when asked — an objective can carry twenty, and none of
+  them is something the user owes. An unsettled `owed` record shows there too; it
+  is the one read above, not a second debt.
 
 What cannot be established from those — no draft, no instructions where a
 criterion says there should be some — is said as a gap, in one line. An objective
@@ -231,7 +270,9 @@ whole of what it owes.
 When the user then asks how something in that repository works — the route the
 policy gates, what the harness actually sends — that is `ask`: invoke it through
 the Skill tool (`ai-kit:ask`), with the question and `<root>` as the repository
-it is pointed at. Not before they ask.
+it is pointed at. Not before they ask. When what they say is that it should work
+otherwise, or that the reason it works this way should be revisited, that is not
+a question to answer or an old question to point at: it is an adjustment, step 7.
 
 ### 3 — Close a handover or a landing from the user's words
 
@@ -267,8 +308,16 @@ alone, and it derives from the parent itself. Any `open-question` in
 `open_records` titled the old way below that the same sentence settles is owed
 too, and is settled on the same line.
 
+**A `blocked` objective with an `owed` in `open_records` owes what that record
+names**, read with the `memory query` in step 2; keep its id in hand. `record`
+wrote it beside the wall on a `blocked` close that also left a landing or a
+handed-over check unreported. The question the objective is blocked on — the one
+step 1's listing shows it under — is that wall: it is not owed, and nothing this
+skill writes answers it.
+
 **A `blocked` objective closed before `verified` existed owes its owed
-questions**, picked out of `open_records`: the one the objective is blocked on,
+questions**, and has no `owed` in `open_records` — that is how the two are told
+apart. They are picked out of `open_records`: the one the objective is blocked on,
 and any other `open-question` naming a handed-over criterion or the landing
 condition — `record` titled them "Nobody reported a result for the handed-over
 criterion: …" and "The landing condition has not happened: …". The landing
@@ -285,7 +334,8 @@ same objective also handed over. When it is unclear which checks their words
 cover, ask rather than rounding up.
 
 Then decide what the write is, from their words and the draft's
-`## Landing condition`:
+`## Landing condition`. On a `verified` objective, or one blocked on owed
+questions:
 
 - **It worked, and nothing the objective owes is left.** Every debt its `owed`
   record names, or every owed question, is among what their words settle, and the
@@ -316,6 +366,30 @@ Then decide what the write is, from their words and the draft's
   on the second line of the same batch. The objective stays open and the listing now
   says what it is really waiting on — a fix, not a run.
 
+On a `blocked` objective that owes through an `owed` record, the wall is still
+there whatever the user reports, and no write here takes the objective out of
+`blocked`:
+
+- **It worked, and nothing its `owed` names is left.** One `decision` quoting
+  them, an `answers` edge on the `owed`, and no state edge: no `met`, because the
+  wall still stops the work and a `met` would close the objective over it. The
+  `blocked` edge points at the wall question, not at the `owed`, so answering the
+  `owed` leaves it standing: the objective stays `blocked` on its wall, owing
+  nothing.
+- **It worked, and something is still owed** — the same as on a `verified`
+  objective: say what the `owed` still names that their words did not settle,
+  and write nothing until they report the rest.
+- **It failed.** The `decision` answers the `owed` with the failure, as on a
+  `verified` objective, and a new `open-question` naming what failed goes on the
+  second line of the same batch with a `blocked` edge from the objective: the
+  block is re-pointed at the failure. The latest `blocked` edge is the one the
+  objective reads, so it is listed blocked on the failure; the wall question stays
+  open and unanswered, and its own `blocked` edge stays in the log. When a fix
+  answers the failure question, that block is released and the objective falls
+  back onto the edge to the wall, still `blocked` while the wall stands. Left
+  without the `blocked` edge, the failure would be a question nothing waits on,
+  and clearing the wall would let the objective fall back past it.
+
 Dropping the objective and setting it aside are step 4.
 
 #### Show what will be written, and wait
@@ -329,7 +403,18 @@ In the user's language, before any file exists:
 > Con tus palabras: "<their sentence, verbatim>". ¿Lo escribo?
 
 For a failure, the line says `blocked` and names the new question's title. For
-something still owed, it names what the objective will be left blocked on. When
+something still owed, it names what the objective will be left blocked on. On a
+`blocked` objective that owes through an `owed` record, it says it stays
+`blocked`, and on what:
+
+> Voy a responder, en `<repo>` — `<objective title>` (`<objective-id>`):
+> - `<owed-id>` — `<its title>`
+>
+> Sigue `blocked` en "<the wall question's title>": eso no lo resuelve esto.
+> Con tus palabras: "<their sentence, verbatim>". ¿Lo escribo?
+
+For a failure there, the last line before the quote names the new question and
+says the objective will be blocked on it, with the wall still open behind it. When
 the write is `met`, `cancelled` or `separated` and the objective has a `parent`,
 one more line says what follows it:
 
@@ -376,12 +461,24 @@ on it — or, on a parent blocked before `verified` existed, the landing questio
 child closed, so `memory state` reads it as the parent's own state rather than
 one derived from its children.
 
+It worked, nothing left, on a `blocked` objective that owes through an `owed`
+record — no state edge, so the objective stays blocked on its wall:
+
+```jsonl
+{"kind":"decision","title":"Owed reported done while blocked: <what they ran or did, in one line>","body":"The user's words: \"<verbatim>\"\nSettles: <the owed id> — <the owed title>.\nLanding condition: <as the draft states it>.\nOutcome: still blocked on <the wall question id> — <its title>; nothing is owed.","about":["handover","<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"answers","to":"<owed-id>"}]}
+```
+
 It failed:
 
 ```jsonl
 {"kind":"decision","title":"Handover reported failed: <the check>, <how it failed>","body":"The user's words: \"<verbatim>\"\nSettles: <each question id and title> — it was run, and it failed.\nOutcome: blocked on the open question naming the failure.","about":["handover","<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"answers","to":"<question-id>"}]}
 {"kind":"open-question","title":"<the check> failed when the user ran it: <the failure, in one line>","body":"Reported through inbox: \"<verbatim>\"\nThe check: <the criterion or landing condition, as the draft states it>; instructions at <the manual-checks.md path, or none for a landing>.\nWhat it needs is a fix, then a run.","about":["handover","<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"blocked","from":"<objective-id>"}]}
 ```
+
+On a `verified` objective and on a `blocked` one that owes through an `owed`
+record, `<question-id>` in the first line is the `<owed-id>`, and `Settles:`
+names it. On the `blocked` one, `Outcome:` also names the wall question, still
+open behind the new one.
 
 `answers` and `derives_from` are spelled `"to"` because this line's record is
 their source; `met` and `blocked` are spelled `"from"` because the objective is
@@ -412,9 +509,10 @@ memory state --all --id <objective-id>
 ```
 
 Read `state` out of this, not out of the exit status alone. It should be the state
-you showed them: `met`, or `blocked` on the question you named. The questions this
-write answered should be gone from `open_records`, and on a failure the new
-question should be on it. A `verified` objective that went `met` is gone from
+you showed them: `met`, or `blocked` on the question you named — on a `blocked`
+objective that owed through an `owed` record and reported it done, still
+`blocked` on its wall. The questions and the `owed` this write answered should be
+gone from `open_records`, and on a failure the new question should be on it. A `verified` objective that went `met` is gone from
 **Verified, waiting on what you owe** in the next `memory state --all --text`.
 Say it in one line — the objective, its state now, and what is still open on it.
 The assumptions `plan` recorded stay listed after a `met`; that is what an
@@ -438,14 +536,16 @@ keeps it outstanding on its parent, and there is nothing to walk.
 Follow "After the close: the ancestor that lands" in `agents/record.md`, resolved
 against the ai-kit clone as the runtime reference says, with the objective this
 batch just closed as its `<objective_id>`. It holds here as written: the same
-draft lookup, the same `memory edges --type verified --from <ancestor-id> --limit 1`
-and `memory edges --type answers --to <the owed id> --count` asking whether the
-ancestor already has an unsettled `owed` record, the same one `owed` line with
-its `verified` edge in `landing-from-<objective-id>.jsonl` beside the ancestor's
-draft when it has none — written with the file-writing tool, rule 8 — the same
+draft lookup, the same reading of the ancestor's `open_records` in
+`memory state --all --id <ancestor-id>` for an `owed` nothing has answered,
+superseded or withdrawn, the same one `owed` line with its `verified` edge in
+`landing-from-<objective-id>.jsonl` beside the ancestor's draft when it has none
+— written with the file-writing tool, rule 8 — the same
 `memory add --dir <root> --plan <plan> --batch …` with the ancestor's own `root`
-and `plan`, and the same rule that an ancestor that already has one is pointed at
-it with `memory link --dir <root> --type verified` rather than given a second.
+and `plan`, and the same rules for an ancestor that already has one: pointed at
+it with `memory link --dir <root> --type verified` rather than given a second
+when its body carries every line of the draft's `## Landing condition`, and
+given a new `owed` superseding it when it does not.
 That `owed` record quotes nobody and settles nothing; it is the consequence of
 the close the user already said go to, announced in the line shown before it.
 
@@ -463,15 +563,22 @@ line; one that stopped on an ancestor with no draft says so, naming it.
 exactly as step 3 does, and both are one line written to the same place:
 
 ```jsonl
-{"kind":"decision","title":"Dropped: <objective title>","body":"The user's words: \"<verbatim>\"\nOutcome: cancelled.","about":["<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"cancelled","from":"<objective-id>"}]}
+{"kind":"decision","title":"Dropped: <objective title>","body":"The user's words: \"<verbatim>\"\nWithdraws: <each owed id and title>.\nReason: no-longer-applies\nOutcome: cancelled.","about":["<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"withdraws","to":"<owed-id or question-id>"},{"type":"cancelled","from":"<objective-id>"}]}
 {"kind":"decision","title":"Set aside for now: <objective title>","body":"The user's words: \"<verbatim>\"\nOutcome: separated.","about":["<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"},{"type":"separated","from":"<objective-id>"}]}
 ```
 
 One of those lines, never both. A dropped objective's `owed` record and owed
-questions will never be settled, and its decision answers each of them, one
-`answers` edge apiece; a set-aside objective's stay open, because the work they
-wait on is still coming. Then the same `memory add --dir <root> --plan <plan> --batch …`,
-the same read-back, and the same walk to the ancestor that lands.
+questions will never be answered: the work they wait on is not going to happen.
+So its decision withdraws each of them, one `withdraws` edge apiece before the
+`cancelled` edge, with `Reason: no-longer-applies` in its body — never an
+`answers`, which would assert a result nobody reported. An objective that owes
+nothing gets neither the `Withdraws:` and `Reason:` lines nor a `withdraws` edge.
+The list shown before the write names them under "Retira:" instead of "Responde
+a:". A set-aside objective's stay open,
+because the work they wait on is still coming. Then the same
+`memory add --dir <root> --plan <plan> --batch …`, the same read-back — the
+withdrawn records gone from `open_records` — and the same walk to the ancestor
+that lands.
 
 ### 5 — Note an idea
 
@@ -508,19 +615,24 @@ as it came back, and write nothing in its place.
 
 ### 6 — Drop or take up an idea
 
-**Dropping** is a `decision` that answers it, written into the idea's own log —
+**Dropping** is a `decision` that withdraws it, written into the idea's own log —
 the `root` the `idea` line of the listing command printed, or the user log when
 its repository is `user` and its `root` is empty. It is the same rule an `open-question` follows: an idea
-leaves the Ideas section when something answers it, and nothing else removes it.
-Write the line with the file-writing tool into this session's scratch directory,
-never into a repository's tracked tree:
+leaves the Ideas section when something settles it — an answer, a `supersedes`
+or a `withdraws` — and nothing else removes it. A dropped idea answered nothing,
+so the decision carries a `withdraws` edge and a `Reason:` line, and no
+`answers`. Write the line with the file-writing tool into this session's scratch
+directory, never into a repository's tracked tree:
 
 ```jsonl
-{"kind":"decision","title":"Idea dropped: <idea title>","body":"The user's words: \"<verbatim>\"","about":["idea","<area>"],"edges":[{"type":"answers","to":"<idea-id>"}]}
+{"kind":"decision","title":"Idea dropped: <idea title>","body":"The user's words: \"<verbatim>\"\nReason: obsolete","about":["idea","<area>"],"edges":[{"type":"withdraws","to":"<idea-id>"}]}
 ```
 
-`about` follows the same rule as the idea's own: `idea` always, and the area only
-when the user names one — `["idea"]` when they do not.
+`Reason:` is `obsolete` when the idea was overtaken or is simply not wanted any
+more, and `no-longer-applies` when what it was for is gone; their words say which,
+and `obsolete` is the one when they do not. `about` follows the same rule as the
+idea's own: `idea` always, and the area only when the user names one — `["idea"]`
+when they do not.
 
 ```bash
 env -u AI_KIT_PLAN memory add --dir <root> --batch <scratch>/inbox-drop-idea-<UTC timestamp>.jsonl
@@ -534,8 +646,91 @@ error goes to the user as it came back. On 0, the next listing no longer shows i
 **Taking it up** is planning it, and this skill does not plan. Say, in one line,
 to run `plan` in `<root>` with the idea as the request and its id beside it, so
 the objective `plan` records can carry an `answers` edge to the idea. Until
-something answers it, it stays listed — which is correct, since until then nobody
+something settles it, it stays listed — which is correct, since until then nobody
 has taken it up.
+
+### 7 — Note an adjustment, and close one
+
+"Quiero que el listado no muestre las asunciones", "¿por qué esto bloquea si es
+solo una duda? revisalo" — a change the user asks for, or a "why does it work like
+this?" they want revisited, is an `adjustment`. It is not answered by pointing at
+an `open-question` already in the log on the same ground: an old question says
+somebody once wondered, not that anything is going to change, and citing it
+leaves the user's request with no record and nothing listing it. Name the old
+question if it bears on the request, and write the adjustment all the same.
+
+Write it as it came: a title of one line, in English, saying the change they want
+or the behaviour they want revisited; a body quoting them verbatim; `about` the
+areas it touches. It goes into the log of the repository it is about, found the
+way step 5 finds a repository's `root`. An adjustment is about something that
+works a certain way somewhere, so when neither their words nor the conversation
+name the repository, ask which one rather than filing it in the user log.
+
+When it is about an objective — the one being explained, or one their words
+match in step 1's listing, resolved as step 3 resolves one, with the same
+`AskUserQuestion` when two match — it derives from that objective and goes under
+its plan, as one line written with the file-writing tool beside the objective's
+draft, at `<root>/.ai-kit/plans/<objective-slug>/inbox-adjustment-<UTC timestamp>.jsonl`:
+
+```jsonl
+{"kind":"adjustment","title":"<the change they want, one line>","body":"The user's words: \"<verbatim>\"","about":["<area>","<objective-slug>"],"edges":[{"type":"derives_from","to":"<objective-id>"}]}
+```
+
+```bash
+memory add --dir <root> --plan <plan> --batch <root>/.ai-kit/plans/<objective-slug>/inbox-adjustment-<UTC timestamp>.jsonl
+```
+
+When it touches no objective, it is plan-less, kept out of every tree the way an
+idea is: the same line without the `derives_from` edge and without the slug in
+`about`, written with the file-writing tool into this session's scratch
+directory, since the user's words are in it (rule 8):
+
+```bash
+env -u AI_KIT_PLAN memory add --dir <root> --batch <scratch>/inbox-adjustment-<UTC timestamp>.jsonl
+```
+
+The sentence was the instruction, so there is no confirmation round beyond
+resolving the objective: check the exit status. Exit 0 and you say in one line
+which log it went into, its id and the objective it derives from, if any; the
+next `memory state --all --text` lists it under **Adjustments you asked for**, and
+the objective's `open_records` carry it. Any other exit and nothing landed: show
+the CLI's error as it came back, and write nothing in its place.
+
+**Closing one** is a `decision` quoting the user, written into the adjustment's
+own log — the `root` its `adjustment` line of the listing command printed — and
+only on their words about it. Match those words against **Adjustments you asked
+for**; two that match are one `AskUserQuestion`, as in step 3. Two closes, one
+line each, never both:
+
+- **Done, or explained and accepted** — "ya está cambiado", "ok, entiendo por qué,
+  dejalo así": the decision `answers` it, and its body says which.
+- **No longer wanted** — "eso ya no hace falta": the decision withdraws it, with a
+  `Reason:` line chosen as step 6 chooses one, and no `answers`.
+
+```jsonl
+{"kind":"decision","title":"Adjustment closed: <adjustment title>","body":"The user's words: \"<verbatim>\"\nOutcome: <done | explained and accepted>.","about":["<area>"],"edges":[{"type":"answers","to":"<adjustment-id>"}]}
+{"kind":"decision","title":"Adjustment withdrawn: <adjustment title>","body":"The user's words: \"<verbatim>\"\nReason: <obsolete | no-longer-applies>","about":["<area>"],"edges":[{"type":"withdraws","to":"<adjustment-id>"}]}
+```
+
+Write that line with the file-writing tool into this session's scratch directory.
+It goes under the adjustment's own plan, read off the record whole:
+
+```bash
+env -u AI_KIT_PLAN memory query --dir <root> --id <adjustment-id>
+```
+
+A record whose `origin` carries a `plan` is closed with the first command below,
+under that plan; one whose `origin` carries none with the second; one of them,
+never both:
+
+```bash
+memory add --dir <root> --plan <plan> --batch <scratch>/inbox-close-adjustment-<UTC timestamp>.jsonl
+env -u AI_KIT_PLAN memory add --dir <root> --batch <scratch>/inbox-close-adjustment-<UTC timestamp>.jsonl
+```
+
+Exit status first, as in step 6. On 0, the next listing no longer shows it under
+**Adjustments you asked for**, and the objective it derives from no longer carries
+it in `open_records`.
 
 ## Key principles
 
@@ -544,9 +739,14 @@ has taken it up.
 - **Shown, then written.** The objective and the questions go in front of them
   before the batch exists, because a close on the wrong objective is permanent.
 - **Written where it belongs.** An objective's close into its own log and plan, an
-  idea into the log it names; this session's repository is not a default.
+  idea into the log it names, an adjustment into the log of the repository it is
+  about; this session's repository is not a default.
+- **Withdrawn is not answered.** What is dropped — an idea, an adjustment no
+  longer wanted, what a cancelled objective owed — is retired with `withdraws` and
+  a `Reason:`, never with an `answers` that claims an answer nobody gave.
 - **`met` is what the landing condition said.** No state above it, and nothing
-  to confirm beyond the `owed` record a `verified` objective waits on; a deploy is
+  to confirm beyond the `owed` record a `verified` objective waits on or a
+  `blocked` one carries beside its wall; a deploy is
   on the record only where the objective, or the parent its slices land through,
   asked for it.
 - **Read back, not reported.** An exit status says the write was accepted; `state`

@@ -1728,11 +1728,16 @@ func cmdState(args []string) error {
 		rep = filtered
 	}
 
+	log := memory.LogState{Name: loc.Name(), Root: loc.Repo, Tree: tree, Report: rep}
 	if *text {
-		fmt.Print(memory.RenderWaiting([]memory.LogState{{Name: loc.Name(), Root: loc.Repo, Tree: tree, Report: rep}}, nil))
+		fmt.Print(memory.RenderWaiting([]memory.LogState{log}, nil))
 		return nil
 	}
 
+	adjustments := memory.WaitingAdjustments([]memory.LogState{log})
+	for i := range adjustments {
+		adjustments[i].Repo = ""
+	}
 	thisCall.found(len(rep.Objectives), len(rep.Objectives), false, false)
 	emit(map[string]any{
 		"path": loc.Path, "scope": loc.Scope,
@@ -1743,6 +1748,7 @@ func cmdState(args []string) error {
 		"excluded":        rep.Excluded,
 		"current":         rep.Current,
 		"anomalies":       rep.Anomalies,
+		"adjustments":     adjustments,
 		"interpreted":     interp,
 	})
 	return nil
@@ -1833,6 +1839,7 @@ func stateAcrossLogs(id string, text bool, interp map[string]any) error {
 		"current":     merged.Current,
 		"anomalies":   merged.Anomalies,
 		"ideas":       memory.WaitingIdeas(logs),
+		"adjustments": memory.WaitingAdjustments(logs),
 		"interpreted": interp,
 	})
 	return nil

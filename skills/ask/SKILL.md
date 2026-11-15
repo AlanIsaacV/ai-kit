@@ -1,6 +1,6 @@
 ---
 name: ask
-description: "Answer a question about how a repository works, from the code and from the log, in one narrative where every claim carries its citation — `path:line` for anything read off the code, a record id and that record's date for anything that came out of the memory log. Routes by what the question asks for: mechanism is read from the code through the `explore` subagent; a *why*, *what was decided*, *what went wrong* or *what to do* is a question the code can never be asked, so it is read from the log. Says which record kinds it consulted and says plainly when the log holds nothing. The answer is ephemeral: nothing is stored unless the person asking says it is worth keeping, and then only its code claims, with anchors, so the next ask over the same ground is a mechanical check instead of a second exploration. Read-only over the repository it is pointed at, and it can be pointed at a repository other than the one it runs in. Use when somebody wants to understand something rather than change it. Triggers on: 'cómo funciona esto', 'cómo funciona X acá', 'explicame este repo', 'explicame cómo anda', 'dónde está X', 'de dónde sale esto', 'quién llama a esto', 'por qué está hecho así', 'por qué se hizo de esta forma', 'qué se decidió sobre X', 'qué salió mal con X', 'qué pasó con X', 'hay algo escrito sobre esto', 'cómo se hace X en este proyecto', 'how does this work', 'how does X work here', 'explain this repo', 'walk me through X', 'where does this happen', 'who calls this', 'why is it built this way', 'why did we do it like this', 'what was decided about X', 'what went wrong with X', 'is there anything written about this'. It answers and stops: it never edits the repository, never authors an objective and never invokes `plan`, `work` or `debug`."
+description: "Answer a question about how a repository works, from the code and from the log, in one narrative where every claim carries its citation — `path:line` for anything read off the code, a record id and that record's date for anything that came out of the memory log. Routes by what the question asks for: mechanism is read from the code through the `explore` subagent; a *why*, *what was decided*, *what went wrong* or *what to do* is a question the code can never be asked, so it is read from the log. Says which record kinds it consulted and says plainly when the log holds nothing. The answer is ephemeral: nothing is stored unless the person asking says it is worth keeping, and then only its code claims, with anchors, so the next ask over the same ground is a mechanical check instead of a second exploration; a change they ask for, or a 'why' they say should be revisited, is stored as one `adjustment` only when they ask for it to be kept. Read-only over the repository it is pointed at, and it can be pointed at a repository other than the one it runs in. Use when somebody wants to understand something rather than change it. Triggers on: 'cómo funciona esto', 'cómo funciona X acá', 'explicame este repo', 'explicame cómo anda', 'dónde está X', 'de dónde sale esto', 'quién llama a esto', 'por qué está hecho así', 'por qué se hizo de esta forma', 'qué se decidió sobre X', 'qué salió mal con X', 'qué pasó con X', 'hay algo escrito sobre esto', 'cómo se hace X en este proyecto', 'how does this work', 'how does X work here', 'explain this repo', 'walk me through X', 'where does this happen', 'who calls this', 'why is it built this way', 'why did we do it like this', 'what was decided about X', 'what went wrong with X', 'is there anything written about this'. It answers and stops: it never edits the repository, never authors an objective and never invokes `plan`, `work` or `debug`."
 ---
 
 # ask
@@ -64,7 +64,10 @@ skill; a human invokes it, and it answers and stops.
    answer took a while to produce. And when they do ask: **only code claims are
    written.** A claim that came out of the log is already in the log, and writing
    it again stores one fact twice under two ids with nothing saying which copy is
-   authoritative.
+   authoritative. The one other record is an `adjustment`: when they ask for a
+   change, or say the *why* should be revisited, and ask for that to be kept, it
+   is written once, by step 8 — and when they do not ask for it to be kept,
+   nothing is.
 6. **Every claim this skill writes carries at least one `--anchor`.** The rule
    lives here and the CLI does not enforce it: `memory kinds` reports
    `anchored_kinds` as `gotcha` alone, so an unanchored `review-finding` is
@@ -110,9 +113,12 @@ skill; a human invokes it, and it answers and stops.
     is ceremony charged to the user.
 13. **It answers and stops.** No objective, no criteria, no fix, no invocation of
     `plan`, `work` or `debug`. When the answer turns up work worth doing, name it
-    in one line and leave the next move to the user.
+    in one line and leave the next move to the user. A change the person asks for
+    is kept as an `adjustment` when they ask for it to be kept, step 8; that is a
+    record of their request, not a plan for it.
 14. **Conversation in the user's language; everything written to disk in
-    English.**
+    English** — except the person's own words in an `adjustment`, quoted exactly
+    as they said them.
 
 ## The memory log
 
@@ -225,6 +231,11 @@ one for a single writer of unknown frequency was weighed and declined. What that
 costs is real and worth knowing: these records share a kind with the findings
 `review` produces, so a `--kind review-finding` query that omits `--plan` will mix
 them. Always pass `--plan repo-questions` on both the read and the write.
+
+The one other record this skill writes is an `adjustment`, by step 8 and only on
+its trigger. It is not a claim about the code and does not go under
+`repo-questions`: it is the person's request, so it goes under the plan of the
+objective it touches, or under none.
 
 The surface is twelve commands and these are all of them: `init`, `add`,
 `link`, `query`, `search`, `areas`, `anchors`, `edges`, `state`, `promote`,
@@ -506,7 +517,8 @@ nowhere.
 Then stop. If the answer surfaced work worth doing — a bug, a contradiction between
 the log and the code, a decision nobody recorded — say it in one line and leave the
 next move to the user. Turning an answer into an objective is `plan`'s job, invoked
-by them.
+by them. A change they ask for in reply is step 8's, and only when they ask for it
+to be kept.
 
 ### 6 — Persist, only if asked, and only the code claims
 
@@ -671,6 +683,69 @@ holds.
 The user's confirmation is not a formality. A `changed` verdict says the lines
 moved, not what is true now, and writing a revision they never agreed to would put
 this skill's own reading on disk as though somebody had checked it.
+
+### 8 — When the person asks for a change, and asks to keep it
+
+Two things have to be said, both in words, in this conversation: that something
+should work otherwise, or that the *why* behind it should be revisited — "esto no
+debería bloquear", "habría que revisar por qué se hizo así" — and that it should
+be kept — "anotalo", "dejalo registrado". The first without the second writes
+nothing: name the change in one line, as rule 13 says, and stop. The second
+without the first is step 6's, for code claims.
+
+Both said, this skill writes **one `adjustment`**, and nothing else for it. Not a
+`review-finding`, which is a claim about the code and not a request; and not a
+pointer at an `open-question` step 3 found on the same ground. Cite that question
+in the answer if it bears on the request, but a question somebody once raised is
+not the change this person asked for, and only the adjustment keeps their
+request listed as pending until a decision settles it.
+
+Whether it touches an open objective in the target repository is read off that
+repository's own listing:
+
+```bash
+memory state --dir <target-repo> --text --here
+```
+
+When the person names one, or one title plainly is the surface the change is
+about, read it for its `plan`:
+
+```bash
+memory state --dir <target-repo> --id <objective-id>
+```
+
+Two that could be it are one `AskUserQuestion`; none, and the adjustment derives
+from nothing.
+
+Write one line with the file-writing tool into scratch outside the target repo:
+a title of one line, in English, saying the change they asked for; a body quoting
+them verbatim and naming the question it came up under; `about` the areas it
+touches, the same tags step 6 would use; and a `derives_from` edge to the
+objective it touches, left out when it touches none.
+
+```jsonl
+{"kind":"adjustment","title":"<the change they asked for, in one line>","body":"The user's words: \"<verbatim>\"\nAsked while answering: <the question>","about":["<area>","<path-prefix>/"],"edges":[{"type":"derives_from","to":"<objective-id>"}]}
+```
+
+Then the one command that fits — the first under the objective's plan, the second
+when it derives from nothing; one of them, never both:
+
+```bash
+memory add --dir <target-repo> --plan <plan> --batch <scratch>/ask-adjustment-<UTC timestamp>.jsonl
+env -u AI_KIT_PLAN memory add --dir <target-repo> --batch <scratch>/ask-adjustment-<UTC timestamp>.jsonl
+```
+
+`env -u AI_KIT_PLAN` keeps a plan-less adjustment out of whatever tree the
+environment names, since `add` stamps `AI_KIT_PLAN` when no `--plan` is given.
+An adjustment is not a claim, so rule 6 does not reach it and it carries no
+anchor; it writes to the log and touches nothing else in the repository, so rule
+1 holds.
+
+Exit status first: any exit but 0 means nothing landed, and the CLI's error goes
+to the person as it came back. On 0, say in one line which log it went into, its
+id and the objective it derives from, if any. From then on `memory state --text`
+lists it under **Adjustments you asked for** until a `decision` answers it or
+withdraws it — `inbox` is where the person closes it.
 
 ## Key principles
 

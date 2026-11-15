@@ -261,8 +261,8 @@ func validateEntryV2(e *Entry) []Problem {
 
 // validateEdgeV2 is the complete rule set for an edge written under schema
 // version 2. It differs from validateEdgeV1 in one rule, the edge-type set:
-// version 2 widened it from six types to twelve by adding the state edges, and
-// edgeTypesV1 still holds the six it was written with.
+// version 2 widened it from six types to thirteen by adding the state edges and
+// `withdraws`, and edgeTypesV1 still holds the six it was written with.
 //
 // It was written out in full rather than delegated to validateEdgeV1 back when
 // the two were rule for rule identical, and that was not ceremony. The first
@@ -325,7 +325,7 @@ func validateEntryV3(e *Entry) []Problem {
 
 // validateEdgeV3 is the complete rule set for an edge written under schema
 // version 3. Version 3 changed nothing about how an edge is judged: the type set
-// is edgeTypesV2's twelve, and every other rule is the rule version 2 stated.
+// is edgeTypesV2's thirteen, and every other rule is the rule version 2 stated.
 //
 // So it looks like a copy, and the copy is not optional — this is validateEdgeV2's
 // own lesson applied a second time. The first rule any version states is which

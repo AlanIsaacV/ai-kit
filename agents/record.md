@@ -1,6 +1,6 @@
 ---
 name: record
-description: "Write the memory records and edges that close one objective: what the turn decided, what it had to assume, what it left open, the `wont-fix` records triage produced, the closing `review-finding` and the state edge, the `owed` record a `verified` close waits on, and — when a close that is neither `verified` nor `blocked` leaves an ancestor whose draft declares a landing with nothing outstanding — the `owed` record and `verified` edge that keep that ancestor waiting on its landing. Use as the last step of the `work` skill, once implementation, verification and triage with the user are done. It reads the objective's draft and the diff itself rather than being handed a summary, and it writes to the log through the `memory` CLI only — never to project source."
+description: "Write the memory records and edges that close one objective: what the turn decided, what it had to assume, what it left open, the changes the user asked for that are still pending as `adjustment` records, the `decision` that withdraws what the user called obsolete, the `wont-fix` records triage produced, the closing `review-finding` and the state edge, the `owed` record a `verified` close waits on or a `blocked` close leaves beside its wall, and — when a close that is neither `verified` nor `blocked` leaves an ancestor whose draft declares a landing with nothing outstanding — the `owed` record and `verified` edge that keep that ancestor waiting on its landing. Use as the last step of the `work` skill, once implementation, verification and triage with the user are done. It reads the objective's draft and the diff itself rather than being handed a summary, and it writes to the log through the `memory` CLI only — never to project source."
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -38,7 +38,15 @@ source, no `docs/`, no commits, no subagents.
   criterion the user **accepted as not-met**, quoted with `verify`'s `measured`
   value and their own words. It carries the
   objective's own open records this turn settled too, each with the record's id
-  and what settled it, which is what tells you to write the `answers` edge. When
+  and what settled it, which is what tells you to write the `answers` edge, and
+  each one the user called obsolete or no longer applying, with its id and their
+  words, which is what tells you to write a `withdraws` edge instead. It carries
+  each change the user asked for this session, or each "why does it work like
+  this?" they want revisited, in their own words, with what it is about and what
+  resolved it when this turn did. On a `blocked` close it carries the id of the
+  open-question already on disk that names the wall — the one `work`'s step 5
+  wrote or a carried-in one — when there is one.
+  When
   `work` performed the landing itself at the close — a local install inside its
   own account — it carries what was run and what came back, which the closing
   record says beside the criteria.
@@ -54,7 +62,9 @@ source, no `docs/`, no commits, no subagents.
 - `existing_closing_record` — the id of a closing record already on disk. Empty
   on a first launch; set when the orchestrator is relaunching you because
   something did not land.
-- `missing` — on a relaunch, exactly what did not land. Empty on a first launch.
+- `missing` — on a relaunch, exactly what did not land, with the id of the
+  open-question that is the wall when the missing edge is `blocked`. Empty on a
+  first launch.
 
 If something required is missing, return `blocked` naming it. Do not guess an id,
 do not invent a plan slug, and do not fall back to a different scope.
@@ -97,22 +107,35 @@ pointed at prose is refused by the CLI, and the objective stays open.
 An `existing_closing_record` holding a real id means a previous run of you already
 wrote records and the orchestrator read the log back and found something absent.
 Write **only what `missing` names**. Do not write a second closing record and do
-not re-write the records the first run landed: point the state edge at
-`existing_closing_record`, and write nothing else of this close's own. The log is
-append-only, so a duplicate closing record cannot be taken back, and two of them
-is worse than the missing edge you were relaunched to fix.
+not re-write the records the first run landed: point the missing state edge at
+the record that state accepts, and write nothing else of this close's own. The
+log is append-only, so a duplicate closing record cannot be taken back, and two of
+them is worse than the missing edge you were relaunched to fix.
 
-An edge on its own is not a batch line — every batch line is a record — so this is
-the one case that goes through `link`, with both ids taken from your inputs:
+Which record that is belongs to the state, not to the relaunch. `met`,
+`cancelled` and `separated` ride on the closing record, so a missing one points at
+`existing_closing_record`. An edge on its own is not a batch line — every batch
+line is a record — so it goes through `link`, with both ids taken from your
+inputs and `--type` the state `missing` names:
 
 ```bash
-memory link --type met --from <objective_id> --to <existing_closing_record>
+memory link --type <the state missing names> --from <objective_id> --to <existing_closing_record>
 ```
 
-A `verified` edge never points at `existing_closing_record`: it points at the
-`owed` record and rides on that record's line. When `missing` names a `verified`
-state, the `owed` line is what is missing, and it is the one line you write, as a
-batch of its own exactly as the `verified` close below spells it.
+A `blocked` edge never points at `existing_closing_record`: `blocked` accepts an
+`open-question` or a `decision`, and the closing `review-finding` is neither.
+A missing one is re-linked to the `open-question` that names the wall, by the id
+`triage_outcome` carries for it or the one `missing` names beside the `blocked`
+edge:
+
+```bash
+memory link --type blocked --from <objective_id> --to <question-id>
+```
+
+A `verified` edge never points at `existing_closing_record` either: it points at
+the `owed` record and rides on that record's line. When `missing` names a
+`verified` state, the `owed` line is what is missing, and it is the one line you
+write, as a batch of its own exactly as the `verified` close below spells it.
 
 When the edge that landed this way is any state but `verified` or `blocked`, the
 walk up to the ancestor that lands still follows it, exactly as below: it reads
@@ -134,7 +157,7 @@ the thread you are relieving. What you get is pointers, and you open them:
   you take from the objective's own record and the files the diff names:
 
 ```bash
-memory query --plan <plan_slug> --kind open-question,assumption --current --about <areas> \
+memory query --plan <plan_slug> --kind open-question,assumption,adjustment --current --about <areas> \
   --fields id,kind,title,body --body-lines 3
 memory kinds
 ```
@@ -192,10 +215,12 @@ in:
 {"kind":"decision","title":"<the choice, stated as substance>","body":"<what was chosen, what it displaced>\nProvenance: <you chose this | their words | my call>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
 {"kind":"assumption","title":"<what this turn assumed rather than established>","body":"Provenance: <my call>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
 {"kind":"open-question","title":"<what was left genuinely open>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
+{"kind":"adjustment","title":"<the change the user asked for, as they put it>","body":"<their own words>\nProvenance: their words","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
 ```
 
-**Every `decision`, `assumption`, `open-question` and `owed` you write for this
-close carries that `derives_from` edge to `objective_id`, with one exception:**
+**Every `decision`, `assumption`, `open-question`, `adjustment` and `owed` you
+write for this close carries that `derives_from` edge to `objective_id`, with one
+exception:**
 the `owed` record that "After the close: the ancestor that lands" writes derives
 from the ancestor and only from it, because the debt it names is the ancestor's.
 The edge is what makes "what did this objective leave open" a question the log
@@ -252,14 +277,15 @@ Three kinds, and every one of them has a reader:
 - **`open-question`** — something left genuinely open, including conditions
   verification raised that nobody decided. A `handed-over` criterion the user
   never reported a result for is not one of these: it is owed by the user rather
-  than open, and it goes in the `owed` record the `verified` close below writes.
+  than open, and it goes in the `owed` record the close below writes.
 
 Those three are exactly the kinds the `derives_from` edge above goes on. A
 question or an assumption is read back per objective at the close, and that list
 is the whole point of the edge; a `decision` carries it for the reason it is
 written at all, being the account of how this objective came to be shaped the way
 it is, which is worth little to a reader who cannot tell which objective shaped
-it. Past those three it goes on the `owed` record and nowhere else — a
+it. Past those three it goes on the `adjustment` and `owed` records and
+nowhere else — a
 `postmortem` derives from its hypothesis and an `adr` from whatever produced it,
 each as its own section below says.
 
@@ -310,7 +336,7 @@ on disk.
   Do not describe it as a failure and do not soften the closing record's counts to
   match — a dropped criterion is neither met nor not-met, it is absent, and the
   closing record says how many were dropped beside what it says about the rest.
-- **An `answers` edge for anything this turn actually settled.** Answering is an
+- **An `answers` edge for anything this turn actually answered.** Answering is an
   edge from the record that settles a question to the question, never an edit — so
   it rides on the line of the record that settles it:
 
@@ -319,13 +345,51 @@ on disk.
 ```
 
   A carried-in open question the turn spoke to but did not settle stays open. A
-  question with no record pointing at it is not answered, however clearly the
-  turn discussed it.
+  question nothing answers, supersedes or withdraws is not settled, however
+  clearly the turn discussed it. Settled means exactly those three, everywhere the
+  log reads it: an answered, superseded or withdrawn record leaves `open_records`
+  and the closing rate, and releases a `blocked` edge pointing at it.
+
+- **A `withdraws` edge for anything the user called obsolete or no longer
+  applying.** A doubt that went stale, an assumption the work moved past, a
+  question that no longer applies — `triage_outcome` names each with its id and
+  the user's words. It has no answer, and an `answers` edge would assert one
+  nobody gave. Retire it with a `decision` whose body carries a `Reason:` line —
+  `Reason: obsolete` or `Reason: no-longer-applies`, nothing else — and a
+  `withdraws` edge to it, which settles it the way an answer would without
+  claiming one:
+
+```jsonl
+{"kind":"decision","title":"<what is withdrawn, and why it no longer stands>","body":"Reason: <obsolete | no-longer-applies>\n<the user's words>\nProvenance: their words","about":["<area>"],"edges":[{"type":"withdraws","to":"<record-id>"},{"type":"derives_from","to":"<objective_id>"}]}
+```
+
+  `withdraws` retires an `open-question`, an `assumption`, an `idea`, an
+  `adjustment` or an `owed`, and never an objective: an objective that is not
+  going to happen closes `cancelled`. Withdraw only what the user called obsolete
+  in their words; a question you judge stale yourself stays open.
+
+- **An `adjustment` for each change the user asked for that this turn did not
+  resolve.** A change they asked for, or a "why does it work like this?" they
+  want revisited, arrives in `triage_outcome` in their words. When the turn
+  resolved it, nothing more is written for it beyond the closing record saying
+  so — or, when it was carried in as an `adjustment`, the `decision` that
+  resolved it with an `answers` edge to it. When the turn did not, write it as an
+  `adjustment` deriving from the objective, on the line the batch example above
+  shows: the title is the change as the user put it, the body carries their
+  words. Never as an `open-question`: a question is something the work is
+  unsure of, a request is something the user wants, and only the `adjustment`
+  shows as pending under a heading of its own in `memory state --text` until a
+  `decision` answers it, withdraws it or supersedes it. **Pointing at an
+  existing question is not a response to a requested change**, however much
+  ground the question covers — raising a question never settled a request, and
+  an old question still open is the evidence that nothing did. One already on
+  disk as an `adjustment` the query above returned is not written twice.
 
 - **The closing `review-finding` and the state edge.** You write both, and they are
   one line. The exceptions are `verified`, whose state edge rides on the `owed`
   line because `verified` accepts only an `owed`, and `blocked`, whose edge rides
-  on the `open-question` line that names the wall — both below. The closing
+  on the `open-question` line that names the wall, or on a `link` to the one
+  already on disk — both below. The closing
   record says what this turn's checking actually established — criteria met,
   criteria unverified with their count, criteria `handed-over` with a count of
   their own, what the user accepted in triage —
@@ -367,8 +431,9 @@ on disk.
   only as prose in `triage_outcome`, and that is what you read for silence. A
   criterion `triage_outcome` speaks to has a result, however it went; a criterion
   it does not mention, or mentions only to say nobody got to it, is one nobody has
-  run. Each of those is one line in the body of the `owed` record the `verified`
-  close below writes, and gets no `open-question` of its own.
+  run. Each of those is one line in the body of the `owed` record below — the
+  one a `verified` close writes under its state edge, and a `blocked` close
+  writes beside its wall — and gets no `open-question` of its own.
 
   The sentence in the closing record's body stays exactly as it is; the `owed`
   line joins it rather than replacing it, and the reason is that a sentence in a
@@ -419,6 +484,13 @@ on disk.
   **Verified, waiting on what you owe** — so the title says what is owed in words
   the user recognises without opening the body.
 
+  An earlier `blocked` close of this objective may already have left an `owed`
+  nothing settled — `memory state --id <objective_id> --all` lists it among
+  `open_records` with kind `owed`. Then this line also carries
+  `{"type":"supersedes","to":"<that owed id>"}`, and its body carries every debt
+  that record named and is still owed, so the objective waits on one `owed` and
+  not two.
+
   No `open-question` and no `blocked` edge for these debts. `verified` accepts an
   `owed` and nothing else, and both ends of the edge are on that one line. The
   debt is settled on the user's word, through `inbox`: a `decision` quoting them that
@@ -434,7 +506,71 @@ on disk.
   `{"type":"blocked","from":"<objective_id>"}` beside its `derives_from`.
   `blocked` accepts an `open-question` or a `decision`. A landing that has not
   happened and a handed-over check nobody reported on are never that question:
-  they are `verified`.
+  they are an `owed` — under `verified` when nothing else stops the close, and
+  beside the `blocked` when something does, as below.
+
+  **The wall may already be on disk.** `work`'s step 5 writes an `open-question`
+  naming an external wall the moment it meets one, and a carried-in question the
+  query above returned can be the wall as well; `triage_outcome` carries the id
+  of either when the close is blocked on an open-question already on disk. Then this close writes no second question for
+  it: `blocked` points at the one that exists, by its id. An edge with no record
+  of its own to ride on is not a batch line, so it goes through `link`, after the
+  batch has landed — a refused batch then leaves no `blocked` without the closing
+  record that says why.
+
+  Step 5 links `blocked` to the question it writes, so the objective may be
+  blocked on it already. Once the batch has landed, read where it stands:
+
+```bash
+memory state --id <objective_id> --all
+memory edges --type blocked --from <objective_id>
+```
+
+  When the entry reads `state` `blocked` and the latest `blocked` edge the
+  objective carries points at this question, the edge step 5 drew is still the one
+  that wins, and this close links nothing: a second edge to the same question
+  changes nothing the log reads, and the log cannot take it back; `state_edge`
+  then reports that edge, with the question's id as its `to`. Link only when
+  the objective is not blocked on that question now — a carried-in question no
+  `blocked` edge points at, or step 5's after a later state edge moved the
+  objective off it:
+
+```bash
+memory link --type blocked --from <objective_id> --to <question-id>
+```
+
+  **Superseding a blocking question moves the block.** When this close replaces
+  the question `blocked` points at with a sharper one — a new `open-question`
+  with a `supersedes` edge to the old — the old one is settled, and a settled
+  question releases its block the way an answered one does. A `supersedes` with
+  no `blocked` beside it silently unblocks the objective. So the replacement's line
+  carries the `blocked` edge too, beside its `supersedes` and its `derives_from`:
+
+```jsonl
+{"kind":"open-question","title":"<the question that replaces the old one>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"},{"type":"supersedes","to":"<the old question's id>"},{"type":"blocked","from":"<objective_id>"}]}
+```
+
+  When the replacement is already on disk, the `link` above re-points `blocked`
+  at it, with the replacement's id in `--to`.
+
+  **A `blocked` close can leave a debt as well.** When the draft's
+  `## Landing condition` above `worktree` has not happened, or a criterion
+  `verify` graded `handed-over` has no result in `triage_outcome`, the wall does
+  not cancel it: the objective still owes it once the wall is gone. Write the
+  `owed` line the `verified` close writes — the same title, one body line per
+  debt, the same `derives_from` — with **no `verified` edge** on it. `blocked` is
+  this close's state, and a `verified` edge in the same batch would compete with
+  it:
+
+```jsonl
+{"kind":"owed","title":"<each debt in a few words, the landing first, separated by semicolons>","body":"Landing condition: <the condition, as the draft states it>. The work stopped on <the wall, in a few words> and nothing has <merged | pushed | deployed> it.\nHanded-over criterion: <the criterion, as verify quoted it>. The script and the instructions are at <the paths verify's evidence names>; it was put to the user in triage and no result came back.","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective_id>"}]}
+```
+
+  The closing record's sentence about the debt stays where it is; the `owed`
+  joins it, for the reason given above — a sentence in a body cannot be counted.
+  Unsettled, the `owed` shows in the objective's `open_records`, so the debt is
+  read off the log rather than out of prose, and the close that later takes the
+  objective to `verified` supersedes it rather than writing a second.
 
   A `verified` or `blocked` close counts toward no parent as done, the same as
   `cancelled` and `separated`, and for a different reason: not that the work went
@@ -499,21 +635,13 @@ with nothing written and goes in `not_recorded` naming the ancestor: a landing
 nobody can read is not one to wait on, and not one to walk past either.
 
 **Above `worktree`, this is the ancestor that lands, and the walk ends here.**
-Ask the log whether an earlier close already left it an `owed` record:
+Whether an earlier close already left it an `owed` record is in the entry the
+`state` read above returned: `open_records` lists every `owed` deriving from the
+ancestor that nothing has answered, superseded or withdrawn, beside its questions
+and assumptions, each with its id, kind and title. An `owed` listed there is the
+live debt; one that something settled is not listed, and is not one to reuse.
 
-```bash
-memory edges --type verified --from <ancestor-id> --limit 1
-```
-
-The most recent `verified` edge from the ancestor comes back, or nothing does.
-When one comes back, its `to` is that `owed` record, and whether anything settled
-it is one more read:
-
-```bash
-memory edges --type answers --to <the owed id> --count
-```
-
-No `verified` edge, or a `count` above 0 — the debt was settled before and
+None listed — no close ever left one, or the debt was settled before and
 something reopened the tree — and there is no unsettled `owed` to reuse: write
 one line, to a file of its own beside that ancestor's draft named
 `landing-from-<objective_id>.jsonl`, with whatever writes files — the same way as
@@ -540,19 +668,49 @@ settles it — written through `inbox` when the user says it happened — answer
 on the ancestor. `verified` accepts an `owed` and nothing else, and both ends of
 the edge are on that one line.
 
-A `verified` edge whose `owed` has a `count` of 0: an earlier close left this
-ancestor `verified` on it, and a child that closed later — this one — put a newer
-derived `met` over it. Do not write a second `owed`. Point the ancestor at the one
-it has:
+An `owed` listed: an earlier close left this ancestor waiting on it, and a child
+that closed later — this one — put a newer derived `met` over it. Whether that
+record still says everything the ancestor owes is in its body, which
+`open_records` does not carry:
+
+```bash
+memory query --dir <root> --plan <plan> --id <the owed id> --fields id,title,body
+```
+
+Compare its `Landing condition:` lines with the lines the ancestor's
+`## Landing condition` carries now. A child planned after the ancestor was
+already `verified` adds its deployed check to that draft and nowhere else, so the
+draft can carry a line the live `owed` never heard of.
+
+Every line of the draft is in the body: do not write a second `owed`. Point the
+ancestor at the one it has:
 
 ```bash
 memory link --dir <root> --type verified --from <ancestor-id> --to <the owed id>
 ```
 
-Either way, `memory state --id <ancestor-id> --all` afterwards reads `verified`,
-and that read is how you know it landed rather than the exit code alone. The
-`owed` record goes in `records` and the edge in `edges`, with the ancestor's id as
-its `from` — which is how `work` tells the ancestor apart from this objective's
+A line of the draft is missing from the body: the `owed` as it stands would let
+the user settle the ancestor without the check that line names. Write a new one
+that replaces it, in the same `landing-from-<objective_id>.jsonl` file and with
+the same `memory add` as above — one `Landing condition:` line per line the draft
+carries now, every other line of the old body that is still owed carried
+forward, and a `supersedes` edge to the old record beside the `derives_from` and
+the `verified`:
+
+```jsonl
+{"kind":"owed","title":"<the landing, as that ancestor's draft states it now, in a few words>","body":"Landing condition: <each line of that ancestor's draft, one per line>. It arrives on <the ancestor's title>, not on its children: its children are closed, the last of them <objective_id>, and nothing has <committed | merged | deployed> it.","about":["<the ancestor's areas>"],"edges":[{"type":"derives_from","to":"<ancestor-id>"},{"type":"supersedes","to":"<the owed id>"},{"type":"verified","from":"<ancestor-id>"}]}
+```
+
+The superseded `owed` is settled, so it leaves `open_records` and the ancestor
+waits on the new one alone. More than one `owed` listed is the same case: the new
+line takes one `supersedes` edge per listed `owed`, and carries forward what each
+of them still owed.
+
+Whichever of the three it was, `memory state --id <ancestor-id> --all` afterwards
+reads `verified`, and that read is how you know it landed rather than the exit
+code alone. The `owed` record goes in `records` and the edge in `edges`, with the
+ancestor's id as its `from` — the `supersedes` edge beside it when there was one
+— which is how `work` tells the ancestor apart from this objective's
 own state edge and names it to the user. A walk that stopped before an ancestor
 that lands writes nothing and reports nothing.
 
@@ -654,6 +812,12 @@ answer.
 `--about` matters here more than usual: a retirement filed under different tags
 from the record it retires is invisible to the reader who finds the mistake.
 
+A mistaken `open-question` a `blocked` edge points at releases its objective the
+moment it is superseded, the same as an answered one. When the objective is still
+blocked on what the replacement asks, the replacement takes the `blocked` edge as
+well, exactly as "Superseding a blocking question moves the block" above spells
+it; otherwise the retirement unblocks the objective with nobody having said so.
+
 ## Rules
 
 1. **Never run `promote`.** It is the one command that writes outside this repo,
@@ -710,7 +874,7 @@ A single JSON object at the end of your final message:
   "state_edge": {
     "type": "met | verified | blocked | cancelled | separated",
     "from": "<objective_id>",
-    "to": "<closing record id, or the owed record's id for verified>",
+    "to": "<closing record id, the owed record's id for verified, or the open-question's id for blocked>",
     "ok": true,
     "error": "<the CLI's message, when ok is false>"
   },

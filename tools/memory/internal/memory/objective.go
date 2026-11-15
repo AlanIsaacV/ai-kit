@@ -219,19 +219,20 @@ type Anomaly struct {
 // A forest, not a tree, whatever the name says: several roots are normal and
 // already exist, because nothing requires an objective to have a parent.
 type Tree struct {
-	objectives []*Entry          // objectives in file order
-	byID       map[string]*Entry // objectives only
-	edges      []*Edge           // every edge the tree was derived from, in file order
-	allEntries map[string]*Entry
-	ideas      []*Entry
-	parent     map[string]string
-	children   map[string][]string
-	superseded map[string]bool
-	answered   map[string]bool
-	settled    map[string]bool
-	resolved   map[string]resolution
-	touched    map[string]activity
-	anomalies  []Anomaly
+	objectives  []*Entry          // objectives in file order
+	byID        map[string]*Entry // objectives only
+	edges       []*Edge           // every edge the tree was derived from, in file order
+	allEntries  map[string]*Entry
+	ideas       []*Entry
+	adjustments []*Entry
+	parent      map[string]string
+	children    map[string][]string
+	superseded  map[string]bool
+	answered    map[string]bool
+	settled     map[string]bool
+	resolved    map[string]resolution
+	touched     map[string]activity
+	anomalies   []Anomaly
 }
 
 // NewTree derives the forest from a whole log.
@@ -280,6 +281,9 @@ func NewTreeIn(lines, store []Line) *Tree {
 		held[e.ID] = true
 		if e.Kind == KindIdea {
 			t.ideas = append(t.ideas, e)
+		}
+		if e.Kind == KindAdjustment {
+			t.adjustments = append(t.adjustments, e)
 		}
 		if e.Kind != KindObjective {
 			continue
@@ -394,10 +398,14 @@ func (t *Tree) Objectives() []*Entry { return t.objectives }
 
 func (t *Tree) Entry(id string) *Entry { return t.allEntries[id] }
 
-func (t *Tree) OpenIdeas() []*Entry {
+func (t *Tree) OpenIdeas() []*Entry { return t.unsettled(t.ideas) }
+
+func (t *Tree) OpenAdjustments() []*Entry { return t.unsettled(t.adjustments) }
+
+func (t *Tree) unsettled(entries []*Entry) []*Entry {
 	out := []*Entry{}
-	for _, e := range t.ideas {
-		if !t.answered[e.ID] {
+	for _, e := range entries {
+		if !t.settled[e.ID] {
 			out = append(out, e)
 		}
 	}
@@ -431,7 +439,7 @@ func (t *Tree) resolve(id string) resolution {
 }
 
 func (t *Tree) releasedBlock(e *Edge) bool {
-	if e.Type != EdgeBlocked || !t.answered[e.To] {
+	if e.Type != EdgeBlocked || !t.settled[e.To] {
 		return false
 	}
 	target := t.allEntries[e.To]
@@ -600,6 +608,10 @@ type OpenRecord struct {
 	Title string `json:"title"`
 }
 
+var openRecordKinds = map[Kind]bool{
+	KindOpenQuestion: true, KindAssumption: true, KindAdjustment: true, KindOwed: true,
+}
+
 func (t *Tree) OpenRecords(id string) []OpenRecord {
 	var out []OpenRecord
 	seen := map[string]bool{}
@@ -608,10 +620,7 @@ func (t *Tree) OpenRecords(id string) []OpenRecord {
 			continue
 		}
 		entry := t.allEntries[e.From]
-		if entry == nil || (entry.Kind != KindOpenQuestion && entry.Kind != KindAssumption) {
-			continue
-		}
-		if t.answered[entry.ID] {
+		if entry == nil || !openRecordKinds[entry.Kind] || t.settled[entry.ID] {
 			continue
 		}
 		seen[e.From] = true
@@ -668,8 +677,8 @@ type CurrentObjective struct {
 // available at the moment you are writing a decision anyway — which is what the
 // allowlist demands behind any state edge.
 //
-// The candidates are every *open* objective that nothing has superseded or
-// answered. Depth is not involved, and neither is having an open child: every
+// The candidates are every *open* objective that nothing has superseded,
+// answered or withdrawn. Depth is not involved, and neither is having an open child: every
 // open objective is potentially the current one.
 //
 // An objective that was approved and later blocked is still a candidate under
@@ -868,7 +877,7 @@ type StateReport struct {
 
 // Report builds the whole reading, in file order.
 //
-// A superseded or answered objective is moved to Excluded rather than reported
+// A superseded, answered or withdrawn objective is moved to Excluded rather than reported
 // as live. That is the same rule --current applies to every other kind: a record
 // something replaced is not something you still have to hold in mind. It is
 // still named, with its reason, because silence would be indistinguishable from
@@ -886,9 +895,12 @@ func (t *Tree) Report() StateReport {
 	for _, o := range t.objectives {
 		state := t.State(o.ID)
 		if t.settled[o.ID] {
-			reason := "answered"
-			if t.superseded[o.ID] {
+			reason := "withdrawn"
+			switch {
+			case t.superseded[o.ID]:
 				reason = "superseded"
+			case t.answered[o.ID]:
+				reason = "answered"
 			}
 			rep.Excluded = append(rep.Excluded, ExcludedObjective{
 				ID: o.ID, Slug: o.Slug, Title: o.Title, State: state, StateFrom: t.StateFrom(o.ID), Reason: reason,

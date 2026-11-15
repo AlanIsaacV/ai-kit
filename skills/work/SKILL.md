@@ -96,7 +96,7 @@ that working tree.
 ```bash
 memory query --plan <tree-slug> --kind objective --current
 memory state
-memory query --plan <tree-slug> --kind open-question,assumption --current
+memory query --plan <tree-slug> --kind open-question,assumption,adjustment --current
 ```
 
 Those three are where the turn starts, and they are bounded by the tree's shape
@@ -192,8 +192,8 @@ for work that is done.
 
 `--plan` leaves out the gotchas *other* objective trees wrote about this same
 area, and that filter answers to the rule below under **Put the carried-in
-questions and assumptions in front of the user**: name what it dropped in one
-line, with its count, on exactly the grounds stated there. The same query without
+questions, assumptions and adjustments in front of the user**: name what it
+dropped in one line, with its count, on exactly the grounds stated there. The same query without
 `--plan` and with `--threshold 1` is where the count comes from: it reports the
 true number and withholds the records once there is more than one, so naming what
 was dropped does not cost the round the thing the bound was there to save.
@@ -266,11 +266,11 @@ written at a point in time and the repo has moved.** If something that it
 assumed is no longer true, surface it now, before choosing what to execute on
 top of it. Finding drift is a good outcome, not a delay.
 
-#### Put the carried-in questions and assumptions in front of the user
+#### Put the carried-in questions, assumptions and adjustments in front of the user
 
-The `open-question,assumption` query above pulls records written in earlier
-turns, and loading them as ambient context is not the same as anybody having read
-them. Close this step by putting them on the table in **one** round.
+The `open-question,assumption,adjustment` query above pulls records written in
+earlier turns, and loading them as ambient context is not the same as anybody
+having read them. Close this step by putting them on the table in **one** round.
 
 Filter first, and filter in the open. The test is narrow: a record bears on this
 turn when it touches the objective about to run, or the surface that objective is
@@ -284,7 +284,7 @@ it in two: every open record named for the price of its title, the filter made o
 exactly the fields the test uses, and the survivors read whole afterwards.
 
 ```bash
-memory query --plan <tree-slug> --kind open-question,assumption --current --fields id,kind,title,about --body-lines 0
+memory query --plan <tree-slug> --kind open-question,assumption,adjustment --current --fields id,kind,title,about --body-lines 0
 memory query --plan <tree-slug> --id <the surviving ids, comma-separated, pasted from the answer above>
 ```
 
@@ -307,11 +307,16 @@ round — an empty one spends the same attention as a real one and buys nothing 
 toque esto" is one line and it is the difference between a filter that ran and a
 step that was skipped.
 
-Then one message, with three parts:
+Then one message, with four parts:
 
 - The assumptions as **numbered prose, one line each**: what was assumed, what it
   costs if it is wrong, and where it came from. Not a table, not a wall of record
   ids.
+- The open adjustments as **pending requests, one line each**: the change the user
+  asked for, or the "why does it work like this?" they wanted revisited, in the
+  words the record carries, and that nothing has resolved it yet. They are not
+  questions to put back to the user — the ask is already theirs — and one this
+  turn could take up is a reason step 2 may choose differently.
 - The open questions that have discrete answers, batched into **one**
   `AskUserQuestion` — one call for all of them, not one call each.
 - An open ask for what the list is missing, and for corrections by number. An
@@ -348,6 +353,24 @@ exists the question stays open in the log however plainly the user spoke to it.
 A round that quietly marks things resolved is how the log stops being a true
 trace. The same holds for an assumption: the user answering the question next to
 it is not the user confirming it, and only their words about that assumption are.
+A question the user says is obsolete, or no longer applies, is not answered
+either: it travels to step 9 in `triage_outcome` with its id and their words, and
+`record` retires it at the close with a `withdraws` edge from a `decision` that
+carries the reason — never with an `answers`, which would assert an answer nobody
+gave. An adjustment the user speaks to stays pending the same way, until a
+`decision` that answers or withdraws it exists.
+
+**A change the user asks for is an `adjustment`, whenever in the session they ask
+for it.** When they ask for something to work differently, or ask why something
+works the way it does and want it revisited, that is a request and it is kept as
+one: it travels to step 9 in `triage_outcome` in their own words, with what it is
+about, and `record` writes it as an `adjustment` deriving from this objective,
+where it shows as pending in `open_records` and in `memory state --text` until a
+`decision` answers it, withdraws it, or a later record supersedes it. When this
+turn resolves it, the same entry says what resolved it. **Pointing at an open
+question that already covers the ground is not a response to it**: raising a
+question never settled a request, and an old question still sitting open is the
+evidence that nothing did.
 
 ### 2 — Choose the objective this turn executes
 
@@ -797,16 +820,28 @@ actually in. Do not chain another attempt at the same wall, and do not launch a
 replacement part over files a finished part already wrote.
 
 When the wall is external — a credential, an upstream decision, someone else's
-release — record what is being waited on and say so on the objective:
+release — record what is being waited on, as a question deriving from the
+objective, and say so on the objective. A question with no `derives_from` edge to
+the objective never shows in its `open_records`, and `add`'s flags draw no edge,
+so the question goes in as a one-line batch. Write the file with the
+file-writing tool, never a heredoc, at
+`<root>/.ai-kit/plans/<objective-slug>/wall-<UTC timestamp>.jsonl` — a new name
+every time:
 
-```bash
-memory add --plan <tree-slug> --kind open-question \
-  --title "<what is being waited on>" --about <area>
+```jsonl
+{"kind":"open-question","title":"<what is being waited on>","about":["<area>"],"edges":[{"type":"derives_from","to":"<objective-id>"}]}
 ```
 
 ```bash
+memory add --plan <tree-slug> --batch <root>/.ai-kit/plans/<objective-slug>/wall-<UTC timestamp>.jsonl
+```
+
+A batch prints the ids it wrote rather than the whole record, so the question's
+id is at `.records[0].id`:
+
+```bash
 memory link --type blocked --from <objective-id> \
-  --to <the id the add above printed, at .record.id, pasted literally>
+  --to <the id the batch above printed, at .records[0].id, pasted literally>
 ```
 
 `blocked` points at the `open-question` or the `decision` that says what the
@@ -1270,8 +1305,9 @@ memory state --id <objective-id>
 ```
 
 Inside that objective's entry, beside `completion`, is `open_records`: the
-`open-question` and `assumption` records that derive from this objective and that
-nothing has answered yet, each with its id, kind and title. It is this
+`open-question`, `assumption`, `adjustment` and `owed` records that derive from
+this objective and that nothing has settled yet — settled meaning answered,
+superseded or withdrawn — each with its id, kind and title. It is this
 objective's own records, not the plan's — a handful, where a whole tree
 accumulates hundreds — and the field is absent entirely when there are none,
 which is what a clean close looks like rather than a command that failed.
@@ -1282,9 +1318,11 @@ user, one line each, and say for each whether this turn spoke to it. Their answe
 travels to the subagent in `triage_outcome` in their own words, with the record's
 id, the same way step 8's triage does: answering is an appended edge from the
 record that settles the question, so `record` is what writes it and it can only
-write one for something it was told about. **Nothing gets labelled answered
-here** — an assumption the user did not speak to is still an assumption, and the
-list saying so is what it is for.
+write one for something it was told about. A question the user calls obsolete
+goes the same way, and `record` withdraws it rather than answering it, as step 1
+says. **Nothing gets labelled answered here** — an assumption the user did not
+speak to is still an assumption, an adjustment nothing resolved is still pending,
+and the list saying so is what it is for.
 
 **Nothing blocks on this list.** A question that stays open is an ordinary close
 and a long list is not a reason to hold the objective back. What the list changes
@@ -1300,7 +1338,7 @@ objective_id: <the executable objective's id>
 plan_slug: <tree-slug>
 verify_result: <the verify subagent's returned JSON>
 review_result: <the review subagent's returned JSON — empty when step 7 did not run>
-triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; each criterion the user dropped, quoted from the draft, with their reason in their own words; each criterion the user accepted as not-met, quoted from the draft, with verify's `measured` and their own words; each open record above that this turn settled, with its id and what settled it; and, when this step performed the landing, what it ran and what came back>
+triage_outcome: <per finding: fix now / record for later / not worth it, with the user's own words on anything they called not worth fixing and on how any you-run criterion went — said as unanswered when they did not answer; each criterion the user dropped, quoted from the draft, with their reason in their own words; each criterion the user accepted as not-met, quoted from the draft, with verify's `measured` and their own words; each open record above that this turn settled, with its id and what settled it; each open record the user called obsolete or no longer applying, with its id and their words; each change the user asked for this session, or why-it-works-this-way they want revisited, in their own words, with what it is about and what resolved it when this turn did; when the close is blocked on an open-question already on disk — the one step 5 wrote or a carried-in one — its id; and, when this step performed the landing, what it ran and what came back>
 closing_state: <met | verified | blocked | cancelled | separated>
 confirmed_hypothesis:
 on_demand_kinds:
@@ -1362,13 +1400,15 @@ being empty is how a `met` edge gets pointed at a sentence, and a
 investigation that never happened.
 
 What it records by default is three kinds: `decision`, `assumption`,
-`open-question`. Those are the three that anything ever reads — step 1's
-carried-in round reads the last two, and `implement` receives decisions as
-`constraints`. On top of that it writes what this turn produced rather than
-synthesised: the `wont-fix` records from step 8's triage, in the user's own words;
-an `answers` edge for anything the turn actually settled; and the closing record
-with the state edge on it. When `confirmed_hypothesis` is set it also weighs one
-`postmortem`, derived from that hypothesis and written only if the lesson
+`open-question`. Those are the three that anything ever reads besides the
+`adjustment` below — step 1's carried-in round reads the last two, and `implement`
+receives decisions as `constraints`. On top of that it writes what this turn
+produced rather than synthesised: the `wont-fix` records from step 8's triage, in
+the user's own words; an `adjustment` for each change the user asked for, out of
+`triage_outcome`; an `answers` edge for anything the turn actually settled, and a
+`withdraws` edge from a `decision` for anything the user called obsolete; and the
+closing record with the state edge on it. When `confirmed_hypothesis` is set it
+also weighs one `postmortem`, derived from that hypothesis and written only if the lesson
 generalizes beyond this bug — a bug whose lesson does not closes without one. An
 `adr` joins conditionally in the same way, on a test the subagent states and
 applies to each choice it was going to file as a `decision`.
@@ -1407,7 +1447,12 @@ no `open-question` and no `blocked` edge for those debts. `blocked` is not this:
 it stays for what step 5 writes, an external wall or a question that stops the
 work. `closing_state` is `blocked` only when an open question stops the work at
 this close, and `record` puts the edge on the `open-question` that names it —
-never for a landing or an unreported handover, which are `verified`.
+which may be one already on disk — the one step 5 wrote or a carried-in one —
+linked by its id rather than written again — never for a landing or an unreported handover, which
+are `verified`. A `blocked` close that also leaves one of those debts unpaid does
+not lose it: `record` still writes the `owed` record naming it, beside the
+`blocked` edge and with no `verified` edge to it, so the debt stays on the
+objective's `open_records` while the question holds the work.
 
 **A criterion the user accepted as not-met in step 8 does not take `met` away.**
 It is not unrun: it ran, it failed, and the user chose to close on it in their own
@@ -1479,7 +1524,8 @@ still exited, so "closed" in a report is a claim and this is the evidence.
   **the close did not land.** The objective is open whatever the report
   said. Say so to the user in one line, show the subagent's `failures`, and
   relaunch `record` with the same handover — `missing` naming exactly what did
-  not land, and `existing_closing_record` carrying the closing record's id when
+  not land, with the id of the open-question that is the wall when the missing
+  edge is `blocked`, and `existing_closing_record` carrying the closing record's id when
   one already exists, so nothing is written twice. Do not write the edge from
   this thread. Do not report the objective closed, and do not move to step 10 as
   though it were. A second failure is a stop: bring it to the user with the CLI's
@@ -1488,12 +1534,13 @@ still exited, so "closed" in a report is a claim and this is the evidence.
 
 **The same output also says what stayed open, and that gets said in words.** Read
 `open_records` a second time, out of what this command just returned. Anything
-the turn settled is gone from it — `record` appended the `answers` edge and an
-answered record drops off the list — so what is left is what this objective is
-leaving behind, and the field being absent altogether means it left nothing. It
-is not the list you read before the handoff and it is not meant to be shorter:
-the questions and assumptions `record` just wrote for this close derive from this
-objective too, so they are on it. Tell the user which: how many, and each one's
+the turn settled is gone from it — `record` appended the `answers` or `withdraws`
+edge and a settled record drops off the list — so what is left is what this
+objective is leaving behind, and the field being absent altogether means it left
+nothing. It is not the list you read before the handoff and it is not meant to be
+shorter: the questions, assumptions and adjustments `record` just wrote for this
+close derive from this objective too, and so does any `owed` record it wrote, so
+they are on it. Tell the user which: how many, and each one's
 title on a line. That is the difference between what stayed open being read out
 of the log and it being inferred from `failures` and `not_recorded`, which are
 the subagent's account of its own work.
@@ -1523,9 +1570,11 @@ ask the user. A disagreement there is a real question about what counts as done,
 not something to settle on the objective's behalf.
 
 **An ancestor this close left waiting on its landing gets one line of its own.**
-Any close but `verified` can leave one there: a parent whose last open child
-closes `cancelled` or `separated` derives `met` from the children it counts as
-done just as it does after a `met`, and `record` walks up after all three.
+Any close but `verified` or `blocked` can leave one there: a parent whose last
+open child closes `cancelled` or `separated` derives `met` from the children it
+counts as done just as it does after a `met`, and `record` walks up after all
+three. A `verified` or `blocked` child stays outstanding on its parent, so after
+either close there is nothing to walk.
 When the parent has nothing outstanding and its draft declares a landing above
 `worktree`, `record` wrote it an `owed` record naming the landing and a `verified`
 edge to it instead of leaving it to read derived `met` — or did that on a further

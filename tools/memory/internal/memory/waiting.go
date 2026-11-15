@@ -15,19 +15,27 @@ type LogState struct {
 
 type Idea struct {
 	Root  string `json:"root"`
-	Repo  string `json:"repo"`
+	Repo  string `json:"repo,omitempty"`
 	ID    string `json:"id"`
 	Title string `json:"title"`
 }
 
 func WaitingIdeas(logs []LogState) []Idea {
+	return waitingEntries(logs, (*Tree).OpenIdeas)
+}
+
+func WaitingAdjustments(logs []LogState) []Idea {
+	return waitingEntries(logs, (*Tree).OpenAdjustments)
+}
+
+func waitingEntries(logs []LogState, open func(*Tree) []*Entry) []Idea {
 	out := []Idea{}
 	seen := map[string]bool{}
 	for _, log := range logs {
 		if log.Tree == nil {
 			continue
 		}
-		for _, e := range log.Tree.OpenIdeas() {
+		for _, e := range open(log.Tree) {
 			if seen[e.ID] {
 				continue
 			}
@@ -44,6 +52,7 @@ const (
 	headingVerified = "Verified, waiting on what you owe"
 	headingApproved = "Waiting for you to start it"
 	headingAside    = "Set aside"
+	headingAdjust   = "Adjustments you asked for"
 	headingIdeas    = "Ideas"
 	headingAnomaly  = "Anomalies in the reading"
 	headingRate     = "Closing rate"
@@ -101,6 +110,12 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 		}
 	}
 
+	var adjustments []waitItem
+	for _, a := range WaitingAdjustments(logs) {
+		named[a.Repo] = true
+		adjustments = append(adjustments, waitItem{repo: a.Repo, text: a.Title, id: a.ID})
+	}
+
 	var ideas []waitItem
 	for _, idea := range WaitingIdeas(logs) {
 		named[idea.Repo] = true
@@ -121,6 +136,7 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 		{heading: headingBlocked, groups: recordGroups(grouped[StateBlocked])},
 		{heading: headingApproved, groups: oneGroup(items[StateApprovedForExecution])},
 		{heading: headingAside, groups: oneGroup(items[StateSeparated])},
+		{heading: headingAdjust, groups: oneGroup(adjustments)},
 		{heading: headingIdeas, groups: oneGroup(ideas)},
 		{heading: headingAnomaly, groups: oneGroup(anomalies)},
 	}
@@ -142,7 +158,7 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 	for _, w := range warnings {
 		fmt.Fprintf(&b, "! %s\n", w)
 	}
-	if total == 0 && len(anomalies) == 0 && len(ideas) == 0 {
+	if total == 0 && len(anomalies) == 0 && len(ideas) == 0 && len(adjustments) == 0 {
 		b.WriteString("\nNothing is open.\n")
 		b.WriteString(renderRate(logs))
 		return b.String()
@@ -203,17 +219,17 @@ func renderRate(logs []LogState) string {
 }
 
 func closingRate(logs []LogState) (byKind, byLog []rateRow) {
-	answered := map[string]bool{}
+	settled := map[string]bool{}
 	for _, log := range logs {
 		if log.Tree == nil {
 			continue
 		}
-		for id := range log.Tree.answered {
-			answered[id] = true
+		for id := range log.Tree.settled {
+			settled[id] = true
 		}
 	}
 
-	kinds := []Kind{KindOpenQuestion, KindAssumption}
+	kinds := []Kind{KindOpenQuestion, KindAssumption, KindAdjustment}
 	perKind := map[Kind]*rateRow{}
 	for _, k := range kinds {
 		perKind[k] = &rateRow{label: string(k)}
@@ -239,7 +255,7 @@ func closingRate(logs []LogState) (byKind, byLog []rateRow) {
 			}
 			row.total++
 			perKind[e.Kind].total++
-			if answered[id] {
+			if settled[id] {
 				row.closed++
 				perKind[e.Kind].closed++
 			}

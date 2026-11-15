@@ -27,7 +27,7 @@ type Filter struct {
 	Text        string   // case-insensitive substring over title and body
 	Since       string
 	Until       string
-	CurrentOnly bool // drop entries the graph says are settled: superseded, or answered
+	CurrentOnly bool // drop entries the graph says are settled: superseded, answered or withdrawn
 	CountOnly   bool
 	HintAdvice  []string
 	Limit       int // hard cap on returned records; 0 means "use the threshold"
@@ -70,16 +70,24 @@ func AnsweredIDs(edges []*Edge) map[string]bool {
 	return targetsOf(edges, EdgeAnswers)
 }
 
+func WithdrawnIDs(edges []*Edge) map[string]bool {
+	return targetsOf(edges, EdgeWithdraws)
+}
+
 // SettledIDs is what --current filters out: a record replaced by a newer one,
-// or a question or assumption that something has since answered.
+// a question or assumption that something has since answered, or a record a
+// decision withdrew.
 //
-// Both belong here for the same reason. The point of --current is "what do I
+// All three belong here for the same reason. The point of --current is "what do I
 // still have to hold in mind", and an answered question is exactly as
 // irrelevant to that as a superseded decision — leaving it in would mean every
 // session re-reads questions that were closed turns ago.
 func SettledIDs(edges []*Edge) map[string]bool {
 	out := SupersededIDs(edges)
 	for id := range AnsweredIDs(edges) {
+		out[id] = true
+	}
+	for id := range WithdrawnIDs(edges) {
 		out[id] = true
 	}
 	return out
