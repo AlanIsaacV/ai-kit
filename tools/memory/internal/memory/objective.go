@@ -223,6 +223,7 @@ type Tree struct {
 	byID        map[string]*Entry // objectives only
 	edges       []*Edge           // every edge the tree was derived from, in file order
 	allEntries  map[string]*Entry
+	own         []*Entry
 	ideas       []*Entry
 	adjustments []*Entry
 	parent      map[string]string
@@ -279,6 +280,7 @@ func NewTreeIn(lines, store []Line) *Tree {
 			continue
 		}
 		held[e.ID] = true
+		t.own = append(t.own, e)
 		if e.Kind == KindIdea {
 			t.ideas = append(t.ideas, e)
 		}

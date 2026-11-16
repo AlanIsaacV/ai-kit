@@ -1832,15 +1832,16 @@ func stateAcrossLogs(id string, text bool, interp map[string]any) error {
 	merged := memory.MergeReports(reports)
 	thisCall.found(len(merged.Objectives), len(merged.Objectives), false, false)
 	emit(map[string]any{
-		"logs":        nonNil(paths),
-		"count":       len(merged.Objectives),
-		"objectives":  merged.Objectives,
-		"excluded":    merged.Excluded,
-		"current":     merged.Current,
-		"anomalies":   merged.Anomalies,
-		"ideas":       memory.WaitingIdeas(logs),
-		"adjustments": memory.WaitingAdjustments(logs),
-		"interpreted": interp,
+		"logs":         nonNil(paths),
+		"count":        len(merged.Objectives),
+		"objectives":   merged.Objectives,
+		"excluded":     merged.Excluded,
+		"current":      merged.Current,
+		"anomalies":    merged.Anomalies,
+		"ideas":        memory.WaitingIdeas(logs),
+		"adjustments":  memory.WaitingAdjustments(logs),
+		"closing_rate": memory.ClosingRateOf(logs),
+		"interpreted":  interp,
 	})
 	return nil
 }

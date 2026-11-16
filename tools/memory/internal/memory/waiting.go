@@ -47,178 +47,357 @@ func waitingEntries(logs []LogState, open func(*Tree) []*Entry) []Idea {
 }
 
 const (
-	headingPlanned  = "Waiting for your approval"
-	headingBlocked  = "Blocked on a question or a decision"
-	headingVerified = "Verified, waiting on what you owe"
-	headingApproved = "Waiting for you to start it"
-	headingAside    = "Set aside"
-	headingAdjust   = "Adjustments you asked for"
-	headingIdeas    = "Ideas"
-	headingAnomaly  = "Anomalies in the reading"
-	headingRate     = "Closing rate"
-	quietWidth      = 76
+	headingAnomaly = "Anomalies in the reading"
+	headingLoose   = "Adjustments outside any objective"
+	headingRate    = "Closing rate"
+	actionAdjust   = "adjustment pending"
 )
 
 type waitItem struct {
-	repo string
-	text string
-	id   string
+	repo       string
+	title      string
+	id         string
+	action     string
+	adjustment bool
 }
 
-type waitGroup struct {
-	key     string
-	heading string
-	items   []waitItem
-}
-
-type waitSection struct {
-	heading string
-	groups  []waitGroup
+type rootBlock struct {
+	id    string
+	repo  string
+	title string
+	wait  string
+	below int
+	items []waitItem
 }
 
 func RenderWaiting(logs []LogState, warnings []string) string {
-	items := map[State][]waitItem{}
-	grouped := map[State]map[string]*waitGroup{StateBlocked: {}, StateVerified: {}}
-	named := map[string]bool{}
+	home := objectiveHomes(logs)
+	blocks := map[string]*rootBlock{}
+	listed := map[string]bool{}
+	seen := map[string]bool{}
+	open := 0
 	var anomalies []waitItem
-	total := 0
+
+	blockOf := func(t *Tree, id string) *rootBlock {
+		root := groupRoot(t, id)
+		b, ok := blocks[root]
+		if ok {
+			return b
+		}
+		b = &rootBlock{id: root, title: root}
+		e := t.Entry(root)
+		if h, held := home[root]; held {
+			b.repo = h
+		} else {
+			b.repo = entryHome(e)
+		}
+		if e != nil {
+			b.title = e.Title
+		}
+		blocks[root] = b
+		return b
+	}
 
 	for _, log := range logs {
 		for _, o := range log.Report.Objectives {
+			if seen[o.ID] {
+				continue
+			}
+			seen[o.ID] = true
 			if !o.State.Open() {
 				continue
 			}
-			total++
-			named[log.Name] = true
-			it := waitItem{repo: log.Name, text: o.Title, id: o.ID}
-			byRecord, isGrouped := grouped[o.State]
-			if !isGrouped {
-				items[o.State] = append(items[o.State], it)
+			open++
+			if o.State == StateSeparated || log.Tree == nil {
 				continue
 			}
-			key, heading := waitsOn(log.Tree, o.ID)
-			g, ok := byRecord[key]
-			if !ok {
-				g = &waitGroup{key: key, heading: heading}
-				byRecord[key] = g
+			b := blockOf(log.Tree, o.ID)
+			parent := len(o.BlockedByOpenChild) > 0
+			action := objectiveAction(log.Tree, o)
+			if b.id != o.ID {
+				if parent {
+					continue
+				}
+				b.items = append(b.items, waitItem{repo: log.Name, title: o.Title, id: o.ID, action: action})
+				listed[o.ID] = true
+				continue
 			}
-			g.items = append(g.items, it)
-		}
-		for _, a := range log.Report.Anomalies {
-			named[log.Name] = true
-			anomalies = append(anomalies, waitItem{repo: log.Name, text: a.Message, id: a.ID})
-		}
-	}
-
-	var adjustments []waitItem
-	for _, a := range WaitingAdjustments(logs) {
-		named[a.Repo] = true
-		adjustments = append(adjustments, waitItem{repo: a.Repo, text: a.Title, id: a.ID})
-	}
-
-	var ideas []waitItem
-	for _, idea := range WaitingIdeas(logs) {
-		named[idea.Repo] = true
-		ideas = append(ideas, waitItem{repo: idea.Repo, text: idea.Title, id: idea.ID})
-	}
-
-	var quiet []string
-	for _, log := range logs {
-		if !named[log.Name] {
-			quiet = append(quiet, log.Name)
-		}
-	}
-	sort.Strings(quiet)
-
-	sections := []waitSection{
-		{heading: headingPlanned, groups: oneGroup(items[StatePlanned])},
-		{heading: headingVerified, groups: recordGroups(grouped[StateVerified])},
-		{heading: headingBlocked, groups: recordGroups(grouped[StateBlocked])},
-		{heading: headingApproved, groups: oneGroup(items[StateApprovedForExecution])},
-		{heading: headingAside, groups: oneGroup(items[StateSeparated])},
-		{heading: headingAdjust, groups: oneGroup(adjustments)},
-		{heading: headingIdeas, groups: oneGroup(ideas)},
-		{heading: headingAnomaly, groups: oneGroup(anomalies)},
-	}
-
-	width := 0
-	for _, s := range sections {
-		for _, g := range s.groups {
-			for _, it := range g.items {
-				if len(it.repo) > width {
-					width = len(it.repo)
+			listed[o.ID] = true
+			if parent {
+				b.below = openBelow(log.Tree, o.ID)
+				if o.State != StateBlocked && o.State != StateVerified {
+					continue
 				}
 			}
+			b.wait = action
+		}
+		for _, a := range log.Report.Anomalies {
+			anomalies = append(anomalies, waitItem{repo: log.Name, title: a.Message, id: a.ID})
 		}
 	}
+
+	var loose []waitItem
+	adjusted := map[string]bool{}
+	for _, log := range logs {
+		if log.Tree == nil {
+			continue
+		}
+		for _, e := range log.Tree.OpenAdjustments() {
+			if adjusted[e.ID] {
+				continue
+			}
+			adjusted[e.ID] = true
+			it := waitItem{repo: log.Name, title: e.Title, id: e.ID, action: actionAdjust, adjustment: true}
+			if target := derivedObjective(log.Tree, e.ID); target != "" {
+				b := blockOf(log.Tree, target)
+				b.items = append(b.items, it)
+				continue
+			}
+			loose = append(loose, it)
+		}
+	}
+
+	ideas := map[string]int{}
+	var ideaRepos []string
+	for _, idea := range WaitingIdeas(logs) {
+		if ideas[idea.Repo] == 0 {
+			ideaRepos = append(ideaRepos, idea.Repo)
+		}
+		ideas[idea.Repo]++
+	}
+	sort.Strings(ideaRepos)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "What is waiting on you — %s across %s\n",
-		count(total, "open objective"), count(len(logs), "log"))
+		count(len(listed), "open objective"), count(len(logs), "log"))
 	for _, w := range warnings {
-		fmt.Fprintf(&b, "! %s\n", w)
+		fmt.Fprintf(&b, "\n! %s\n", w)
 	}
-	if total == 0 && len(anomalies) == 0 && len(ideas) == 0 && len(adjustments) == 0 {
-		b.WriteString("\nNothing is open.\n")
+	if len(blocks) == 0 && len(loose) == 0 && len(ideaRepos) == 0 && len(anomalies) == 0 {
+		if open == 0 {
+			b.WriteString("\nNothing is open.\n")
+		} else {
+			b.WriteString("\nNothing waits on you.\n")
+		}
 		b.WriteString(renderRate(logs))
 		return b.String()
 	}
 
-	for _, s := range sections {
-		if len(s.groups) == 0 {
+	for _, rb := range sortedBlocks(blocks) {
+		if rb.repo == "" {
+			fmt.Fprintf(&b, "\n## %s\n", rb.title)
+		} else {
+			fmt.Fprintf(&b, "\n## %s — %s\n", rb.repo, rb.title)
+		}
+		if rb.wait != "" {
+			fmt.Fprintf(&b, "\n%s `%s`\n", rb.wait, rb.id)
+		}
+		if rb.below > 0 {
+			line := fmt.Sprintf("in progress: %d open below", rb.below)
+			if rb.wait == "" {
+				line += fmt.Sprintf(" `%s`", rb.id)
+			}
+			fmt.Fprintf(&b, "\n%s\n", line)
+		}
+		if len(rb.items) == 0 {
 			continue
 		}
-		n := 0
-		for _, g := range s.groups {
-			n += len(g.items)
-		}
-		fmt.Fprintf(&b, "\n%s (%d)\n", s.heading, n)
-		for _, g := range s.groups {
-			indent := "  "
-			if g.heading != "" {
-				fmt.Fprintf(&b, "  %s\n", g.heading)
-				indent = "    "
+		b.WriteString("\n")
+		sortItems(rb.items)
+		for _, it := range rb.items {
+			title := it.title
+			if it.repo != rb.repo {
+				title = fmt.Sprintf("%s (%s)", title, it.repo)
 			}
-			for _, it := range g.items {
-				fmt.Fprintf(&b, "%s%-*s  %s  (%s)\n", indent, width, it.repo, it.text, it.id)
-			}
+			fmt.Fprintf(&b, "- %s `%s`\n  - %s\n", title, it.id, it.action)
 		}
 	}
 
-	if len(quiet) > 0 {
-		fmt.Fprintf(&b, "\nNothing waiting (%s)\n", count(len(quiet), "log"))
-		for _, line := range wrapList(quiet, quietWidth) {
-			fmt.Fprintf(&b, "  %s\n", line)
+	if len(loose) > 0 {
+		fmt.Fprintf(&b, "\n## %s\n\n", headingLoose)
+		sortItems(loose)
+		for _, it := range loose {
+			fmt.Fprintf(&b, "- %s: %s `%s`\n", it.repo, it.title, it.id)
 		}
 	}
+
+	if len(ideaRepos) > 0 {
+		parts := make([]string, 0, len(ideaRepos))
+		for _, repo := range ideaRepos {
+			parts = append(parts, fmt.Sprintf("%s %d", repo, ideas[repo]))
+		}
+		fmt.Fprintf(&b, "\nIdeas: %s\n", strings.Join(parts, ", "))
+	}
+
+	if len(anomalies) > 0 {
+		fmt.Fprintf(&b, "\n## %s\n\n", headingAnomaly)
+		sortItems(anomalies)
+		for _, it := range anomalies {
+			fmt.Fprintf(&b, "- %s: %s `%s`\n", it.repo, it.title, it.id)
+		}
+	}
+
 	b.WriteString(renderRate(logs))
 	return b.String()
 }
 
-type rateRow struct {
-	label  string
-	closed int
-	total  int
+func objectiveHomes(logs []LogState) map[string]string {
+	home := map[string]string{}
+	for _, log := range logs {
+		if log.Tree == nil {
+			continue
+		}
+		for _, o := range log.Tree.Objectives() {
+			if _, taken := home[o.ID]; !taken {
+				home[o.ID] = log.Name
+			}
+		}
+	}
+	return home
+}
+
+func entryHome(e *Entry) string {
+	if e == nil {
+		return ""
+	}
+	if e.Scope == ScopeUser {
+		return string(ScopeUser)
+	}
+	if e.Origin == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.Origin.Repo)
+}
+
+func groupRoot(t *Tree, id string) string {
+	seen := map[string]bool{id: true}
+	for {
+		if t.State(id) == StateSeparated {
+			return id
+		}
+		p, ok := t.parent[id]
+		if !ok || seen[p] {
+			return id
+		}
+		seen[p] = true
+		id = p
+	}
+}
+
+func openBelow(t *Tree, id string) int {
+	seen := map[string]bool{id: true}
+	n := 0
+	stack := t.BlockedByOpenChild(id)
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[cur] {
+			continue
+		}
+		seen[cur] = true
+		n++
+		stack = append(stack, t.BlockedByOpenChild(cur)...)
+	}
+	return n
+}
+
+func derivedObjective(t *Tree, id string) string {
+	for _, e := range t.edges {
+		if e.Type != EdgeDerivesFrom || e.From != id {
+			continue
+		}
+		if target := t.allEntries[e.To]; target != nil && target.Kind == KindObjective {
+			return e.To
+		}
+	}
+	return ""
+}
+
+func objectiveAction(t *Tree, o ObjectiveState) string {
+	switch o.State {
+	case StatePlanned:
+		return "approve"
+	case StateApprovedForExecution:
+		return "start"
+	case StateBlocked:
+		target, what := waitsOn(t, o.ID)
+		if target != nil {
+			return fmt.Sprintf("blocked: %s: %s", target.Kind, what)
+		}
+		return "blocked: " + what
+	case StateVerified:
+		_, what := waitsOn(t, o.ID)
+		return "owe: " + what
+	}
+	return string(o.State)
+}
+
+func waitsOn(t *Tree, id string) (*Entry, string) {
+	_, edge := t.StateEdge(id)
+	if edge == nil {
+		return nil, "no state edge says what it waits on"
+	}
+	if e := t.Entry(edge.To); e != nil {
+		return e, e.Title
+	}
+	return nil, fmt.Sprintf("%s, a record this log does not hold", edge.To)
+}
+
+func sortedBlocks(blocks map[string]*rootBlock) []*rootBlock {
+	out := make([]*rootBlock, 0, len(blocks))
+	for _, b := range blocks {
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].repo != out[j].repo {
+			return out[i].repo < out[j].repo
+		}
+		if out[i].title != out[j].title {
+			return out[i].title < out[j].title
+		}
+		return out[i].id < out[j].id
+	})
+	return out
+}
+
+func sortItems(items []waitItem) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].adjustment != items[j].adjustment {
+			return !items[i].adjustment
+		}
+		if items[i].repo != items[j].repo {
+			return items[i].repo < items[j].repo
+		}
+		return items[i].title < items[j].title
+	})
+}
+
+type RateRow struct {
+	Kind   Kind   `json:"kind,omitempty"`
+	Log    string `json:"log,omitempty"`
+	Closed int    `json:"closed"`
+	Total  int    `json:"total"`
+}
+
+type ClosingRate struct {
+	ByKind []RateRow `json:"by_kind"`
+	ByLog  []RateRow `json:"by_log"`
 }
 
 func renderRate(logs []LogState) string {
-	byKind, byLog := closingRate(logs)
-
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n%s\n", headingRate)
-	for _, line := range rateLines(byKind, "  ") {
-		fmt.Fprintf(&b, "%s\n", line)
-	}
-	if len(byLog) > 1 {
-		b.WriteString("\n  per log\n")
-		for _, line := range rateLines(byLog, "    ") {
-			fmt.Fprintf(&b, "%s\n", line)
+	fmt.Fprintf(&b, "\n## %s\n\n", headingRate)
+	for _, row := range ClosingRateOf(logs).ByKind {
+		if row.Total == 0 {
+			fmt.Fprintf(&b, "- %s: none written\n", row.Kind)
+			continue
 		}
+		fmt.Fprintf(&b, "- %s: %d/%d, %.1f%%\n", row.Kind, row.Closed, row.Total, 100*share(row))
 	}
 	return b.String()
 }
 
-func closingRate(logs []LogState) (byKind, byLog []rateRow) {
+func ClosingRateOf(logs []LogState) ClosingRate {
 	settled := map[string]bool{}
 	for _, log := range logs {
 		if log.Tree == nil {
@@ -230,11 +409,11 @@ func closingRate(logs []LogState) (byKind, byLog []rateRow) {
 	}
 
 	kinds := []Kind{KindOpenQuestion, KindAssumption, KindAdjustment}
-	perKind := map[Kind]*rateRow{}
+	perKind := map[Kind]*RateRow{}
 	for _, k := range kinds {
-		perKind[k] = &rateRow{label: string(k)}
+		perKind[k] = &RateRow{Kind: k}
 	}
-	perLog := map[string]*rateRow{}
+	perLog := map[string]*RateRow{}
 	var names []string
 	counted := map[string]bool{}
 
@@ -242,140 +421,47 @@ func closingRate(logs []LogState) (byKind, byLog []rateRow) {
 		if log.Tree == nil {
 			continue
 		}
-		for id, e := range log.Tree.allEntries {
-			if perKind[e.Kind] == nil || counted[id] {
+		for _, e := range log.Tree.own {
+			if perKind[e.Kind] == nil || counted[e.ID] {
 				continue
 			}
-			counted[id] = true
+			counted[e.ID] = true
 			row, known := perLog[log.Name]
 			if !known {
-				row = &rateRow{label: log.Name}
+				row = &RateRow{Log: log.Name}
 				perLog[log.Name] = row
 				names = append(names, log.Name)
 			}
-			row.total++
-			perKind[e.Kind].total++
-			if settled[id] {
-				row.closed++
-				perKind[e.Kind].closed++
+			row.Total++
+			perKind[e.Kind].Total++
+			if settled[e.ID] {
+				row.Closed++
+				perKind[e.Kind].Closed++
 			}
 		}
 	}
 
+	rate := ClosingRate{ByKind: []RateRow{}, ByLog: []RateRow{}}
 	for _, k := range kinds {
-		byKind = append(byKind, *perKind[k])
+		rate.ByKind = append(rate.ByKind, *perKind[k])
 	}
 	for _, name := range names {
-		byLog = append(byLog, *perLog[name])
+		rate.ByLog = append(rate.ByLog, *perLog[name])
 	}
-	sort.Slice(byLog, func(i, j int) bool {
-		if a, b := share(byLog[i]), share(byLog[j]); a != b {
+	sort.Slice(rate.ByLog, func(i, j int) bool {
+		if a, b := share(rate.ByLog[i]), share(rate.ByLog[j]); a != b {
 			return a < b
 		}
-		return byLog[i].label < byLog[j].label
+		return rate.ByLog[i].Log < rate.ByLog[j].Log
 	})
-	return byKind, byLog
+	return rate
 }
 
-func rateLines(rows []rateRow, indent string) []string {
-	labelWidth, countWidth := 0, 0
-	counts := make([]string, len(rows))
-	for i, r := range rows {
-		counts[i] = fmt.Sprintf("%d/%d", r.closed, r.total)
-		if len(r.label) > labelWidth {
-			labelWidth = len(r.label)
-		}
-		if len(counts[i]) > countWidth {
-			countWidth = len(counts[i])
-		}
-	}
-	out := make([]string, 0, len(rows))
-	for i, r := range rows {
-		out = append(out, strings.TrimRight(fmt.Sprintf("%s%-*s  %*s  %s",
-			indent, labelWidth, r.label, countWidth, counts[i], percent(r)), " "))
-	}
-	return out
-}
-
-func share(r rateRow) float64 {
-	if r.total == 0 {
+func share(r RateRow) float64 {
+	if r.Total == 0 {
 		return 0
 	}
-	return float64(r.closed) / float64(r.total)
-}
-
-func percent(r rateRow) string {
-	if r.total == 0 {
-		return "none written"
-	}
-	return fmt.Sprintf("%5.1f%%", 100*share(r))
-}
-
-func wrapList(names []string, width int) []string {
-	var lines []string
-	cur := ""
-	for i, n := range names {
-		piece := n
-		if i < len(names)-1 {
-			piece += ","
-		}
-		switch {
-		case cur == "":
-			cur = piece
-		case len(cur)+1+len(piece) <= width:
-			cur += " " + piece
-		default:
-			lines = append(lines, cur)
-			cur = piece
-		}
-	}
-	if cur != "" {
-		lines = append(lines, cur)
-	}
-	return lines
-}
-
-func waitsOn(t *Tree, id string) (string, string) {
-	_, edge := t.StateEdge(id)
-	if edge == nil {
-		return "", "no state edge says what it waits on"
-	}
-	if e := t.Entry(edge.To); e != nil {
-		return edge.To, fmt.Sprintf("%s: %s", e.Kind, e.Title)
-	}
-	return edge.To, fmt.Sprintf("%s, a record this log does not hold", edge.To)
-}
-
-func oneGroup(items []waitItem) []waitGroup {
-	if len(items) == 0 {
-		return nil
-	}
-	sortItems(items)
-	return []waitGroup{{items: items}}
-}
-
-func recordGroups(byRecord map[string]*waitGroup) []waitGroup {
-	out := make([]waitGroup, 0, len(byRecord))
-	for _, g := range byRecord {
-		sortItems(g.items)
-		out = append(out, *g)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].heading != out[j].heading {
-			return out[i].heading < out[j].heading
-		}
-		return out[i].key < out[j].key
-	})
-	return out
-}
-
-func sortItems(items []waitItem) {
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].repo != items[j].repo {
-			return items[i].repo < items[j].repo
-		}
-		return items[i].text < items[j].text
-	})
+	return float64(r.Closed) / float64(r.Total)
 }
 
 func count(n int, noun string) string {

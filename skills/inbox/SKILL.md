@@ -155,7 +155,7 @@ decision's body.
 memory state --all --text
 ```
 
-Show it as it came back, in a code block, then one or two lines in the user's
+Show it as it came back, as markdown and not in a code block, then one or two lines in the user's
 language saying what they can do from here: have any one item explained, report
 what happened with one, drop one or set it aside, note an idea, note a change
 they want or close one they asked for. Do not re-sort it,

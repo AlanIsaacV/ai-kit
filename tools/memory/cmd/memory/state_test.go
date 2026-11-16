@@ -846,25 +846,40 @@ func summaryLine(t *testing.T, summary, title string) string {
 	return ""
 }
 
-func summaryGroup(t *testing.T, summary, heading string) string {
+func summarySection(t *testing.T, summary, heading string) string {
 	t.Helper()
 	var body []string
 	found := false
 	for _, line := range strings.Split(summary, "\n") {
 		switch {
-		case strings.HasPrefix(line, heading):
+		case line == heading:
 			found = true
 		case !found:
-		case line == "" || strings.HasPrefix(line, " "):
-			body = append(body, line)
-		default:
+		case strings.HasPrefix(line, "## "):
 			return strings.Join(body, "\n")
+		default:
+			body = append(body, line)
 		}
 	}
 	if !found {
-		t.Fatalf("the summary has no %q group:\n%s", heading, summary)
+		t.Fatalf("the summary has no %q section:\n%s", heading, summary)
 	}
 	return strings.Join(body, "\n")
+}
+
+func summaryBlockOf(t *testing.T, summary, title string) string {
+	t.Helper()
+	heading := ""
+	for _, line := range strings.Split(summary, "\n") {
+		if strings.HasPrefix(line, "## ") {
+			heading = line
+		}
+		if strings.Contains(line, title) {
+			return heading
+		}
+	}
+	t.Fatalf("the summary names nothing called %q:\n%s", title, summary)
+	return ""
 }
 
 func snapshot(t *testing.T, dir string) map[string]string {
@@ -1117,13 +1132,13 @@ func TestCriterion5EveryItemNamesItsRepositoryAndNoTwoTreesMerge(t *testing.T) {
 	}
 
 	summary := stateIn(t, s, alpha, "--text").stdout
-	for title, repoName := range map[string]string{
-		alphaRootTitle:  "alpha",
-		alphaChildTitle: "alpha",
-		betaRootTitle:   "beta",
+	for title, heading := range map[string]string{
+		alphaRootTitle:  "## alpha — " + alphaRootTitle,
+		alphaChildTitle: "## alpha — " + alphaRootTitle,
+		betaRootTitle:   "## beta — " + betaRootTitle,
 	} {
-		if line := summaryLine(t, summary, title); !strings.Contains(line, repoName) {
-			t.Errorf("the item for %q has to name %s, got %q", title, repoName, line)
+		if got := summaryBlockOf(t, summary, title); got != heading {
+			t.Errorf("the item for %q has to sit under %q, got %q", title, heading, got)
 		}
 	}
 }
@@ -1141,20 +1156,17 @@ func TestCriterion6ABlockedObjectiveNamesWhatItWaitsOn(t *testing.T) {
 	mustLink(t, r, "blocked", blocked, question)
 
 	summary := stateIn(t, s, r, "--text").stdout
-	group := summaryGroup(t, summary, "Blocked on a question or a decision")
+	group := summarySection(t, summary, "## alpha — "+objective)
 
-	if !strings.Contains(group, "open-question: "+waitingOn) {
-		t.Errorf("the blocked line has to name the question its edge points at:\n%s", group)
-	}
-	if !strings.Contains(group, objective) {
-		t.Errorf("and the objective under it:\n%s", group)
+	if !strings.Contains(group, "blocked: open-question: "+waitingOn+" `"+blocked+"`") {
+		t.Errorf("the blocked line has to name the question its edge points at:\n%s", summary)
 	}
 	if strings.Contains(summary, untouched) {
 		t.Errorf("the other open question is pointed at by nothing and must not be named:\n%s", summary)
 	}
 }
 
-func TestCriterion7EveryOpenStateAppearsUnderItsOwnGroup(t *testing.T) {
+func TestCriterion7EveryOpenStateShowsWhatItWaitsOn(t *testing.T) {
 	s, r, _ := twoDepths(t)
 	const (
 		plannedTitle   = "The one nobody has approved yet"
@@ -1171,26 +1183,18 @@ func TestCriterion7EveryOpenStateAppearsUnderItsOwnGroup(t *testing.T) {
 
 	summary := stateIn(t, s, r, "--text").stdout
 
-	groups := []struct {
-		heading string
-		title   string
-	}{
-		{"Waiting for your approval", plannedTitle},
-		{"Blocked on a question or a decision", blockedTitle},
-		{"Waiting for you to start it", approvedTitle},
-		{"Set aside", separatedTitle},
+	for title, action := range map[string]string{
+		plannedTitle:  "approve `",
+		blockedTitle:  "blocked: open-question: What is holding it up `",
+		approvedTitle: "start `",
+	} {
+		body := summarySection(t, summary, "## alpha — "+title)
+		if !strings.HasPrefix(strings.TrimLeft(body, "\n"), action) {
+			t.Errorf("%q has to carry %q as its own line:\n%s", title, action, summary)
+		}
 	}
-	for _, g := range groups {
-		body := summaryGroup(t, summary, g.heading)
-		if !strings.Contains(body, g.title) {
-			t.Errorf("%q belongs under %q:\n%s", g.title, g.heading, summary)
-		}
-		for _, other := range groups {
-			if other.title != g.title && strings.Contains(body, other.title) {
-				t.Errorf("%q is not in the %q state and must not be listed under it:\n%s",
-					other.title, g.heading, body)
-			}
-		}
+	if strings.Contains(summary, separatedTitle) {
+		t.Errorf("a separated objective waits on nobody and stays out of the text:\n%s", summary)
 	}
 }
 
@@ -1299,7 +1303,7 @@ func TestAnAnsweredAssumptionClosesLikeAnOpenQuestion(t *testing.T) {
 	if res.code != 0 {
 		t.Fatalf("state --text --here: exit %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
-	line := summaryLine(t, summaryGroup(t, res.stdout, "Closing rate"), "assumption")
+	line := summaryLine(t, summarySection(t, res.stdout, "## Closing rate"), "assumption")
 	if !strings.Contains(line, "1/2") {
 		t.Errorf("the answered assumption has to be in the rate's numerator, got %q", line)
 	}
