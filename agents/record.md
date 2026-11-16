@@ -378,8 +378,8 @@ on disk.
   shows: the title is the change as the user put it, the body carries their
   words. Never as an `open-question`: a question is something the work is
   unsure of, a request is something the user wants, and only the `adjustment`
-  shows as pending under a heading of its own in `memory state --text` until a
-  `decision` answers it, withdraws it or supersedes it. **Pointing at an
+  shows as `adjustment pending` in `memory state --text` until a `decision`
+  answers it, withdraws it or supersedes it. **Pointing at an
   existing question is not a response to a requested change**, however much
   ground the question covers — raising a question never settled a request, and
   an old question still open is the evidence that nothing did. One already on
@@ -441,7 +441,7 @@ on disk.
   mention a handover: 16 say plainly that nobody reported, 1 says it was run, and
   59 cannot be classified by their text at all. The kind is what makes it
   actionable: an `owed` record is what the `verified` state points at, what
-  `memory state --text` prints under a heading of its own, and what `inbox`
+  `memory state --text` prints on the objective's `owe:` line, and what `inbox`
   answers when the user says how it went.
 
   **The record and the edge on one line is the whole point of writing this as a
@@ -480,9 +480,9 @@ on disk.
   has not happened, one `Handed-over criterion:` line for each criterion nobody
   reported on, and no line for a debt that is not there. One record per close
   rather than one per debt, because the objective waits once on everything it
-  owes, and its title is the one line `memory state --text` prints for it under
-  **Verified, waiting on what you owe** — so the title says what is owed in words
-  the user recognises without opening the body.
+  owes, and its title is what `memory state --text` prints for it on the
+  objective's `owe:` line — so the title says what is owed in words the user
+  recognises without opening the body.
 
   An earlier `blocked` close of this objective may already have left an `owed`
   nothing settled — `memory state --id <objective_id> --all` lists it among

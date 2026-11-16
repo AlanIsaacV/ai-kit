@@ -113,9 +113,10 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 			}
 			b := blockOf(log.Tree, o.ID)
 			parent := len(o.BlockedByOpenChild) > 0
+			owes := o.State == StateBlocked || o.State == StateVerified
 			action := objectiveAction(log.Tree, o)
 			if b.id != o.ID {
-				if parent {
+				if parent && !owes {
 					continue
 				}
 				b.items = append(b.items, waitItem{repo: log.Name, title: o.Title, id: o.ID, action: action})
@@ -125,7 +126,7 @@ func RenderWaiting(logs []LogState, warnings []string) string {
 			listed[o.ID] = true
 			if parent {
 				b.below = openBelow(log.Tree, o.ID)
-				if o.State != StateBlocked && o.State != StateVerified {
+				if !owes {
 					continue
 				}
 			}

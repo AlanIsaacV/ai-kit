@@ -1,6 +1,6 @@
 ---
 name: inbox
-description: "Say what is waiting on the user across every repository on this host, and let them act on it from here without opening a session in that repository. Lists it with `memory state --all --text` — the objectives waiting on their approval, the ones verified and waiting on what the user owes, the ones blocked on a question, the ones waiting to be started, the Ideas section and the adjustments the user asked for — exactly as the CLI prints it, inventing no class of its own. Explains any one item from its draft, its `manual-checks.md` and its open records. Closes a `verified` objective — a handed-over check, or a landing that has not happened on an executable objective or on the parent a tree of slices lands through — from the user's own sentence: finds the objective, shows the `owed` record (or, on an objective blocked before `verified` existed, the owed questions) that sentence settles and what state it will write, and on their go writes one `decision` quoting them into that objective's own log — `met` when it worked, a fresh `blocked` on a new question when it failed, `cancelled` when they drop it, withdrawing what it owed, `separated` when it is not for now. Notes an idea in one line into the repository they name, or into the user log when they name none, and drops one with a `decision` that withdraws it. Notes a change the user asks for, or a 'why does it work like this?' they want revisited, as an `adjustment` in the repository it is about, deriving from the objective it touches when there is one, and closes one with a `decision` quoting them that answers or withdraws it; pointing at an existing question is not a response to it. Use when somebody wants to know what they owe, or to report what happened with something they owed. Triggers on: 'qué tengo pendiente', 'qué me está esperando', 'qué hay pendiente', 'qué me falta cerrar', 'lo desplegué y funciona', 'ya lo probé y anda', 'lo corrí y falló', 'eso ya no va', 'eso para más adelante', 'idea:', 'anotá esta idea', 'descartá esa idea', 'what is waiting on me', 'what do I have pending', 'I deployed it and it works', 'I ran the check and it passed', 'it failed', 'drop that one', 'not now', 'note this idea', 'drop that idea', 'quiero que esto cambie', 'anotá este cambio', 'ese ajuste ya está', 'I want this changed', 'note this change', 'that adjustment is done'. It never writes a word the user did not say, never runs a handed-over check itself and never approves an objective for execution — that is `work`'s, in the repository the objective lives in."
+description: "Say what is waiting on the user across every repository on this host, and let them act on it from here without opening a session in that repository. Lists it with `memory state --all --text` — one block per root objective with something on the user, the root's own line saying what it owes or what blocks it, each objective under it to approve, to start, blocked or owed, each adjustment still pending, the adjustments that touch no objective and one `Ideas:` line counting the ideas per log — exactly as the CLI prints it, inventing no class of its own. Explains any one item from its draft, its `manual-checks.md` and its open records. Closes a `verified` objective — a handed-over check, or a landing that has not happened on an executable objective or on the parent a tree of slices lands through — from the user's own sentence: finds the objective, shows the `owed` record (or, on an objective blocked before `verified` existed, the owed questions) that sentence settles and what state it will write, and on their go writes one `decision` quoting them into that objective's own log — `met` when it worked, a fresh `blocked` on a new question when it failed, `cancelled` when they drop it, withdrawing what it owed, `separated` when it is not for now. Notes an idea in one line into the repository they name, or into the user log when they name none, and drops one with a `decision` that withdraws it. Notes a change the user asks for, or a 'why does it work like this?' they want revisited, as an `adjustment` in the repository it is about, deriving from the objective it touches when there is one, and closes one with a `decision` quoting them that answers or withdraws it; pointing at an existing question is not a response to it. Use when somebody wants to know what they owe, or to report what happened with something they owed. Triggers on: 'qué tengo pendiente', 'qué me está esperando', 'qué hay pendiente', 'qué me falta cerrar', 'lo desplegué y funciona', 'ya lo probé y anda', 'lo corrí y falló', 'eso ya no va', 'eso para más adelante', 'idea:', 'anotá esta idea', 'descartá esa idea', 'what is waiting on me', 'what do I have pending', 'I deployed it and it works', 'I ran the check and it passed', 'it failed', 'drop that one', 'not now', 'note this idea', 'drop that idea', 'quiero que esto cambie', 'anotá este cambio', 'ese ajuste ya está', 'I want this changed', 'note this change', 'that adjustment is done'. It never writes a word the user did not say, never runs a handed-over check itself and never approves an objective for execution — that is `work`'s, in the repository the objective lives in."
 ---
 
 # inbox
@@ -108,8 +108,10 @@ shell is standing in. Leave the brackets unquoted for that reason.
 
 Where the ids and roots come from:
 
-- **`memory state --all --text`** names every open objective with its log and its
-  id, every idea with its log and its id, and every open adjustment the same way.
+- **`memory state --all --text`** names each objective it lists and each open
+  adjustment with its log and its id, and counts the open ideas per log without
+  naming them. The ids of the ideas, and the full lists, are in the JSON
+  of `memory state --all` — its `ideas` and `adjustments` arrays.
 - **`memory state --all --id <objective-id>`** returns that one objective from any
   log, with its `root` (the working tree its log belongs to), its `slug`, its
   `plan`, its `state` and its `open_records` — the `open-question`, `assumption`,
@@ -159,29 +161,44 @@ Show it as it came back, as markdown and not in a code block, then one or two li
 language saying what they can do from here: have any one item explained, report
 what happened with one, drop one or set it aside, note an idea, note a change
 they want or close one they asked for. Do not re-sort it,
-do not collapse **Nothing waiting**, and do not annotate an item with anything the
-listing does not carry.
+do not drop or merge a block or a line of it, and do not annotate an item with
+anything the listing does not carry.
 
-**Verified, waiting on what you owe** is where handed-over checks and landings
-show up: each group is headed by the `owed` record the objectives under it wait
-on, whose title says on one line what is owed — headed the same way whether the
-objective under it is an executable one or a parent whose children have all
-closed. Each of them is one the user can close from here, step 3.
-**Blocked on a question or a decision** is for what stops the work: a question
-nobody has answered, a wall outside it. An objective blocked on a wall can owe a
-landing or a handed-over check as well, in an `owed` record `record` wrote beside
-the wall and its `open_records` carry; step 2 explains it and step 3 closes it,
-and the wall stays what the objective is blocked on. It also still holds objectives closed
-before `verified` existed, blocked on an `open-question` titled "Nobody reported a
-result for the handed-over criterion: …" or "The landing condition has not
-happened: …"; those are owed too, nothing migrated them, and step 3 closes them
-the way it always has.
-**Ideas** lists every idea no record has settled (answered, superseded or
-withdrawn), each with the name of the log it lives in — `user` for the user log —
-and its id.
-**Adjustments you asked for** lists every `adjustment` nothing has settled, one
-line each, the way Ideas does: the changes the user asked for, and the "why does
-it work like this?" they wanted revisited, until a decision closes them, step 7.
+The listing has one `## <repo> — <root title>` block per root objective with
+something on the user. The root's own line, when the root itself waits, is its
+action and its id; a root with open objectives below it carries
+`in progress: N open below`. Each objective under it that waits is
+``- <title> `<id>` `` with its action on the next line: `approve` or `start`, which
+are `work`'s (rule 3), `owe: <owed title>`, or `blocked: <kind>: <title>`. An
+intermediate parent is one of those items when it is `blocked` or `verified`,
+with its `blocked:` or `owe:` line, open children or not; while it is only
+`planned` or approved and has open children it has no line of its own, and its
+open children are what is listed.
+`owe:` is where handed-over checks and landings show up: the title after it is
+the `owed` record the objective waits on, and it says on one line what is owed —
+printed the same way whether the objective is an executable one or a parent. Each
+of them is one the user can close from here, step 3.
+`blocked:` is for what stops the work: the kind and title after it name the record
+it waits on, a question nobody has answered or a wall outside it. An objective
+blocked on a wall can owe a landing or a handed-over check as well, in an `owed`
+record `record` wrote beside the wall and its `open_records` carry; step 2 explains
+it and step 3 closes it, and the wall stays what the objective is blocked on.
+Objectives closed before `verified` existed were blocked on an `open-question`
+titled "Nobody reported a result for the handed-over criterion: …" or "The landing
+condition has not happened: …", and those were migrated: each debt moved into an
+`owed` record that supersedes the old question, on the objective that now waits
+for it. One still listed as `blocked: open-question: …` under such a title is in a
+log the migration did not cover; it is owed all the same, and step 3 closes it the
+way it always has.
+The `Ideas:` line counts, per log — `user` for the user log — every idea no record
+has settled (answered, superseded or withdrawn). It carries no title and no id;
+those are in the `ideas` of `memory state --all`, read as above.
+`adjustment pending` is an `adjustment` nothing has settled, listed as
+``- <title> `<id>` `` in the block of the root above the objective it derives
+from; one that derives from no objective is a ``- <repo>: <title> `<id>` `` line
+under `## Adjustments outside any objective`. Either way it is a change the user asked
+for, or a "why does it work like this?" they wanted revisited, and it stays until
+a decision closes it, step 7.
 
 When the user opened with a sentence about one item instead of a question about
 all of them — "lo desplegué y funciona" — this listing is still the first read,
@@ -355,10 +372,11 @@ questions:
   after the batch, or, when what is owed is a landing condition no question names
   yet, to a new `open-question` on a second line of the same batch. Answering a
   blocking question releases the block by itself: without the fresh edge the
-  objective falls back to the state it had before it was blocked — waiting for
-  you to start it if it had been approved, waiting for your approval if it never
-  was — not on what is still owed. A parent falls back further: with the block
-  released and its children all closed, it reads `met` derived from them, so the
+  objective falls back to the state it had before it was blocked —
+  `approved_for_execution`, listed with `start`, if it had been approved,
+  `planned`, listed with `approve`, if it never was — not on what is still owed.
+  A parent falls back further: with the block released and its children all
+  closed, it reads `met` derived from them, so the
   fresh edge is what keeps a parent waiting on the rest of its landing.
 - **It failed.** The `decision` answers the `owed` record or the question with
   the failure, and the objective gets a fresh `blocked` edge to a new
@@ -512,8 +530,8 @@ Read `state` out of this, not out of the exit status alone. It should be the sta
 you showed them: `met`, or `blocked` on the question you named — on a `blocked`
 objective that owed through an `owed` record and reported it done, still
 `blocked` on its wall. The questions and the `owed` this write answered should be
-gone from `open_records`, and on a failure the new question should be on it. A `verified` objective that went `met` is gone from
-**Verified, waiting on what you owe** in the next `memory state --all --text`.
+gone from `open_records`, and on a failure the new question should be on it. A `verified` objective that went `met` no longer has
+its `owe:` line in the next `memory state --all --text`.
 Say it in one line — the objective, its state now, and what is still open on it.
 The assumptions `plan` recorded stay listed after a `met`; that is what an
 objective closes with, not something the close missed.
@@ -609,16 +627,16 @@ tree. `--about` is required by `add`, and for an idea it is always `idea`, plus
 the area when the user names one — `--about idea,<area>`, or `--about idea` alone
 when they name none. The sentence was the instruction, so there is no
 confirmation round: check the exit status. Exit 0 and you say in one line which
-log it went into and its id, and the next `memory state --all --text` lists it
-under **Ideas**. Any other exit and nothing landed: show the user the CLI's error
-as it came back, and write nothing in its place.
+log it went into and its id, and the next `memory state --all --text` counts it
+on the `Ideas:` line. Any other exit and nothing landed: show the user the CLI's
+error as it came back, and write nothing in its place.
 
 ### 6 — Drop or take up an idea
 
 **Dropping** is a `decision` that withdraws it, written into the idea's own log —
 the `root` the `idea` line of the listing command printed, or the user log when
 its repository is `user` and its `root` is empty. It is the same rule an `open-question` follows: an idea
-leaves the Ideas section when something settles it — an answer, a `supersedes`
+leaves the `Ideas:` count when something settles it — an answer, a `supersedes`
 or a `withdraws` — and nothing else removes it. A dropped idea answered nothing,
 so the decision carries a `withdraws` edge and a `Reason:` line, and no
 `answers`. Write the line with the file-writing tool into this session's scratch
@@ -692,15 +710,17 @@ env -u AI_KIT_PLAN memory add --dir <root> --batch <scratch>/inbox-adjustment-<U
 The sentence was the instruction, so there is no confirmation round beyond
 resolving the objective: check the exit status. Exit 0 and you say in one line
 which log it went into, its id and the objective it derives from, if any; the
-next `memory state --all --text` lists it under **Adjustments you asked for**, and
-the objective's `open_records` carry it. Any other exit and nothing landed: show
-the CLI's error as it came back, and write nothing in its place.
+next `memory state --all --text` lists it as `adjustment pending` in the block of
+the root above the objective it derives from, or under
+`## Adjustments outside any objective` when it derives from none, and the
+objective's `open_records` carry it. Any other exit and nothing landed: show the
+CLI's error as it came back, and write nothing in its place.
 
 **Closing one** is a `decision` quoting the user, written into the adjustment's
 own log — the `root` its `adjustment` line of the listing command printed — and
-only on their words about it. Match those words against **Adjustments you asked
-for**; two that match are one `AskUserQuestion`, as in step 3. Two closes, one
-line each, never both:
+only on their words about it. Match those words against the `adjustment pending`
+items and the `## Adjustments outside any objective` lines; two that match are one
+`AskUserQuestion`, as in step 3. Two closes, one line each, never both:
 
 - **Done, or explained and accepted** — "ya está cambiado", "ok, entiendo por qué,
   dejalo así": the decision `answers` it, and its body says which.
@@ -728,9 +748,9 @@ memory add --dir <root> --plan <plan> --batch <scratch>/inbox-close-adjustment-<
 env -u AI_KIT_PLAN memory add --dir <root> --batch <scratch>/inbox-close-adjustment-<UTC timestamp>.jsonl
 ```
 
-Exit status first, as in step 6. On 0, the next listing no longer shows it under
-**Adjustments you asked for**, and the objective it derives from no longer carries
-it in `open_records`.
+Exit status first, as in step 6. On 0, the next listing no longer shows it, as
+`adjustment pending` or under `## Adjustments outside any objective`, and the
+objective it derives from no longer carries it in `open_records`.
 
 ## Key principles
 

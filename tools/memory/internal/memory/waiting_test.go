@@ -87,6 +87,88 @@ func TestCriterion3AParentWithOpenChildrenIsNeverApproveAndTheRootCountsWhatIsOp
 	}
 }
 
+func TestAnIntermediateParentBlockedOrVerifiedWithOpenChildrenIsListedUnderItsRoot(t *testing.T) {
+	root := objective(t, "The root of the whole tree")
+	blocked := objective(t, "The intermediate parent held on a question")
+	blockedLeaf := objective(t, "The leaf under the held parent")
+	question := entry(t, KindOpenQuestion, "Which store the listing reads")
+	verified := objective(t, "The intermediate parent verified on a debt")
+	verifiedLeaf := objective(t, "The leaf under the verified parent")
+	owed := entry(t, KindOwed, "Install the binary and read the listing")
+	middle := objective(t, "The open intermediate parent")
+	deep := objective(t, "The depth-two parent held on a question")
+	deepLeaf := objective(t, "The leaf under the depth-two parent")
+	deepQuestion := entry(t, KindOpenQuestion, "Whether the depth bound holds")
+
+	out := RenderWaiting(waitingOver(heldLog{name: "api", lines: logOf(
+		[]*Entry{root, blocked, blockedLeaf, question, verified, verifiedLeaf, owed, middle, deep, deepLeaf, deepQuestion},
+		[]*Edge{
+			derivesFrom(blocked, root),
+			derivesFrom(blockedLeaf, blocked),
+			newTestEdge(t, EdgeBlocked, blocked.ID, question.ID),
+			derivesFrom(verified, root),
+			derivesFrom(verifiedLeaf, verified),
+			newTestEdge(t, EdgeVerified, verified.ID, owed.ID),
+			derivesFrom(middle, root),
+			derivesFrom(deep, middle),
+			derivesFrom(deepLeaf, deep),
+			newTestEdge(t, EdgeBlocked, deep.ID, deepQuestion.ID),
+		})}), nil)
+
+	body := section(out, "api — "+root.Title)
+	for _, want := range []string{
+		"- " + blocked.Title + " `" + blocked.ID + "`\n  - blocked: open-question: " + question.Title,
+		"- " + verified.Title + " `" + verified.ID + "`\n  - owe: " + owed.Title,
+		"- " + deep.Title + " `" + deep.ID + "`\n  - blocked: open-question: " + deepQuestion.Title,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("an intermediate parent that waits on the user is listed under its root with its line %q:\n%s", want, out)
+		}
+	}
+	for _, leaf := range []*Entry{blockedLeaf, verifiedLeaf, deepLeaf} {
+		if !strings.Contains(body, "- "+leaf.Title+" `"+leaf.ID+"`") {
+			t.Errorf("the open child %q is still listed in the root block:\n%s", leaf.Title, out)
+		}
+	}
+	if strings.Count(out, "in progress:") != 1 {
+		t.Errorf("only the root carries an in-progress count, never an intermediate parent:\n%s", out)
+	}
+	if strings.Contains(out, middle.ID) {
+		t.Errorf("the planned intermediate parent above the depth-two one has no line of its own:\n%s", out)
+	}
+}
+
+func TestAnIntermediateParentPlannedOrApprovedWithOpenChildrenHasNoLine(t *testing.T) {
+	root := objective(t, "The root of the whole tree")
+	planned := objective(t, "The planned intermediate parent")
+	plannedLeaf := objective(t, "The leaf under the planned parent")
+	approved := objective(t, "The approved intermediate parent")
+	approvedLeaf := objective(t, "The leaf under the approved parent")
+	decision := entry(t, KindDecision, "Run the approved parent")
+
+	out := RenderWaiting(waitingOver(heldLog{name: "api", lines: logOf(
+		[]*Entry{root, planned, plannedLeaf, approved, approvedLeaf, decision},
+		[]*Edge{
+			derivesFrom(planned, root),
+			derivesFrom(plannedLeaf, planned),
+			derivesFrom(approved, root),
+			derivesFrom(approvedLeaf, approved),
+			newTestEdge(t, EdgeApprovedForExecution, approved.ID, decision.ID),
+		})}), nil)
+
+	for _, parent := range []*Entry{planned, approved} {
+		if strings.Contains(out, parent.ID) || strings.Contains(out, parent.Title) {
+			t.Errorf("%q has open children and nothing of the user's to wait on, so it has no line:\n%s", parent.Title, out)
+		}
+	}
+	body := section(out, "api — "+root.Title)
+	for _, leaf := range []*Entry{plannedLeaf, approvedLeaf} {
+		if !strings.Contains(body, "- "+leaf.Title+" `"+leaf.ID+"`\n  - approve") {
+			t.Errorf("the open child %q carries the wait under the root:\n%s", leaf.Title, out)
+		}
+	}
+}
+
 func TestCriterion4TheHeaderCountsAnObjectiveTwoLogsReportOnce(t *testing.T) {
 	parent := objective(t, "The parent in the first repository")
 	kid := objective(t, "The child in the second repository")

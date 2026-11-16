@@ -122,12 +122,15 @@ wall stopped. What each waits on is the record its edge points at:
 memory state --text
 ```
 
-That prints the `verified` objectives in a section of their own, each with the
-`owed` record that names its debt on one line, and **Blocked on a question or a
-decision** grouped by the record each blocked objective waits on — over every log
-in the store rather than this tree alone. The `verified` section is the ledger for
-the debt step 9 writes, and reading it *here* is what makes the debt something the
-next turn pays rather than something the last turn recorded.
+That prints one block per root objective, over every log in the store rather than
+this tree alone: each `verified` objective with an `owe:` line carrying the title
+of the `owed` record that names its debt, and each blocked one with a
+`blocked: <kind>: <title>` line naming the record it waits on — on the root's own
+line at the top of its block when the root is the one waiting, and as a `- ` item
+under it for any objective below, intermediate parents included. The `owe:` lines
+are the ledger for the debt step 9 writes, and reading them *here* is what makes
+the debt something the next turn pays rather than something the last turn
+recorded.
 
 **Name every `verified` and every blocked objective in this tree before step 2
 chooses anything**, one line each: what a `verified` one owes, what a blocked one
@@ -1463,10 +1466,10 @@ it — `record` names that criterion in the closing `review-finding` with its
 `verified` is an **open** state in this log rather than a closing one, which is
 what makes this a pause and not a failure: the objective keeps its approval, it
 stays a candidate for `--current`, it holds its parent open the way any open child
-does, and `memory state --text` lists it in a section of its own — not under
-**Blocked on a question or a decision** — with its `owed` record's title on one
-line. That listing is the ledger step 1 reads at the top of the next turn, which
-is when this gets paid. Nothing reads `verified` as `met`: it goes to `met` only
+does, and `memory state --text` lists it with an `owe:` line carrying its `owed`
+record's title — not a `blocked:` line — in its root's block, as the root's own
+line when it is the root. That listing is the ledger step 1 reads at the top of
+the next turn, which is when this gets paid. Nothing reads `verified` as `met`: it goes to `met` only
 on the user's word.
 
 Say it in one line, as a pause rather than an apology and never as a question,

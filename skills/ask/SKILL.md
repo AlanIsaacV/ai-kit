@@ -744,8 +744,9 @@ anchor; it writes to the log and touches nothing else in the repository, so rule
 Exit status first: any exit but 0 means nothing landed, and the CLI's error goes
 to the person as it came back. On 0, say in one line which log it went into, its
 id and the objective it derives from, if any. From then on `memory state --text`
-lists it under **Adjustments you asked for** until a `decision` answers it or
-withdraws it — `inbox` is where the person closes it.
+lists it as `adjustment pending` in the block of the root above the objective it
+derives from, or under `## Adjustments outside any objective` when it derives from
+none, until a `decision` answers it or withdraws it — `inbox` is where the person closes it.
 
 ## Key principles
 

@@ -2,6 +2,63 @@
 
 ## Unreleased
 
+### What is waiting on you lists only what you owe: `verified`, `owed`, `withdraws`, `adjustment`, and one block per root
+
+The listing could not tell a debt from a wall. A slice whose only remaining step
+was a landing nobody had done yet went under *Blocked on a question or a decision*,
+beside the objectives a real question stopped; a design doubt could leave the log
+only through an answer somebody had to invent; a change the user asked for had no
+record of its own; and sections by state put a parent with open children under
+approval, asking for an act that does not exist. The `inbox-owes` tree (objective
+01M7GCEHY6DSQA83K7HK7BDHV6) changed the vocabulary and the listing together, in
+f8e8e91, 256b0d6 and 6568fc4, and reclassified the records already in the logs by
+appending entries, with no line edited.
+
+```bash
+memory link --type verified --from <objective> --to <owed>      # checked; what is left is yours
+memory link --type withdraws --from <decision> --to <question>  # retired, not answered
+memory add --kind adjustment --title "Name the broker in every alert" --about alerts
+memory state --all --text     # one ## block per root; owe:, blocked:, approve or start per item
+```
+
+- **`verified` is a sixth state, and `owed` is the only kind it may point at.** An
+  objective whose latest state edge is `verified` is open, stays outstanding in its
+  parent's completion and holds that parent from deriving `met`; a later state edge
+  moves it, `met` when the debt is paid. Settling the `owed` record releases
+  nothing, unlike a `blocked` edge on an `open-question`. REJECTED: keeping
+  `blocked` for a landing that has not happened, which listed a debt as a question
+  stopping the work and left *blocked* meaning two things.
+- **`withdraws` is a new relation, and settled means answered, superseded or
+  withdrawn everywhere.** `--current`, the release of a block on an
+  `open-question`, the objectives moved to `excluded`, each objective's
+  `open_records`, the ideas and the closing rate all read the one set, so a
+  superseded record now counts where only an answered one did. `link` places no
+  rule on the kind at either end; the skills write it from a `decision` carrying a
+  `Reason:` line. REJECTED: retiring a doubt with `answers`, which asserts a result
+  nobody reported.
+- **`owed` and `adjustment` are two more widenings inside version 3**, and
+  `CurrentSchemaVersion` is still 3; `verified` and `withdraws` widen version 2's
+  edge types in place, to thirteen. `open_records` lists the unsettled
+  `open-question`, `assumption`, `adjustment` and `owed` records deriving from an
+  objective, and both forms of `state` JSON gain an `adjustments` key — the
+  single-log one without `repo`.
+- **`memory state --text` prints one markdown block per root instead of sections
+  by state**, headed `## <repo> — <root title>`: the root's own line when it waits
+  on you, `in progress: N open below` when it has open children, and one bullet
+  per objective below it that waits on you, with its id and its action on a nested
+  bullet, then the adjustments deriving from that tree as `adjustment pending`. An
+  objective with open children that is `planned` or `approved_for_execution` gets
+  no line, so no parent is listed for approval; one that is `blocked` or `verified`
+  keeps its line at any depth. Loose adjustments close the list under
+  *Adjustments outside any objective*, ideas are one `Ideas:` line counted per log,
+  and *Nothing waiting* and *Set aside* are gone. The header counts the distinct
+  objectives the listing prints. REJECTED: the sections by state, whose aligned
+  columns do not wrap on a phone and which listed a `planned` parent for approval.
+- **The per-log closing rate counted every question in the first log**, because it
+  walked the whole store; each record now counts in the first log holding it, and
+  `adjustment` is a third kind beside `open-question` and `assumption`.
+  `state --all` carries the rate as `closing_rate`, `by_kind` and `by_log`.
+
 ### The `idea` kind, and an Ideas section in what is waiting on you
 
 Something you want to do some day had nowhere to live: the only thing the log

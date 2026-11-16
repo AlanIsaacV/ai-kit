@@ -23,10 +23,11 @@ recording it would mean rewriting that line — so edges are separate records.
 
 **Validity is derived, not stored.** There is no `still_valid` field, because a
 mutable field in an append-only log is a lie waiting to happen. `--current`
-drops whatever the graph says is settled: a record something `supersedes`, and
-a question or assumption something `answers`. Both are equally irrelevant to
-"what do I still have to hold in mind", which is the only question `--current`
-is for. Without the flag the history is intact, answered questions included.
+drops whatever the graph says is settled: a record something `supersedes`, a
+question or assumption something `answers`, and a record something `withdraws`.
+All three are equally irrelevant to "what do I still have to hold in mind", which
+is the only question `--current` is for. Without the flag the history is intact,
+answered questions included.
 **The graph it asks is the store's and not one log's**, so an edge written in
 another repository settles a record here — a claim about a record is a claim
 about that record wherever the line saying so happened to land.
@@ -182,14 +183,15 @@ also where the convention for reading two contradictory ones lives.
 `idea` is something you want to do some day, noted in one line with no planning
 behind it: a title and, if you want one, a body — no priority, no due date, no
 draft and no criteria. It lives in the log of the repository it is about, or in
-the user log when it is about none, and it is listed under **Ideas** in
+the user log when it is about none, and it is counted on the `Ideas:` line of
 [what is waiting on you](#what-is-waiting-on-you-across-every-log) until some
-record `answers` it — the objective that takes it up, or a `decision` that drops
-it. That is the rule `open-question` already follows, so closing one needed no
-new edge type and no new state. It was [widened into version 3](#the-versions) in
-place, after `preference`; it is not anchored, because it is about work that does
-not exist yet, and it is not in the set `promote --kind` sweeps, because an idea
-about no repository in particular is written to the user log directly.
+record settles it — the objective that `answers` it by taking it up, or a
+`decision` that drops it, which `withdraws` it. That is the rule `open-question`
+already follows, so closing one needed no new edge type and no new state. It was
+[widened into version 3](#the-versions) in place, after `preference`; it is not
+anchored, because it is about work that does not exist yet, and it is not in the
+set `promote --kind` sweeps, because an idea about no repository in particular is
+written to the user log directly.
 
 There used to be a `unit` as well, for a piece of work under an objective, and
 removing it is what [schema version 3](#changing-the-schema) is. An objective may
@@ -621,16 +623,26 @@ what it answered before they existed.
 
 **Relations** — how two records stand to each other.
 
-`implements` · `derives_from` · `supersedes` · `answers` · `caused_by` ·
-`relates_to`
+`implements` · `derives_from` · `supersedes` · `answers` · `withdraws` ·
+`caused_by` · `relates_to`
 
 **States** — what happened to one record.
 
-`approved_for_execution` · `met` · `cancelled` · `separated` · `blocked`
+`approved_for_execution` · `met` · `cancelled` · `separated` · `blocked` ·
+`verified`
+
+**`withdraws` retires a record without answering it.** It settles its target
+exactly as `answers` and `supersedes` do, without asserting a result nobody
+reported or a replacement nobody wrote — for a question that stopped mattering, a
+debt whose work was dropped, an idea nobody wants any more. It is a relation, not
+a state: it moves no record anywhere, and `link` places no rule on the kind at
+either end. The skills write it from a `decision` whose body carries a `Reason:`
+line, at an `open-question`, an `owed`, an `idea` or an `adjustment`; that is
+their convention, and the binary does not enforce it.
 
 A state is an edge and not a field, for the same reason validity is derived: a
 field would have to be rewritten to change, and nothing here is ever rewritten.
-The absence of all five is a state too — the default one — so being in it costs
+The absence of all six is a state too — the default one — so being in it costs
 nothing, and leaving it costs one appended line and takes nothing back.
 
 **A state edge points at the record that justifies it.** The second endpoint is
@@ -644,6 +656,7 @@ could not be it.
 | `cancelled` | `decision` |
 | `separated` | `decision` |
 | `blocked` | `open-question`, `decision` |
+| `verified` | `owed` |
 
 The refusal names both the allowed kinds and the kind that was actually there.
 There is no reflexive form — an edge from a record to itself would be a state
@@ -652,13 +665,13 @@ was earned.
 
 The rule runs on the **write path only**, where the target's kind is in hand.
 `validate` does not apply it, so a state edge already on disk is never condemned
-by a requirement that arrived after it was written. The six relation types carry
+by a requirement that arrived after it was written. The seven relation types carry
 no such rule at all: they describe a relation rather than a transition, and
 `supersedes` already has edges on disk that no later rule should be able to call
 invalid.
 
 The allowlist is published by `memory kinds`, under `justifications`, so it can
-be read without provoking a refusal to find out. Only the five states appear
+be read without provoking a refusal to find out. Only the six states appear
 there: a type with no key has no rule, which is a different claim from a type
 with an empty list.
 
@@ -708,13 +721,15 @@ edges on disk stay exactly as they were:
   use") stays open. An own edge written before the children closed loses to it.
   The derivation climbs the tree, so a grandparent counts a derived-`met` child
   as done and may derive `met` in turn. An objective on a cycle derives nothing.
-- **A block on an answered question stops counting.** A `blocked` edge whose
-  target is an `open-question` some record `answers` is left out, and the
-  objective resolves from its other state edges — the `approved_for_execution`
-  it had before the block, typically, or `planned` when it has none. This is
-  the one way a record reads `planned` again: not by an edge asserting it, but
-  by the only edge that moved it being released. A block on a `decision` is
-  unchanged.
+- **A block on a settled question stops counting.** A `blocked` edge whose
+  target is an `open-question` some record `answers`, `supersedes` or
+  `withdraws` is left out, and the objective resolves from its other state
+  edges — the `approved_for_execution` it had before the block, typically, or
+  `planned` when it has none. This is the one way a record reads `planned`
+  again: not by an edge asserting it, but by the only edge that moved it being
+  released. A block on a `decision` is unchanged, and so is `verified`:
+  settling the `owed` record it points at releases nothing, and the objective
+  stays `verified` until a later state edge — `met`, typically — moves it.
 
 The derivation lives where state is resolved, so every reader follows it: the
 report's `state` and `open`, the ledger under `--text`, `--current` (a derived
@@ -724,6 +739,14 @@ and blocked-by-an-open-child.
 `memory state` is what computes it. `edges` still reports the edges themselves —
 deliberately, since listing relations is a different question from resolving one
 record's state.
+
+**Settled means answered, superseded or withdrawn, and every reader reads that one
+set**: `--current`, the block release above, the objectives `memory state` moves
+to `excluded`, each objective's `open_records` — the `open-question`,
+`assumption`, `adjustment` and `owed` records deriving from it that nothing has
+settled — the ideas and adjustments in
+[what is waiting on you](#what-is-waiting-on-you-across-every-log), and its
+closing rate.
 
 ## The objective tree
 
@@ -784,7 +807,7 @@ the rules and does not call a malformed tree a problem.
 
 | Open | Terminal |
 |---|---|
-| `planned` · `approved_for_execution` · `blocked` · `separated` | `met` · `cancelled` |
+| `planned` · `approved_for_execution` · `blocked` · `verified` · `separated` | `met` · `cancelled` |
 
 **`separated` is open, and that is the one worth stating.** It says the work
 continues but no longer under the parent it was lifted out of — not that it
@@ -793,9 +816,17 @@ candidate for the current one, while counting toward no parent's completion and
 blocking none. `blocked` is open for the plainer reason that waiting is not
 finishing.
 
+**`verified` is open too, and it is not `blocked`.** It says the work was checked
+and what is left is the user's — a landing that has not happened, a handed-over
+check nobody has reported — named by the `owed` record the edge points at. No
+question stops it, so it is not listed as one; and nothing is finished until the
+debt is paid, so it stays outstanding in its parent's completion and holds the
+parent from deriving `met`. It leaves through a later state edge, `met` when the
+debt is paid.
+
 `query --kind objective --current` drops the two terminal states and — as it
-already does for every kind — whatever is superseded or answered. Nothing else
-removes an objective: **not its depth, and not having an open child.**
+already does for every kind — whatever is superseded, answered or withdrawn.
+Nothing else removes an objective: **not its depth, and not having an open child.**
 
 ### Which objective is being worked on
 
@@ -875,30 +906,46 @@ informational and nothing acts on it: such an objective is still returned by
 ### What is waiting on you, across every log
 
 `memory state --text` answers one question — *what is waiting on me* — over every
-log there is, and prints it instead of emitting it:
+log there is, and prints it instead of emitting it, as markdown that wraps on a
+phone rather than as columns:
 
-```
-What is waiting on you — 47 open objectives across 33 logs
+```markdown
+What is waiting on you — 7 open objectives across 3 logs
 
-Waiting for your approval (34)
-  ai-kit             Know what is waiting on you, and that it is true  (01M2CGQ0CVSFTJ0CNB56RYGXCG)
-  be-md              Persist LATAM trades from the raw-FIX feed  (01M18F1KD0JRPWXV1H91TEBMMC)
+## api — Orders survive a broker outage
 
-Blocked on a question or a decision (2)
-  open-question: tipooperacion = A is still unanswered
-    be-profits-stocks  Load the CO trade-history gap from the OyD day listing  (01M03T9F4HWVYETRTBK9RPN9CZ)
+owe: Merge to main and run make install `01M7HBYSV8SCRB97FKD434KMTK`
 
-Waiting for you to start it (9)
-  ai-kit             One readable summary of what is waiting, across every log  (01M2CKDPDRP09ESQ6EG27KTRRJ)
+in progress: 6 open below
 
-Set aside (2)
-  ai-kit             Make the record schema evolvable  (01KZ34725V37YX845RTVPC7N0E)
+- Alert when the broker stops acking `01M7HBYSW5WK3SWT8EV4Y9ZX4F`
+  - start
+- Persist the retry queue `01M7HBYSVQ2NNCT38DC3DQGVFF`
+  - approve
+- Replay from the FIX log `01M7HBYSW05MVZCETQF4E4XTJ7`
+  - approve
+- Retry queue for rejected orders `01M7HBYSVDEBRMNT6B8J8FS4D7`
+  - blocked: open-question: Which broker error codes are retryable
+- Show a broker-down banner (web) `01M7HBYSWDTEVPS1VDMVC1QTCN`
+  - approve
+- Name the broker in every alert `01M7HBYSWN1SM8E0WJK82WSVHT`
+  - adjustment pending
 
-Ideas (1)
-  user               A digest of pending items every morning  (01M3KACFKX3YRCQZB4Q2A72Z8M)
+## web — Cash balances load after the close
 
-Nothing waiting (19 logs)
-  be-bm-fix-orders, be-cashout-co, be-deadletter, be-fix-logs, ...
+blocked: open-question: Does the close file arrive before 19:00 `01M7HBYSXWW6JKC9TDGEPA9DG3`
+
+## Adjustments outside any objective
+
+- web: Shorten the banner copy `01M7HBYSWTG679QYKMCYQYEACJ`
+
+Ideas: user 1, web 1
+
+## Closing rate
+
+- open-question: 0/2, 0.0%
+- assumption: none written
+- adjustment: 0/2, 0.0%
 ```
 
 **The default follows the output mode, and the two defaults differ on purpose.**
@@ -966,25 +1013,74 @@ deliberately: it returns a record once per log that holds it, because there each
 copy is a separate verdict read out of a separate working tree. The two commands
 answer different questions, and the keys follow the questions.
 
-**The grouping is read off the state and nothing else** — no body is parsed and
-no prose is matched. `planned` is waiting for your approval, `approved_for_execution`
-is waiting for you to start it, `separated` is set aside, and `blocked` sits under
-the record it waits on, named: the title comes from the `blocked` edge's target,
-so two objectives held up by the same question read as one wait rather than two.
-Terminal objectives are absent, and so is anything superseded or answered.
+**One block per root, read off the graph and nothing else** — no body is parsed
+and no prose is matched. Every open objective is grouped under its root: the top
+of its `derives_from` chain, followed across logs, or the nearest ancestor that is
+`separated`, which heads the block of what is open below it and has no line of its
+own. Each root with something to list gets a block headed
+`## <repo> — <root title>`, where `<repo>` is the log holding the root, and the
+blocks come in order of repository, then title. Under the heading, in this order:
 
-**Ideas are listed beside the work, and counted apart from it.** Every `idea` no
-record `answers` is listed under **Ideas** with the name of the log holding it and
-its id, the user log included; one that something answers — wherever that answer
-was written — is gone from the list. An idea is named once by its id alone, the
-first log holding it owning the line, because a promoted idea is one record in two
-logs rather than two ideas. A log whose only open record is an idea is not counted
-under *Nothing waiting*, and ideas are not in the closing rate: they are not
-questions, and a rate that means something today would stop meaning it. The
-`--all` JSON carries the same list as a top-level `ideas` array, each element
-`{"root", "repo", "id", "title"}`: `repo` is the log's name as the text prints it,
-and `root` is that log's working tree, empty for the user log. The single-log
-report gains no key.
+- **The root's own line**, when it waits on you, followed by its id: `owe: <title>`
+  for `verified`, the title of the `owed` record the edge points at;
+  `blocked: <kind>: <title>` for `blocked`, the kind and title of the
+  `open-question` or `decision` it waits on; `approve` for `planned`; `start` for
+  `approved_for_execution`.
+- **`in progress: N open below`** when the root has open children, `N` counting
+  every open descendant at any depth that is not `separated`, those with no line
+  of their own included.
+  It carries the root's id when no line above it does.
+- **One item per objective below the root that waits on you**, as
+  `` - <title> `<id>` `` with its action on a nested bullet — the same `owe:`,
+  `blocked:`, `approve` or `start` — and the name of the log holding it in
+  parentheses after the title when that is not the root's log.
+- **The adjustments** deriving from any objective of that tree, after the
+  objectives, each with `adjustment pending` on its nested bullet.
+
+**A parent is never listed as awaiting approval or a start.** An objective with
+open children that is `planned` or `approved_for_execution` gets no line of its
+own, root or not: its children carry the wait. In the example *Replay from the FIX
+log* is listed and its `planned` parent is not, though the root's count includes
+it. One that is `blocked` or `verified` is listed whatever is open below it,
+because that wait is yours either way: a root keeps its `blocked:` or `owe:` line
+above its count, and an objective further down is an item like any other —
+*Retry queue for rejected orders* is blocked on a question, and *Persist the
+retry queue*, its open child, is listed in the same block. That holds at any
+depth. A `separated` objective gets no line, terminal objectives are absent, and
+so is anything superseded, answered or withdrawn.
+
+**The header counts what the listing prints.** *N open objectives* is the number
+of distinct objectives listed as an item or heading a block as its own root, an
+objective two logs hold counted once and a `separated` one heading a block not
+counted; *across M logs* is every log read. After the root blocks come, each only
+when it has something in it: **Adjustments outside any objective**, every open
+`adjustment` deriving from no objective, as `` - <repo>: <title> `<id>` ``;
+the `Ideas:` line; and **Anomalies in the reading**, as
+`` - <repo>: <message> `<id>` ``. When none of those has anything and no root
+has a block, the listing says *Nothing is open.* if no objective is, and *Nothing
+waits on you.* if every open one is `separated`.
+
+**The closing rate is always last**: one line per kind — `open-question`,
+`assumption`, `adjustment` — as `closed/total` and a percentage, or
+`none written`. Each record counts once, in the first log holding it, and is
+closed when it is settled by an edge written in any log. Ideas and `owed` records
+are not in it: they are not questions, and a rate that means something today would
+stop meaning it. The `--all` JSON carries it as `closing_rate`, with the same rows
+under `by_kind` — `{"kind", "closed", "total"}` — and one row per log under
+`by_log` — `{"log", "closed", "total"}` — lowest share first. The text prints
+only the rows by kind.
+
+**Ideas are counted beside the work, not listed.** The `Ideas:` line names each
+log holding an `idea` nothing has settled, with how many, the user log included;
+one that something settles — wherever that edge was written — is gone from the
+count. An idea counts once by its id alone, for the first log
+holding it, because a promoted idea is one record in two logs rather than two
+ideas. The `--all` JSON carries the ideas themselves as a top-level `ideas`
+array, each element `{"root", "repo", "id", "title"}`: `repo` is the log's name as
+the text prints it, and `root` is that log's working tree, empty for the user log.
+The open adjustments come the same way, as a top-level `adjustments` array of the
+same shape; the single-log JSON carries `adjustments` too, without `repo`, and no
+`ideas`.
 
 **It creates nothing.** Every other read resolves its location and creates
 `.ai-kit/` on the way past; this one takes its paths out of the store, and
@@ -1028,7 +1124,7 @@ because `"version": 0` is on no line and names no schema that ever existed.
   and reports `type: unknown` — a problem that is not one — where for a version
   it had never heard of it would have reported an honest `unjudged`. Bump anyway
   when that false alarm would cost more than the new value is worth. The
-  edge-type set was widened this way, from six to eleven; see
+  edge-type set was widened this way, from six to thirteen; see
   [the versions](#the-versions).
 - **Narrowing a closed set is a version bump.** Dropping a kind, an edge type
   or a scope — anything that makes a legal record illegal — cannot be done by
@@ -1074,7 +1170,7 @@ rather than passed over in silence.
 | Version | What it says | What changed |
 |---|---|---|
 | 1 | eleven kinds; `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
-| 2 | eleven kinds; `scope` is one of `repo`, `user`; eleven edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the five state types |
+| 2 | eleven kinds; `scope` is one of `repo`, `user`; thirteen edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the six state types and `withdraws` |
 | 3 | fourteen kinds; `scope` and the edge types are version 2's; entries may carry `anchors` | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis`, `gotcha`, `preference` and then `idea`, and the optional `anchors` field arrived the same way — with one rule that tightens: a `gotcha` without one is refused |
 
 **Version 3 is the current version, and dropping the `unit` kind is what the bump
@@ -1150,8 +1246,8 @@ of the change. `hypothesis` and `review-finding` are the obvious candidates, and
 both have records on disk — so neither can be added the way `gotcha` was.
 
 **The edge types widened afterwards, and stayed inside version 2.**
-`edgeTypesV2` holds version 1's six plus the five [state
-types](#edge-types). Widening makes no record on disk illegal, so there was
+`edgeTypesV2` holds version 1's six plus the six [state types](#edge-types) and
+`withdraws`. Widening makes no record on disk illegal, so there was
 nothing for a version 3 to protect, and the cost — a pre-widening binary
 reporting a false `type: unknown` — was taken with open eyes; see the
 compatibility rule above. `edgeTypesV1` is a separate map literal spelling out
@@ -1418,10 +1514,10 @@ place of `path`.
   `--scope repo` names it. What the resolution reads off those objectives is the
   store's edges rather than one log's rows — an approval or a state edge written
   in another repository counts, and both passes read the same ones, which is why
-  neither log moves the other's answer. What `--current` drops as superseded or
-  answered is read off those same store-wide edges, so a record either log holds
-  is settled by the edge that settles it wherever it was written. Which records
-  come back is still each log's own.
+  neither log moves the other's answer. What `--current` drops as superseded,
+  answered or withdrawn is read off those same store-wide edges, so a record
+  either log holds is settled by the edge that settles it wherever it was
+  written. Which records come back is still each log's own.
 - **Everything about the size of the answer is computed over the union.** `count`
   is the matches across both logs, `--count` returns that number, `--limit N`
   takes the N most recent of them, and the count-before-dump guard trips on the
@@ -1481,7 +1577,7 @@ command line refuses: `AI_KIT_PLAN` in the environment is not this caller naming
 flag, and it leaves `edges` answering.
 
 `--type` takes the [edge types](#edge-types), comma-separated, and refuses a value
-outside that closed set (`unknown_edge_type`) naming the eleven it does take.
+outside that closed set (`unknown_edge_type`) naming the thirteen it does take.
 `--since` and `--until` are inclusive and compared as written, exactly as on
 `query`, so a bare `--until 2026-09-08` stops just before that day. A filter
 matching nothing answers `edges: []` and never `null`, at exit 0. Edges come back
@@ -1588,6 +1684,14 @@ record still coming back is what a backwards edge looks like.
 Tag the new record with the areas the mistaken one carries. A retirement filed
 under different tags is invisible to whoever finds the mistake.
 
+A record that was not a mistake but has stopped mattering — a question nobody needs
+answered any more, a debt whose work was dropped, an idea nobody wants — is not
+superseded, because nothing replaces it, and not answered, because nothing
+resolved it. It is withdrawn: a `decision` saying why, plus a `withdraws` edge
+from it to the record, drawn in the same direction. `--current` drops it exactly
+as it drops a superseded or answered one, and the record stays on disk the same
+way.
+
 ## Guarantees under test
 
 - A record with an unknown `kind`, an empty `about`, a non-ULID id or a
@@ -1664,8 +1768,8 @@ under different tags is invisible to whoever finds the mistake.
   widenings still do not add up to a bump.
 - `idea` is advertised by `memory kinds` and counted in version 3's widenings, so
   four of them still leave the version at 3; an answered idea is gone from the
-  Ideas section while an unanswered one in the user log is listed with its log's
-  name and id.
+  `Ideas:` line while an unanswered one in the user log is counted under its
+  log's name, and neither id is printed.
 - Anchors survive a round trip through the log field for field, on a record
   carrying two of them, and the log still sweeps clean afterwards.
 - `add --kind gotcha` with no anchor is refused on the `anchors` field, the
@@ -1752,9 +1856,9 @@ under different tags is invisible to whoever finds the mistake.
 - `--current` over objectives returns every open one, a chain of three included,
   and drops one the moment it is `met` — marking the only leaf of that chain
   `met` drops the two parents it leaves with nothing outstanding as well; every
-  other kind's `--current` drops what
-  a `supersedes` or an `answers` edge settles and nothing else, and gets no
-  `current_objective` field at all.
+  other kind's `--current` drops what a `supersedes` or an `answers` edge
+  settles, and gets no `current_objective` field at all. A `withdraws` edge
+  settles a record the same way, and no test here asserts it yet.
 - A `decision` in one repository's log and an `open-question` in another are each
   dropped by `query --current`, `search --current` and `anchors --current` the
   moment a `supersedes` or an `answers` edge naming them is written into a third
