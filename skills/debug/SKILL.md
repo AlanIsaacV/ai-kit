@@ -46,7 +46,10 @@ size what it finds.
    theory away: the pattern — every probe revealing another coupling, every
    explanation needing "well, unless" — is what a design problem looks like from
    the inside, and that is work to be planned rather than debugged. The fourth
-   guess is not this skill's to make.
+   guess is not this skill's to make. The three are attempts to explain the
+   symptom. A deeper "why" tried in step 8, once the symptom is already
+   explained, is not one of them: a miss there ends the descent by that step's
+   own limit and leaves this count where it was.
 5. **Never state a cause without its evidence and that evidence's fidelity.**
    "It's the connection pool" is a guess wearing a conclusion's clothes. The
    cause, what you observed, where, and how strongly — `real-dependency`,
@@ -191,7 +194,7 @@ memory state --dir <loop-repo>
 When an open objective already covers this surface, take its `origin.plan` —
 `state` reports it as `plan` — and use that. When nothing does, which is the
 ordinary case for a symptom that arrived on its own, coin one from the symptom,
-kebab-case, and keep it: step 8 hands the same slug to `plan`, so the objective
+kebab-case, and keep it: step 9 hands the same slug to `plan`, so the objective
 it authors lands in the same tree as the investigation that produced it.
 
 Now read the log, because the most expensive thing an investigation can do is
@@ -351,7 +354,7 @@ left, and both of them are better than the rule they would break:
 - Find the observation the system already gives you. A value you cannot print is
   often visible one layer out, in a response, a metric or an error message.
 - Record the hypothesis with verdict `could-not-test` and fidelity `code-read`,
-  and carry it to step 8. "Make this observable" is a real objective with real
+  and carry it to step 9. "Make this observable" is a real objective with real
   criteria, and `plan` can size it — which is a far better outcome than a probe
   left behind in somebody's working tree.
 
@@ -376,9 +379,9 @@ Fidelity: <real-dependency | integration | code-read>" \
 `--dir` is not optional here, and it carries the absolute path step 1 derived
 rather than a variable. Step 4 may have left you standing in a bisect clone and
 step 5 may have run commands inside the repo under investigation; the log this
-record belongs to is neither of those, this is the one command in the skill that
-*writes*, and an empty `--dir` here is what creates `.ai-kit/` in somebody else's
-tree.
+record belongs to is neither of those, this command and step 8's `caused_by` link
+are the only ones in the skill that *write*, and an empty `--dir` here is what
+creates `.ai-kit/` in somebody else's tree.
 
 All six parts are load-bearing and none of them is decoration. The **title** is
 the index — kind-plus-title in chronological order is how these are read months
@@ -412,7 +415,7 @@ future session most needs and most often lacks.
 (rule 2) and go back to step 5. Count it: this was one.
 
 **Three failed hypotheses** — stop, by rule 4. Say so plainly, name the three and
-what each eliminated, and go to step 8 with an investigation that did not
+what each eliminated, and go to step 9 with an investigation that did not
 conclude. That is a legitimate hand-off; a fourth guess is not. A
 `could-not-test` does not count toward the three: nothing was eliminated and no
 theory failed — what happened is that the experiment needed the repo, so it is
@@ -427,16 +430,130 @@ the user in words, with the two things that make it useful:
 > hoy no es observable sin tocar el repo.
 
 **Confirmed** — say the cause back in one line *with its fidelity*, before
-anything else happens:
+anything else happens, and say that it is the first level rather than the last:
 
-> La causa es `<X>`. Lo confirmé `<cómo>` — fidelidad `<real-dependency |
-> integration | code-read>`.
+> La causa inmediata es `<X>`. Lo confirmé `<cómo>` — fidelidad
+> `<real-dependency | integration | code-read>`. Ahora miro si eso, a su vez,
+> tiene una causa debajo.
 
 Say the fidelity out loud even when it is the strong one, because the whole point
 is that "confirmed" means different things at the three levels and the user is
-about to approve criteria on top of it.
+about to approve criteria on top of it. Then go to step 8: a confirmed hypothesis
+is where the descent starts, not where the investigation ends.
 
-### 8 — Hand the finding to `plan`
+### 8 — Descend from the confirmed cause, one "why" at a time
+
+The hypothesis step 7 just confirmed is the **proximate cause**: the first thing
+that explains the symptom. It is very often the symptom of something else. A
+request times out because the connection pool is exhausted, and the pool is
+exhausted because a retry path never returns its connection; confirm the first and
+stop, and `plan` writes criteria against the pool — a bigger pool, a shorter
+timeout — and what ships is a mitigation named as a fix, with the leak still there
+producing the next outage. Step 3's trace backward does not reach this. It walks a
+bad value to where it is born, which is data flow inside one cause; the question
+here is the cause of a cause, and nothing else in this skill asks it.
+
+So every confirmed level gets asked two things, in this order: why the code that
+causes it is written that way, and whether it is itself a symptom of something one
+level down.
+
+**Why it is written that way** is a question for the history before it is one for
+theory, because the answer that most changes what happens next is "on purpose". Ask
+git about the lines this level's evidence anchors — the `path:line` it cites —
+and ask the loop's log about the area:
+
+```bash
+git -C <repo_root> log -L <first>,<last>:<path>
+git -C <repo_root> blame -L <first>,<last> -- <path>
+memory query --dir <loop-repo> --kind decision,adr,postmortem,gotcha,wont-fix --about <area>,<path> --current
+```
+
+The two `git` commands read the repository under investigation and write nothing
+to it, which is what hard rule 6 already allows; narrowing them to the anchored
+lines is what keeps the answer about this cause rather than about the file. The
+`memory` query drops `--plan` on purpose: a decision about this code was taken
+under whatever tree was open when somebody made it, not under the one this
+investigation coined. And **its `--dir` is the loop repo, never the repository
+under investigation**, even though the question is about that repository's code.
+This is the command in the skill most tempting to point there, and it is the one
+that does the damage if you do: `memory query --dir` at a repository with no
+`.ai-kit/` creates `.ai-kit/` in it — measured, on a read — which is a directory
+appearing in a tree hard rule 6 promises never to touch. The loop's log is the only
+one this step reads.
+
+What comes back is evidence for the level below. A commit whose message says why
+the code is shaped this way, a `decision` or `adr` on the area, a `wont-fix` that
+accepted this failure mode — any of those says the cause is a choice, and that is
+one of the places the descent stops. A commit that introduced the lines as a quick
+fix, a `postmortem` that met this before, a `gotcha` about the constraint: those
+are what the next "why" is formed from.
+
+**Whether it is a symptom of something deeper** is a hypothesis like every other,
+and it is held to the same standard. State it by step 5 — the claim, the
+observable consequence, one single-variable experiment from the three shapes that
+do not touch the repository — and run it and record it by step 6, with the same
+six parts and the same command:
+
+```bash
+memory add --dir <loop-repo> --plan <tree-slug> --kind hypothesis \
+  --title "<the deeper claim in one line, stated so it could be false>" \
+  --body "Claim: <what causes the level above, specifically>
+Tested by: <the single-variable experiment you ran>
+Verdict: <confirmed | rejected | could-not-test>
+Evidence: <what you actually observed — path:line, the log query and what it returned, the command and its output, what git log and blame said>
+Fidelity: <real-dependency | integration | code-read>" \
+  --about <area>,<path>
+```
+
+When it comes back `confirmed`, join it to the level above it:
+
+```bash
+memory link --dir <loop-repo> --type caused_by --from <proximate-hypothesis-id> --to <deeper-hypothesis-id>
+```
+
+The edge runs from the shallower record to the deeper one, read as "this is
+caused by that" — the same direction `plan`'s objective will point at the level it
+attacks, so the whole chain is walked one way. On the first step down the
+proximate cause is the `--from`; on every step after it, the level you just
+confirmed takes that place. Say each confirmed level back the way step 7 says the
+first one, with its fidelity, because the user is about to choose between fixes
+that attack different levels and needs to know how strongly each was seen.
+
+**One attempt per level.** A deeper "why" that comes back `rejected` or
+`could-not-test` ends the descent at the last confirmed level. Write its record
+anyway, with the same care as any rejected hypothesis, and do not link it:
+`caused_by` joins causes, and a rejected claim is not one. Rule 2 does not send you
+back for another guess at this level — it forbids stacking a theory on an
+unretracted one, and stopping stacks nothing — and rule 4 does not count the miss,
+because the symptom is already explained and what failed was a search for
+something beneath an established cause. The limit is there because the descent
+spends the same context the handoff needs, and every level down is worth less to
+the fix than the one above it was.
+
+Before forming the next "why", check whether there should be one. **The descent
+stops at the first of three things:**
+
+- **The next "why" no longer changes what would be built.** If fixing the deeper
+  cause would be the same change as fixing the level you have, the deeper level
+  adds a record and no option. Stop at the level whose fix is the one that would
+  ship.
+- **It reaches a deliberate decision.** When the history said this code is the way
+  it is on purpose, going below it is arguing with a choice somebody made, and that
+  is a conversation with the user rather than an investigation. Stop at that level
+  and name the commit or record that makes it deliberate.
+- **It leaves the system.** When the next "why" is about people, process or a
+  provider — why nobody reviewed it, why the team ships on Fridays, why the
+  provider throttles — no experiment this skill may run can test it and nothing
+  built in this repository fixes it. Stop at the last level that is inside the
+  system.
+
+What the descent leaves behind is **the chain**: the confirmed levels in order
+from the proximate cause down to the deepest confirmed cause, each a `hypothesis`
+record joined to the next by `caused_by`. Then write down **the candidate fixes**
+against it — every fix the investigation surfaced, the cheap ones included,
+each placed in a layer by step 9's definitions — and go to step 9.
+
+### 9 — Hand the finding to `plan`
 
 The investigation ends here and the authoring starts, in this same conversation.
 **Invoke the `plan` skill** — the Skill tool, skill `plan`, or `ai-kit:plan`
@@ -445,8 +562,15 @@ against:
 
 ```
 the symptom, as step 1 stated it
-the finding: the confirmed hypothesis with its record id, its claim and its fidelity —
-  or "no confirmed cause", or "nothing is broken", stated as plainly as that
+the finding: a confirmed cause, or "no confirmed cause", or "nothing is broken",
+  stated as plainly as that
+the chain: the confirmed levels in order, from the proximate cause (the hypothesis
+  first confirmed) down to the deepest confirmed cause — each level with its
+  hypothesis record id, its claim and its fidelity — and which of step 8's stops
+  ended the descent
+the candidate fixes: each with its layer (root, mitigation or patch), the chain
+  level it attacks (for a patch, the proximate cause, the top of the chain), what
+  it removes (a level, or none), and what it leaves alive
 the hypotheses that were rejected, with what each one eliminated
 the tree slug the hypotheses were written under
 the areas and paths the investigation touched
@@ -457,6 +581,35 @@ input.** A confirmed cause, an investigation that ran out of hypotheses, and a
 symptom with no bug behind it are three different things for `plan` to author
 against, and which of them this was is the first line it needs.
 
+**A fix's layer is defined by what it removes from the chain, not by how
+thorough the fix looks.** Every candidate carries two answers that are easy to
+conflate: the level it attacks, which is where its change acts and where `plan`'s
+`caused_by` will point, and what it removes, which is a level or none. The layer
+is read off the second, and the three layers split every fix between them with
+none left over:
+
+- **`root`** removes the deepest confirmed level. Nothing in the chain below it is
+  left to produce the symptom again.
+- **`mitigation`** reduces a level — any level, the deepest included — or removes
+  a level above the deepest, and leaves the deepest confirmed level alive. The
+  symptom gets rarer, smaller or quieter; the cause underneath keeps producing it.
+- **`patch`** removes and reduces no level. It handles the symptom — a retry, a
+  guard, a clearer error — and leaves every cause in the chain alive; the level it
+  attacks is the proximate cause, the top of the chain, because that is where the
+  symptom surfaces.
+
+The test is what the fix removes, so ask it of every candidate in this order:
+does it remove the deepest confirmed level? Then it is `root`. If not, does it
+remove or reduce any level? Then it is `mitigation`, whichever level it attacks.
+If neither, it is `patch`. A fix that attacks the deepest level and only reduces
+it is a mitigation, however deep it reaches; a fix that removes the proximate
+cause of a two-level chain is a mitigation, whatever it is called in the
+conversation that proposed it; and a fix that only makes the failure survivable
+removes and reduces nothing, however much code it takes. Naming that wrongly is
+exactly how a mitigation ships as the fix and the deeper cause is forgotten.
+`plan` presents these candidates to the user as its options, grouped by layer;
+which fix gets built is decided there, with them, and not here.
+
 Then let it work. **How big the resulting work is, is `plan`'s decision and not
 yours**: it applies its own five-part sizing test with the user and writes either
 a single executable objective or a parent objective with a child underneath it,
@@ -466,9 +619,11 @@ machinery — there is no ceiling here that says "this is too big for a bug", an
 saying one would put the shape of the work back in the hands of the thread that
 found the cause rather than the one that has to size it.
 
-`plan` links the objective it writes back to the hypothesis with a `caused_by`
-edge, so the work and the investigation that produced it are joined on disk
-rather than merely sharing a slug. It writes that edge; you write no `objective`
+`plan` links the objective it writes back to the hypothesis of the chain level
+the chosen fix attacks with a `caused_by` edge, so the work and the
+investigation that produced it are joined on disk rather than merely sharing a
+slug, and the rest of the chain is reachable from there through the edges step 8
+wrote. It writes that edge; you write no `objective`
 record and no state edge at all.
 
 An investigation that ended without a cause hands over the same way, and what

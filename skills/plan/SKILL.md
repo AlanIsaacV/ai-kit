@@ -201,9 +201,10 @@ done its job. What no finding gives you is permission to guess.
 
 **When you were invoked *from* `debug`, this check is already answered** and
 sending it back would be a loop between two skills each waiting for the other.
-The finding it handed you — the confirmed hypothesis with its fidelity, or the
-list of what was ruled out — is what you author against, and step 7 links the
-objective to it.
+The finding it handed you — the chain of confirmed hypotheses with each level's
+fidelity and the candidate fixes by layer, or the list of what was ruled out — is
+what you author against: step 2 presents the layers as its options, and step 7
+links the objective to the chain level the chosen fix attacks.
 
 #### Show the immediate parent, and say what it is not
 
@@ -247,6 +248,32 @@ tradeoffs and a recommendation. Two or three options, each with what it costs
 and what it buys, and a plain statement of which one you would pick and why.
 The user chooses; never pick silently and never present a single option as
 though it were the only one.
+
+**When you were invoked from `debug`, its candidate fixes are the options, by
+layer.** The handoff carries the chain — the confirmed levels in order from the
+proximate cause down to the deepest confirmed cause — and every candidate fix with
+its layer, the chain level it attacks (for a patch, the proximate cause, the top
+of the chain), what it removes (a level, or none), and what it leaves alive. The
+layer is defined by what the fix removes, and the three split every fix between
+them: `root` removes the deepest confirmed level; `mitigation` reduces any level,
+the deepest included, or removes a level above the deepest, and leaves the
+deepest confirmed level alive; `patch` removes and reduces no level — it handles
+the symptom and leaves every cause in the chain alive. A fix that attacks the
+deepest level and only reduces it is a mitigation, and so is one that removes the
+proximate cause of a two-level chain. Present them grouped by layer — root first,
+then mitigation, then patch — each with the level it attacks, what it removes and
+what it leaves alive, and recommend one.
+This is the rule above applied, not an exception to it: every candidate fix
+`debug` handed over is presented, the cheaper ones included, and two mitigations
+are two options in the mitigation group. The two-or-three guidance above does not
+drop any of them, and the user chooses.
+A mitigation is sometimes the right thing to ship this week, and choosing one is
+legitimate — what is not is choosing it without seeing that it is one. Folding the
+layers into the single fix you would recommend is the silent pick this step
+forbids, and it is how a mitigation ships under the name of a root fix, with the
+cause beneath it still alive and nobody in the conversation aware of it. The fix
+chosen is also what step 7 links the objective to, through the level it attacks,
+so it has to be a choice the user made rather than one inferred later.
 
 Options that turn on an external dependency get rule 4 applied first — resolve
 the version, then present the option.
@@ -1213,11 +1240,25 @@ afterwards, so point it at the one it is actually under. **A root has no parent:
 drop the `edges` key from its line entirely.**
 
 When you were invoked from `debug`, the objective also points at the hypothesis
-whose verdict is `confirmed`, and that is a second edge on the same line:
+of the chain level the chosen fix attacks, and that is a second edge on the same
+line:
 
 ```jsonl
-{"kind":"objective","slug":"...","title":"...","body":"...","about":["<area>"],"edges":[{"type":"derives_from","to":"<parent-objective-id>"},{"type":"caused_by","to":"<confirmed-hypothesis-id>"}]}
+{"kind":"objective","slug":"...","title":"...","body":"...","about":["<area>"],"edges":[{"type":"derives_from","to":"<parent-objective-id>"},{"type":"caused_by","to":"<attacked-level-hypothesis-id>"}]}
 ```
+
+A chain holds several confirmed hypotheses, so "the confirmed one" no longer names
+a target, and neither does the layer, since two fixes can share one; the fix
+chosen in step 2 does. `caused_by` points at the chain level the handoff says that
+fix attacks: the deepest confirmed level for a `root`, the level it reduces or
+removes for a `mitigation` — any level, the deepest included when the fix only
+reduces it — and the proximate cause, the top of the chain, for a `patch`. One
+`caused_by`, never one per level: the levels are already joined in the log by
+`caused_by` from each shallower hypothesis to the deeper one, so the rest of
+the chain is reachable from the level the objective names, and `work` reads exactly
+one `caused_by` off the objective to recover the hypothesis it came from. Pointing
+at the level actually attacked is what keeps a mitigation from reading, months
+later, as the fix for the deepest cause.
 
 It goes in now, on the objective's own line, because this is the last moment
 anybody knows which hypothesis this work came out of. Left to a later step, the
