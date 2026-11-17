@@ -489,10 +489,30 @@ fix, a `postmortem` that met this before, a `gotcha` about the constraint: those
 are what the next "why" is formed from.
 
 **Whether it is a symptom of something deeper** is a hypothesis like every other,
-and it is held to the same standard. State it by step 5 — the claim, the
-observable consequence, one single-variable experiment from the three shapes that
-do not touch the repository — and run it and record it by step 6, with the same
-six parts and the same command:
+and it is held to the same standard.
+
+**Split a compound "why" before you test it.** The first answer to "why" is rarely
+one claim. It tends to arrive as a mechanism — the pool is exhausted because a
+retry path keeps its connection, under a burst of traffic, while a slow query holds
+the rest — and every "because", "while" and "and" in it joins a claim that could be
+true or false on its own. Tested whole, it needs one experiment that separates all
+of its parts at once, which is almost never available, so it tends to come back
+`could-not-test` and end the descent above a part that was observable by itself.
+So before the deeper hypothesis is formed, write the "why" out and split it at each
+joint into single claims: each one thing that is or is not happening, specific
+enough to be wrong, carrying no "because" or "and" the others do not. Each single
+claim is its own `hypothesis` record, with the six parts, written by step 6 when it
+is tested. Two claims never share one record; a claim the descent ends before
+testing is named in the evidence of the record that ended it, rather than written
+with a verdict it did not earn.
+
+Then order them. **The claim nearest the level above** is the one whose truth would
+cause that level directly — the one that joins the rest to the chain. The others sit
+beneath it: they explain it, not the level above. The level's one attempt is spent
+on that nearest claim. State it by step 5 — the claim, the observable consequence,
+one single-variable experiment from the three shapes that do not touch the
+repository — and run it and record it by step 6, with the same six parts and the
+same command:
 
 ```bash
 memory add --dir <loop-repo> --plan <tree-slug> --kind hypothesis \
@@ -505,7 +525,18 @@ Fidelity: <real-dependency | integration | code-read>" \
   --about <area>,<path>
 ```
 
-When it comes back `confirmed`, join it to the level above it:
+**"Nothing catches X" is never a level's claim.** A claim of the form "nothing
+catches, handles or retries X" — no try/except around the write, no guard on the
+value, no retry on the call — does not cause X: X happens the same with it or
+without it. What it explains is how X reaches the symptom, and that is where it
+goes: in the evidence of the level whose claim is X, as what lets the failure
+propagate. Split it off a compound "why" like any other joint, but it is not one of
+the single claims the split tests, and it gets no record and no level of its own.
+The consequence lands in step 9: a fix that only adds that handling — catch and
+log, a guard, a retry — removes no level of the chain, so it is a `mitigation`
+when it reduces a level and a `patch` when it reduces none, and never `root`.
+
+When the nearest claim comes back `confirmed`, join it to the level above it:
 
 ```bash
 memory link --dir <loop-repo> --type caused_by --from <proximate-hypothesis-id> --to <deeper-hypothesis-id>
@@ -517,10 +548,12 @@ attacks, so the whole chain is walked one way. On the first step down the
 proximate cause is the `--from`; on every step after it, the level you just
 confirmed takes that place. Say each confirmed level back the way step 7 says the
 first one, with its fidelity, because the user is about to choose between fixes
-that attack different levels and needs to know how strongly each was seen.
+that attack different levels and needs to know how strongly each was seen. The
+claims that sat beneath it are where the next "why" starts: order them again
+against the level just confirmed, and spend that level's one attempt on the nearest.
 
-**One attempt per level.** A deeper "why" that comes back `rejected` or
-`could-not-test` ends the descent at the last confirmed level. Write its record
+**One attempt per level.** The attempt is the nearest claim's test. When it comes
+back `rejected`, the descent ends at the last confirmed level. Write its record
 anyway, with the same care as any rejected hypothesis, and do not link it:
 `caused_by` joins causes, and a rejected claim is not one. Rule 2 does not send you
 back for another guess at this level — it forbids stacking a theory on an
@@ -529,6 +562,34 @@ because the symptom is already explained and what failed was a search for
 something beneath an established cause. The limit is there because the descent
 spends the same context the handoff needs, and every level down is worth less to
 the fix than the one above it was.
+
+**When the attempt comes back `could-not-test`, and only then, the claims beneath
+it are tested before the descent ends.** `could-not-test` says nothing about
+whether the claim is true — only that the observation that would separate it is not
+available — and the claims the split put beneath it may each be observable on their
+own. Ending there would hand `plan` a chain that stops above a claim the evidence
+already shows. So write the `could-not-test` record, unlinked like a rejected one,
+and then test each claim beneath it by steps 5 and 6: its own single-variable
+experiment and its own record. What counts as `confirmed` is exactly what it is in
+steps 5 to 7, and circumstantial evidence still confirms nothing. The claims that
+come back `confirmed` form the **conditional level**: each confirmed on its own
+evidence, and joined to the chain only through a link nobody could confirm. Join
+each of them to the `could-not-test` record, and never with `caused_by` — that edge
+joins confirmed causes, and the link between these claims and the chain is exactly
+what was not confirmed:
+
+```bash
+memory link --dir <loop-repo> --type relates_to --from <could-not-test-hypothesis-id> --to <conditional-hypothesis-id>
+```
+
+Its `--dir` is the loop repo, like every other command here. There is at most one
+conditional level, and the descent goes no further below it: every claim under it
+would rest on a link nobody saw. Write down, for the handoff, **the observation that
+would join it to the chain** — the one the `could-not-test` record says was
+missing. A claim beneath that comes back `rejected` or `could-not-test` gets its
+record and no link, and none of these tests counts toward rule 4's three, for the
+same reason the attempt does not. A `rejected` attempt gets none of this: a claim
+that was ruled out leaves nothing beneath it to carry.
 
 Before forming the next "why", check whether there should be one. **The descent
 stops at the first of three things:**
@@ -549,9 +610,13 @@ stops at the first of three things:**
 
 What the descent leaves behind is **the chain**: the confirmed levels in order
 from the proximate cause down to the deepest confirmed cause, each a `hypothesis`
-record joined to the next by `caused_by`. Then write down **the candidate fixes**
-against it — every fix the investigation surfaced, the cheap ones included,
-each placed in a layer by step 9's definitions — and go to step 9.
+record joined to the next by `caused_by`. When the attempt below the deepest of them
+came back `could-not-test`, it also leaves **the conditional level**: its confirmed
+claims, the untestable record they sit under, and the observation that would join
+them. Then write down **the candidate fixes** against the chain — every fix the
+investigation surfaced, the cheap ones included, each placed in a layer by step 9's
+definitions on the chain alone, and each fix that removes a claim of the
+conditional level marked with what would make it root — and go to step 9.
 
 ### 9 — Hand the finding to `plan`
 
@@ -568,9 +633,15 @@ the chain: the confirmed levels in order, from the proximate cause (the hypothes
   first confirmed) down to the deepest confirmed cause — each level with its
   hypothesis record id, its claim and its fidelity — and which of step 8's stops
   ended the descent
-the candidate fixes: each with its layer (root, mitigation or patch), the chain
-  level it attacks (for a patch, the proximate cause, the top of the chain), what
-  it removes (a level, or none), and what it leaves alive
+the conditional levels: none, or the one step 8 recorded beneath a could-not-test
+  record — each of its claims with its hypothesis record id, its claim and its
+  fidelity, the could-not-test record it sits under, and the observation that
+  would join it to the chain
+the candidate fixes: each with its layer (root, mitigation or patch) computed on
+  the confirmed chain alone, the chain level it attacks (for a patch, the
+  proximate cause, the top of the chain), what it removes (a level, or none),
+  what it leaves alive, and "would be root if: <observation>" — the observation
+  that would join the conditional level it removes a claim of, or none
 the hypotheses that were rejected, with what each one eliminated
 the tree slug the hypotheses were written under
 the areas and paths the investigation touched
@@ -605,10 +676,23 @@ If neither, it is `patch`. A fix that attacks the deepest level and only reduces
 it is a mitigation, however deep it reaches; a fix that removes the proximate
 cause of a two-level chain is a mitigation, whatever it is called in the
 conversation that proposed it; and a fix that only makes the failure survivable
-removes and reduces nothing, however much code it takes. Naming that wrongly is
-exactly how a mitigation ships as the fix and the deeper cause is forgotten.
-`plan` presents these candidates to the user as its options, grouped by layer;
-which fix gets built is decided there, with them, and not here.
+removes and reduces nothing, however much code it takes. That includes a fix that
+only adds the handling step 8 keeps out of every level's claim — catching, logging
+or retrying the failure: it removes no level, so it is never `root`. Naming that
+wrongly is exactly how a mitigation ships as the fix and the deeper cause is
+forgotten. `plan` presents these candidates to the user as its options, grouped by
+layer; which fix gets built is decided there, with them, and not here.
+
+**A conditional level does not move a fix's layer.** The layer is computed on the
+confirmed chain, the levels joined by `caused_by`, and the conditional level is not
+in it: a fix that removes one of its claims removes no confirmed level, so by the
+test above it is a `mitigation` when it reduces a confirmed level and a `patch`
+when it reduces none. What it would be if the untestable link were confirmed goes
+beside the layer, as `would be root if: <observation>`, carrying the observation
+step 8 wrote down for that level. It is a field on the candidate, not a fourth
+layer: the three layers still split every fix between them with none left over,
+and a candidate whose field is filled reaches `plan` at its computed layer with the
+condition that would change it in plain sight.
 
 Then let it work. **How big the resulting work is, is `plan`'s decision and not
 yours**: it applies its own five-part sizing test with the user and writes either
