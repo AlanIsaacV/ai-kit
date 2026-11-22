@@ -122,6 +122,26 @@ func QueryIn(lines, store []Line, f Filter) Result {
 // Nothing is deduplicated: promotion copies a record with its id untouched, so the
 // same id in two logs is two matches, and the first log's copy sorts ahead.
 func QueryEachIn(logs [][]Line, store []Line, f Filter) Result {
+	matched, cur := matchEach(logs, store, f)
+	return bound(matched, cur, f)
+}
+
+func QueryEachOnceIn(logs [][]Line, store []Line, f Filter) Result {
+	matched, cur := matchEach(logs, store, f)
+	seen := map[string]bool{}
+	var once []*Entry
+	for _, e := range matched {
+		key := e.ID + "\x00" + string(e.Scope)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		once = append(once, e)
+	}
+	return bound(once, cur, f)
+}
+
+func matchEach(logs [][]Line, store []Line, f Filter) ([]*Entry, *CurrentObjective) {
 	var matched []*Entry
 	var cur *CurrentObjective
 	for i, lines := range logs {
@@ -132,7 +152,7 @@ func QueryEachIn(logs [][]Line, store []Line, f Filter) Result {
 		}
 	}
 	sortMostRecentFirst(matched)
-	return bound(matched, cur, f)
+	return matched, cur
 }
 
 // sortMostRecentFirst orders by id: an id is a ULID, so lexical order is

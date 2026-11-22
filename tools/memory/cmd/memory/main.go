@@ -1193,6 +1193,7 @@ func cmdQuery(args []string) error {
 	bodyLines := fs.Int("body-lines", memory.WholeBody, "return the first N lines of each body; 0 returns no body at all, -1 (the default) returns the whole of it")
 	limit := fs.Int("limit", 0, "return at most N, most recent first")
 	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
+	repoName := bindRepo(fs)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -1206,7 +1207,7 @@ func cmdQuery(args []string) error {
 	if err != nil {
 		return fail("unknown_field", "--fields: %s", err.Error())
 	}
-	plan, err := c.planFilter()
+	plan, err := readPlan(fs, &c)
 	if err != nil {
 		return err
 	}
@@ -1231,6 +1232,9 @@ func cmdQuery(args []string) error {
 		"current": *current, "count": *count, "fields": nonNil(splitList(*fields)), "body_lines": *bodyLines,
 		"limit": *limit, "threshold": effectiveThreshold(*threshold),
 	})
+	if len(namedFlags(fs, "repo")) > 0 {
+		return runQueryRepo(fs, *repoName, f, interp, proj)
+	}
 	if c.scope == scopeBoth {
 		return runQueryBoth(&c, f, interp, proj)
 	}
@@ -1249,6 +1253,7 @@ func cmdSearch(args []string) error {
 	current := fs.Bool("current", false, "drop entries something else supersedes")
 	limit := fs.Int("limit", 0, "return at most N, most recent first")
 	threshold := fs.Int("threshold", 0, "override the count-before-dump threshold; -1 disables it")
+	repoName := bindRepo(fs)
 	words, err := parseFlagsAndText(fs, args)
 	if err != nil {
 		return err
@@ -1257,7 +1262,7 @@ func cmdSearch(args []string) error {
 	if strings.TrimSpace(text) == "" {
 		return fail("missing_text", "search needs text: memory search \"key rotation\"")
 	}
-	plan, err := c.planFilter()
+	plan, err := readPlan(fs, &c)
 	if err != nil {
 		return err
 	}
@@ -1265,10 +1270,14 @@ func cmdSearch(args []string) error {
 		"plan": plan, "text": text, "current": *current,
 		"limit": *limit, "threshold": effectiveThreshold(*threshold),
 	})
-	return runQuery(&c, memory.Filter{
+	f := memory.Filter{
 		Plan: plan, Text: text, CurrentOnly: *current, HintAdvice: searchHintAdvice,
 		Limit: *limit, Threshold: *threshold,
-	}, interp)
+	}
+	if len(namedFlags(fs, "repo")) > 0 {
+		return runQueryRepo(fs, *repoName, f, interp)
+	}
+	return runQuery(&c, f, interp)
 }
 
 // areaReport is one scope's enumeration. Count is how many distinct areas the
@@ -1628,6 +1637,61 @@ func runQueryBoth(c *common, f memory.Filter, interp map[string]any, proj memory
 	}
 	out := queryAnswer(memory.QueryEachIn(logs, stored, f), f, interp, proj)
 	out["scope"], out["paths"] = scopeBoth, paths
+	emit(out)
+	return nil
+}
+
+func bindRepo(fs *flag.FlagSet) *string {
+	return fs.String("repo", "", "owner/name of a GitHub repository: read every log whose remote names it, from any directory, instead of the log of the checkout --dir finds")
+}
+
+func readPlan(fs *flag.FlagSet, c *common) (string, error) {
+	if len(namedFlags(fs, "repo")) == 0 {
+		return c.planFilter()
+	}
+	if len(namedFlags(fs, "plan")) == 0 || c.plan == "" {
+		return "", nil
+	}
+	return c.planFilter()
+}
+
+func runQueryRepo(fs *flag.FlagSet, name string, f memory.Filter, interp map[string]any, proj ...memory.Projection) error {
+	delete(interp, "scope")
+	delete(interp, "dir")
+	interp["repo"] = name
+	thisCall.interpreted = interp
+	if named := namedFlags(fs, "dir", "scope"); len(named) > 0 {
+		flags := strings.Join(named, " and ")
+		return fail("conflicting_scope", "--repo %q chooses the logs by repository and %s chooses them by checkout, "+
+			"so one read cannot take both. Drop %s, or drop --repo.", name, flags, flags)
+	}
+	owner, repo, ok := memory.SplitRepoName(name)
+	if !ok {
+		return fail("bad_repo", "--repo %q is not owner/name: it takes one owner and one repository name "+
+			"separated by a single /, each made only of letters, digits, '_', '.' and '-', as --repo octo-org/api", name)
+	}
+	want := owner + "/" + repo
+	known, err := memory.RepoLogs("")
+	if err != nil {
+		return fail("read_failed", "%s", err.Error())
+	}
+	unattributed := nonNil(memory.UnattributedLogs(known))
+	paths := memory.LogsOfRepo(known, want)
+	if len(paths) == 0 {
+		closest := "and no name it carries is close to it"
+		if similar := memory.SimilarRepoNames(known, want, 3); len(similar) > 0 {
+			closest = "the closest it carries: " + strings.Join(similar, ", ")
+		}
+		return fail("unknown_repo", "no log in %s has a GitHub remote naming %q, %s. %d logs carry no GitHub "+
+			"remote at all and no --repo reaches them; --dir reads one of those by its checkout.",
+			memory.CurrentStore(), want, closest, len(unattributed))
+	}
+	logs, stored, err := memory.ReadStoreEach("", paths...)
+	if err != nil {
+		return fail("read_failed", "%s", err.Error())
+	}
+	out := queryAnswer(memory.QueryEachOnceIn(logs, stored, f), f, interp, proj...)
+	out["logs"], out["unattributed_logs"] = paths, unattributed
 	emit(out)
 	return nil
 }
