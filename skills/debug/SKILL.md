@@ -216,6 +216,31 @@ is written under it yet, and the areas are what find the earlier work anyway. Sa
 in one line what came back, including "nada": a filter that ran and found nothing
 is different from a step that was skipped.
 
+On a trii repository the log is half of what was already ruled out: sentrii
+records that repository's cases, hypotheses and causes, and an investigation that
+never looks there re-tests a cause somebody already confirmed or refuted. Read it
+in this thread, beside the two reads above. Take the repository under
+investigation's `owner/name` from `git -C <repo_root> remote get-url origin` by
+the rules of `memory`'s `RepoName` — GitHub only, the scheme or the
+`git@github.com:` prefix and a trailing `.git` stripped, lowercased — and only when
+it comes out `trii-co/<name>`, make one call:
+
+```
+mcp__cerberus-gw__sentrii_query
+entity: trii-co/<name>
+current: true
+edges: false
+fields: [id, kind, title, recorded_at]
+```
+
+`edges: false` keeps the answer small enough to hold inline, and there is no
+`limit` because `limit` keeps the oldest records and drops the newest. Put what it
+answers beside the hypotheses and `wont-fix` you just read, each record cited as
+`sentrii:<id>` with its `recorded_at` date, and weigh it the same way: a cause
+sentrii recorded on this surface is a strong first hypothesis or a branch already
+walked. Name it in the same one line. When it answers no records, say so there and
+go on without sentrii; never retry it without `edges`.
+
 #### When `plan` invoked you
 
 `plan` routes here from its own step 1, and when it does it arrives holding three

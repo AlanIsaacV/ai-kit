@@ -134,6 +134,30 @@ The line between the last two is "run this" versus "these criteria are wrong".
 The first goes to `work` untouched. The second never gets applied by the thread
 that will be graded against it.
 
+A trii repository has a second memory, and the log is not where it lives: sentrii
+holds that repository's cases, hypotheses, proposals and causes, and a plan
+written without them can propose what sentrii already recorded as tried or
+refuted. So read it here, in this thread, beside the log — `explore` has no
+cerberus-gw tool and cannot make this call. Take the target's `owner/name` from
+`git -C <repo_root> remote get-url origin` by the rules of `memory`'s `RepoName`:
+GitHub only, the scheme or the `git@github.com:` prefix and a trailing `.git`
+stripped, lowercased. Only when it comes out `trii-co/<name>`, make one call:
+
+```
+mcp__cerberus-gw__sentrii_query
+entity: trii-co/<name>
+current: true
+edges: false
+fields: [id, kind, title, recorded_at]
+```
+
+`edges: false` is what lets the answer sit inline — the largest repository
+answers 8.5k characters without its edges and 73.7k with them — and there is no
+`limit` because `limit` keeps the oldest records and drops the newest. The records
+it answers go into the draft's `## Findings` beside `explore`'s, each cited as
+`sentrii:<id>` with its `recorded_at` date. When the read answers no records, say
+so in one line and go on without sentrii; never retry it without `edges`.
+
 Then investigate before forming an opinion — launch the `explore` subagent
 rather than reading widely in this thread, so the main context stays free for
 the objective itself:

@@ -48,9 +48,11 @@ skill; a human invokes it, and it answers and stops.
    the target repo.
 2. **Every claim carries a citation, and no claim is uncited.** A code claim
    names at least one `path:line`; a log claim names the record's id **and that
-   record's date**. The date is not decoration: "the code says this today" and
-   "somebody decided this fourteen months ago" are different kinds of true, and
-   in one narrative the citation is the only thing carrying that difference.
+   record's date**; a claim read from sentrii names `sentrii:<id>` **and that
+   record's `recorded_at` date**. The date is not decoration: "the code says this
+   today" and "somebody decided this fourteen months ago" are different kinds of
+   true, and in one narrative the citation is the only thing carrying that
+   difference.
 3. **A sentence you cannot cite does not go in the answer.** Not softened with
    "probably", not folded into a summary. It goes in the honest list of what you
    could not establish, which is worth more than a confident hole.
@@ -451,6 +453,31 @@ concluding a record is gone.
 The id travels in this thread and is **pasted** into the next command, the way
 every id in this file is. Nothing here captures one command's output into another.
 
+A trii repository keeps part of its rationale outside this log: sentrii records its
+cases, hypotheses, proposals and causes, and an answer about what went wrong there
+that never asks sentrii leaves out what it recorded. Ask it here, in this thread,
+with the log's questions — `explore` has no cerberus-gw tool, and step 4 does not
+always run. Take the target's `owner/name` from
+`git -C <target-repo> remote get-url origin` by the rules of `memory`'s `RepoName`
+— GitHub only, the scheme or the `git@github.com:` prefix and a trailing `.git`
+stripped, lowercased — and only when it comes out `trii-co/<name>`, make one call:
+
+```
+mcp__cerberus-gw__sentrii_query
+entity: trii-co/<name>
+current: true
+edges: false
+fields: [id, kind, title, recorded_at]
+```
+
+`edges: false` keeps the answer small enough to hold inline, and there is no
+`limit` because `limit` keeps the oldest records and drops the newest. Treat what
+it answers the way you treat the log's catalogue above: pick the records that bear
+on the question, and cite each as `sentrii:<id>` with its `recorded_at` date, the
+third form rule 2 accepts. Name sentrii among what you consulted, whatever it
+returned. When it answers no records, say so and go on without it; never retry it
+without `edges`.
+
 ### 4 — Ask the code, through `explore`
 
 Delegate the reading. Twenty files read in this thread is twenty files of context
@@ -496,6 +523,8 @@ The citation is what carries the origin, and its shape is the whole distinction:
 - Code: `` `pkg/auth/token.go:88-94` `` — at least one per claim, and the range is
   the lines the claim actually rests on.
 - Log: `` `01KZ… (2026-03-14)` `` — the record id and that record's `at` date.
+- Sentrii: `` `sentrii:01KZ… (2026-03-14)` `` — the record id and that record's
+  `recorded_at` date.
 - A claim reused from step 2: its `path:line` **and** the date it was established,
   said as what it is — established then, anchor checked today.
 - A claim whose anchor came back `changed` and which nothing settled: named as
