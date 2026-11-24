@@ -77,10 +77,12 @@ const SchemaVersion2 = 2
 // alone. Nothing was migrated and no line was rewritten to get here.
 const SchemaVersion3 = 3
 
+const SchemaVersion4 = 4
+
 // CurrentSchemaVersion is what every record written from now on is stamped
 // with. There is no flag for it: a version the caller can choose is a version
 // the caller can get wrong, and the tool always knows which schema it writes.
-const CurrentSchemaVersion = SchemaVersion3
+const CurrentSchemaVersion = SchemaVersion4
 
 // resolveVersion turns a declared version into the version a record is judged
 // at. Zero means the `version` key was absent, which reads as version 1: the

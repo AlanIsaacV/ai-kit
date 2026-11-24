@@ -60,11 +60,12 @@ func (c *call) succeeded() {
 }
 
 var failureCodes = map[string]bool{
-	"error":        true,
-	"read_failed":  true,
-	"write_failed": true,
-	"init_failed":  true,
-	"id_failed":    true,
+	"error":               true,
+	"read_failed":         true,
+	"write_failed":        true,
+	"init_failed":         true,
+	"id_failed":           true,
+	"sentrii_unreachable": true,
 }
 
 func (c *call) refused(code string) {

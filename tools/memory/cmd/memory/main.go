@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -924,8 +925,10 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 		if _, ok := known[edge.From]; !ok {
 			missing = append(missing, "from="+edge.From)
 		}
-		if _, ok := known[edge.To]; !ok {
-			missing = append(missing, "to="+edge.To)
+		if _, cited := memory.SentriiID(edge.To); !cited {
+			if _, ok := known[edge.To]; !ok {
+				missing = append(missing, "to="+edge.To)
+			}
 		}
 		if len(missing) > 0 {
 			return fail("dangling_edge", "line %d: no entry in any log of %s for %s — an edge in a batch "+
@@ -939,6 +942,11 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 			return fail("not_a_tree", "line %d: %s", edgeLine[edge], lineNames(err.Error(), entryLine))
 		}
 		prior = append(prior, edge)
+	}
+	if err := checkSentrii(newEdges, func(edge *memory.Edge) string {
+		return fmt.Sprintf("line %d: ", edgeLine[edge])
+	}); err != nil {
+		return err
 	}
 
 	if err := writeLog(loc).Append(records...); err != nil {
@@ -1128,8 +1136,10 @@ func cmdLink(args []string) error {
 	if _, ok := known[edge.From]; !ok {
 		missing = append(missing, "from="+edge.From)
 	}
-	if _, ok := known[edge.To]; !ok {
-		missing = append(missing, "to="+edge.To)
+	if _, cited := memory.SentriiID(edge.To); !cited {
+		if _, ok := known[edge.To]; !ok {
+			missing = append(missing, "to="+edge.To)
+		}
 	}
 	if len(missing) > 0 {
 		return fail("dangling_edge", "no entry in any log of %s for %s",
@@ -1153,11 +1163,37 @@ func cmdLink(args []string) error {
 	if err := memory.CheckParent(edge.Type, edge.From, edge.To, known, memory.Edges(lines)); err != nil {
 		return fail("not_a_tree", "%s", err.Error())
 	}
+	if err := checkSentrii([]*memory.Edge{edge}, func(*memory.Edge) string { return "" }); err != nil {
+		return err
+	}
 
 	if err := writeLog(loc).Append(edge); err != nil {
 		return fail("write_failed", "%s", err.Error())
 	}
 	emit(map[string]any{"path": loc.Path, "edge": edge})
+	return nil
+}
+
+func checkSentrii(edges []*memory.Edge, where func(*memory.Edge) string) error {
+	var ids []string
+	for _, edge := range edges {
+		if id, cited := memory.SentriiID(edge.To); cited && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	held, err := memory.SentriiHeld(context.Background(), ids)
+	if err != nil {
+		return fail("sentrii_unreachable", "%s", err.Error())
+	}
+	for _, edge := range edges {
+		if id, cited := memory.SentriiID(edge.To); cited && !held[id] {
+			return fail("dangling_edge", "%ssentrii's memory store holds no record %s, so the edge to %s would point at nothing",
+				where(edge), id, edge.To)
+		}
+	}
 	return nil
 }
 

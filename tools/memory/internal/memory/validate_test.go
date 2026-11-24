@@ -568,7 +568,7 @@ func TestTheUnitKindStaysValidAtV1AndV2AndIsRefusedAtV3(t *testing.T) {
 		t.Errorf("version 2's rules must still accept `unit`: %v", ps)
 	}
 
-	ps := validateEntryV3(newTestEntry(t, func(e *Entry) { e.Kind = unit }))
+	ps := validateEntryV3(newTestEntry(t, func(e *Entry) { e.Version = SchemaVersion3; e.Kind = unit }))
 	if problemFields(ps) != "kind" {
 		t.Fatalf("version 3's rules must refuse `unit`, on the kind and nothing else: %v", ps)
 	}
@@ -662,17 +662,17 @@ func TestVersion3TookNothingAwayButTheUnitKind(t *testing.T) {
 // is nothing for a bump to protect and the current version does not move.
 //
 // The claim has two halves and both are worth a check. The kind is writable
-// today — the write gate is version 3's rules, so a set widened without the gate
+// today — the write gate is version 4's rules, which name version 3's set, so a set widened without the gate
 // following would advertise a value `add` refuses. And the widening did not leak
 // backwards: entryKindsV1 is its own map, and if entryKindsV3 had ever been an
 // alias of it, `hypothesis` would now be legal at version 1 and 2 as well, which
 // would quietly rewrite what those frozen rule sets say.
 func TestTheHypothesisKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T) {
-	if CurrentSchemaVersion != SchemaVersion3 {
-		t.Fatalf("widening a closed set does not bump the version, and this one is now %d", CurrentSchemaVersion)
+	if CurrentSchemaVersion != SchemaVersion4 {
+		t.Fatalf("widening a closed set does not bump the version; only the sentrii edge target moved it, to 4, and this one is now %d", CurrentSchemaVersion)
 	}
 
-	if ps := validateEntryV3(newTestEntry(t, func(e *Entry) { e.Kind = KindHypothesis })); len(ps) != 0 {
+	if ps := validateEntryV3(newTestEntry(t, func(e *Entry) { e.Version = SchemaVersion3; e.Kind = KindHypothesis })); len(ps) != 0 {
 		t.Errorf("version 3's rules must accept `hypothesis`: %v", ps)
 	}
 	if ps := ValidateEntry(newTestEntry(t, func(e *Entry) { e.Kind = KindHypothesis })); len(ps) != 0 {
@@ -719,11 +719,11 @@ func TestTheHypothesisKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testi
 // one. What that costs and why it did not need a version 4 either is the test
 // below.
 func TestTheGotchaKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T) {
-	if CurrentSchemaVersion != SchemaVersion3 {
-		t.Fatalf("two widenings and no narrowing since, so the version is still 3, not %d", CurrentSchemaVersion)
+	if CurrentSchemaVersion != SchemaVersion4 {
+		t.Fatalf("two widenings and no narrowing since; only the sentrii edge target moved the version, to 4, not %d", CurrentSchemaVersion)
 	}
 
-	if ps := validateEntryV3(newTestEntry(t, asGotcha)); len(ps) != 0 {
+	if ps := validateEntryV3(newTestEntry(t, func(e *Entry) { asGotcha(e); e.Version = SchemaVersion3 })); len(ps) != 0 {
 		t.Errorf("version 3's rules must accept `gotcha`: %v", ps)
 	}
 	if ps := ValidateEntry(newTestEntry(t, asGotcha)); len(ps) != 0 {
@@ -765,12 +765,12 @@ func TestTheGotchaKindWasWidenedIntoVersion3WithoutMovingTheVersion(t *testing.T
 // new kind could have needed a bump — `anchoredKindsV3` narrows, and every
 // candidate for it now has records on disk to condemn.
 func TestThePreferenceKindWasWidenedIntoVersion3AndIsNotAnchored(t *testing.T) {
-	if CurrentSchemaVersion != SchemaVersion3 {
-		t.Fatalf("three widenings and no narrowing since, so the version is still 3, not %d", CurrentSchemaVersion)
+	if CurrentSchemaVersion != SchemaVersion4 {
+		t.Fatalf("three widenings and no narrowing since; only the sentrii edge target moved the version, to 4, not %d", CurrentSchemaVersion)
 	}
 
 	asPreference := func(e *Entry) { e.Kind = KindPreference }
-	if ps := validateEntryV3(newTestEntry(t, asPreference)); len(ps) != 0 {
+	if ps := validateEntryV3(newTestEntry(t, func(e *Entry) { asPreference(e); e.Version = SchemaVersion3 })); len(ps) != 0 {
 		t.Errorf("version 3's rules must accept `preference`: %v", ps)
 	}
 	if ps := ValidateEntry(newTestEntry(t, asPreference)); len(ps) != 0 {
@@ -829,8 +829,8 @@ func TestThePreferenceKindWasWidenedIntoVersion3AndIsNotAnchored(t *testing.T) {
 // hold is that it reaches exactly as far as it was meant to: this kind, this
 // version, and nothing else.
 func TestOnlyGotchaIsRefusedWithoutAnAnchorAndOnlyUnderVersion3(t *testing.T) {
-	if CurrentSchemaVersion != SchemaVersion3 {
-		t.Fatalf("a tightening that condemns no record still does not move the version, and this one is now %d",
+	if CurrentSchemaVersion != SchemaVersion4 {
+		t.Fatalf("a tightening that condemns no record still does not move the version; only the sentrii edge target moved it, to 4, and this one is now %d",
 			CurrentSchemaVersion)
 	}
 
@@ -957,14 +957,17 @@ func TestEachVersionsEdgeRulesRequireThatVersionsStamp(t *testing.T) {
 	a, b := mustULID(t), mustULID(t)
 
 	atCurrent := newTestEdge(t, EdgeDerivesFrom, a, b) // stamped CurrentSchemaVersion
-	if ps := validateEdgeV3(atCurrent); len(ps) != 0 {
-		t.Fatalf("v3's edge rules must accept the edge the tool writes: %v", ps)
+	if ps := validateEdgeV4(atCurrent); len(ps) != 0 {
+		t.Fatalf("v4's edge rules must accept the edge the tool writes: %v", ps)
+	}
+	if ps := validateEdgeV3(atCurrent); problemFields(ps) != "version" {
+		t.Fatalf("v3's edge rules must refuse a v4 stamp, and only for the stamp: %v", ps)
 	}
 	if ps := validateEdgeV2(atCurrent); problemFields(ps) != "version" {
-		t.Fatalf("v2's edge rules must refuse a v3 stamp, and only for the stamp: %v", ps)
+		t.Fatalf("v2's edge rules must refuse a v4 stamp, and only for the stamp: %v", ps)
 	}
 	if ps := validateEdgeV1(atCurrent); problemFields(ps) != "version" {
-		t.Fatalf("v1's edge rules must refuse a v3 stamp, and only for the stamp: %v", ps)
+		t.Fatalf("v1's edge rules must refuse a v4 stamp, and only for the stamp: %v", ps)
 	}
 
 	atV2 := newV2Edge(t, EdgeDerivesFrom, a, b)

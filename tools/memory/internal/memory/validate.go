@@ -188,6 +188,20 @@ func (c *checks) anchors(field string, as []Anchor, required bool) {
 	}
 }
 
+func (c *checks) target(field string, t EdgeType, v string) {
+	id, cited := SentriiID(v)
+	if !cited {
+		c.ulid(field, v)
+		return
+	}
+	if !ValidULID(id) {
+		c.add(field, "%q is not %s<ULID>: the id after the prefix must be 26 Crockford base32 chars", v, SentriiPrefix)
+	}
+	if !sentriiEdgeTypes[t] {
+		c.add(field, "a %q edge may not point at a sentrii record; only %s may", t, joinEdgeTypes(SentriiEdgeTypes()))
+	}
+}
+
 // distinct refuses a relation that points at its own source.
 func (c *checks) distinct(field, from, to string) {
 	if from != "" && from == to {
@@ -329,8 +343,8 @@ func validateEntryV3(e *Entry) []Problem {
 //
 // So it looks like a copy, and the copy is not optional — this is validateEdgeV2's
 // own lesson applied a second time. The first rule any version states is which
-// version the record declares, and v2's says 2. Every edge written from here on
-// is stamped 3, and the write gate is the current version's rules, so a ruleSetV3
+// version the record declares, and v2's says 2. Every edge written while version 3
+// was current is stamped 3, and the write gate is the current version's rules, so a ruleSetV3
 // that reused validateEdgeV2 whole would make `link` refuse every edge it tried
 // to write — for the stamp the tool itself put on it. Measured rather than
 // reasoned about, in the pass that added this version: with the reuse in place,
@@ -338,8 +352,8 @@ func validateEntryV3(e *Entry) []Problem {
 // version 3 but is being judged as version 2", among them the write gate
 // accepting a state edge and the sweep judging what this binary just wrote.
 //
-// A rule set is a whole rule set, and the version rule is one of them. The three
-// edge validators now differ only in the stamp they require and the set they
+// A rule set is a whole rule set, and the version rule is one of them. The first three
+// edge validators differ only in the stamp they require and the set they
 // name, and whether that duplication stays affordable is open question
 // 01KZ3472NSEBRE0C9XE6AP6TCC — which asked to be revisited at version 3, and is
 // noted here rather than answered.
@@ -350,6 +364,32 @@ func validateEdgeV3(e *Edge) []Problem {
 	c.edgeType("type", e.Type, edgeTypesV2)
 	c.ulid("from", e.From)
 	c.ulid("to", e.To)
+	c.distinct("to", e.From, e.To)
+	c.timestamp("at", e.At)
+	return c.ps
+}
+
+func validateEntryV4(e *Entry) []Problem {
+	var c checks
+	c.version("version", e.Version, SchemaVersion4)
+	c.ulid("id", e.ID)
+	c.entryKind("kind", e.Kind, entryKindsV3)
+	c.slug("slug", e.Slug)
+	c.scope("scope", e.Scope, scopesV2)
+	c.timestamp("at", e.At)
+	c.tags("about", e.About)
+	c.text("title", e.Title)
+	c.anchors("anchors", e.Anchors, anchoredKindsV3[e.Kind])
+	return c.ps
+}
+
+func validateEdgeV4(e *Edge) []Problem {
+	var c checks
+	c.version("version", e.Version, SchemaVersion4)
+	c.literalKind("kind", e.Kind, KindEdge)
+	c.edgeType("type", e.Type, edgeTypesV2)
+	c.ulid("from", e.From)
+	c.target("to", e.Type, e.To)
 	c.distinct("to", e.From, e.To)
 	c.timestamp("at", e.At)
 	return c.ps
@@ -368,6 +408,7 @@ type RuleSet struct {
 var ruleSetV1 = RuleSet{Entry: validateEntryV1, Edge: validateEdgeV1}
 var ruleSetV2 = RuleSet{Entry: validateEntryV2, Edge: validateEdgeV2}
 var ruleSetV3 = RuleSet{Entry: validateEntryV3, Edge: validateEdgeV3}
+var ruleSetV4 = RuleSet{Entry: validateEntryV4, Edge: validateEdgeV4}
 
 // currentRules is the rule set for CurrentSchemaVersion, and the write gate
 // uses it directly instead of dispatching.
@@ -422,6 +463,7 @@ func CurrentSchema() Schema {
 		SchemaVersion1: ruleSetV1,
 		SchemaVersion2: ruleSetV2,
 		SchemaVersion3: ruleSetV3,
+		SchemaVersion4: ruleSetV4,
 	}
 }
 
@@ -602,6 +644,9 @@ func (s Schema) ValidateLogIn(path string, lines []Line, store map[string]bool) 
 		}
 		for field, id := range map[string]string{"from": l.Edge.From, "to": l.Edge.To} {
 			if id == "" {
+				continue
+			}
+			if _, cited := SentriiID(id); cited && field == "to" {
 				continue
 			}
 			if _, ok := ids[id]; ok || store[id] {

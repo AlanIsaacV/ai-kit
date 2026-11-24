@@ -694,7 +694,7 @@ func TestABatchDoesNotShellOutOncePerLine(t *testing.T) {
 
 // memoryCurrentVersion is the version the tool stamps, read from the package the
 // binary is built out of rather than written as a number here.
-const memoryCurrentVersion = 3
+const memoryCurrentVersion = 4
 
 type diskEntry struct {
 	ID      string   `json:"id"`
