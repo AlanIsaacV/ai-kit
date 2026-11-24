@@ -8,7 +8,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -31,9 +30,9 @@ Usage:
   memory init      [--scope repo|user]
   memory add       --kind KIND --title TEXT --about TAG[,TAG...] [--plan SLUG] [--body TEXT] [--slug SLUG] [--anchor PATH:LINE] [--repo-root PATH]
   memory add       --batch PATH|- [--plan SLUG] [--repo-root PATH]
-  memory link      --type TYPE --from ID --to ID
-  memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--id IDS] [--since TS] [--until TS] [--current] [--count] [--fields KEYS] [--body-lines N] [--limit N]
-  memory search    [--plan SLUG] [--current] [--limit N] [--] TEXT
+  memory link      --type TYPE --from ID --to ID|sentrii:ULID
+  memory query     [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--text S] [--id IDS] [--since TS] [--until TS] [--current] [--count] [--fields KEYS] [--body-lines N] [--limit N] [--repo OWNER/NAME]
+  memory search    [--plan SLUG] [--current] [--limit N] [--repo OWNER/NAME] [--] TEXT
   memory areas     [--kind KINDS] [--plan SLUG]
   memory anchors   [--plan SLUG] [--about TAGS] [--kind KINDS] [--slug SLUG] [--id IDS] [--verdict V] [--path S] [--current] [--all] [--repo-root PATH]
   memory edges     [--type TYPES] [--from ID] [--to ID] [--since TS] [--until TS] [--count] [--limit N]
@@ -77,6 +76,14 @@ other end, on the side the line left out, and the id may belong to another
 repository's log exactly as 'link' allows. Every entry in the file is appended in
 one write, or nothing is — one bad line refuses all of it.
 
+An edge's 'to' may name a record in sentrii's memory as 'sentrii:<ULID>', on
+'link' and on an 'add --batch' line alike, for 'relates_to' and 'caused_by' only.
+It is checked for form alone: the prefix exactly 'sentrii:', lower case, then a
+valid ULID. No command connects to sentrii, so whether that record exists is never
+checked: it is up to whoever cites it, who got the id from sentrii. A misspelled
+prefix, an id that is not a ULID or any other edge type is refused like any other
+malformed edge; a 'from' never takes the form.
+
 An argument in flag position that begins with '-' and contains a space is refused
 before any flag is parsed, whatever the subcommand. It is one argument where the
 command line meant two, and an unquoted variable that failed to split is what
@@ -112,6 +119,18 @@ it was written under. Each log is filtered on its own; 'count', '--count',
 comes back twice, once from each. A missing user log adds nothing, and outside a
 git repository 'both' refuses as 'repo' does. No other command takes 'both', and
 it is not a scope a record can carry.
+
+'query --repo OWNER/NAME' and 'search --repo OWNER/NAME' read every repository
+log in the store whose recorded remote names that GitHub repository, whatever
+form the remote was written in (https, ssh or git@github.com:, with or without
+.git) and in any letter case, from any directory and with no checkout of it. A
+record held by more than one of those logs comes back once. The answer names the
+logs read under 'logs', and under 'unattributed_logs' the ones carrying no GitHub
+remote, which no --repo reaches. It takes no --dir and no --scope, it never reads
+the user log, and it creates nothing. '--plan' bounds it only when named on the
+command line: AI_KIT_PLAN is ignored there. A name that is not owner/name is
+refused with 'bad_repo', and one no log carries with 'unknown_repo', naming the
+closest names the store does carry.
 
 'edges' lists the relations themselves, and it is the one read that needs no id
 to start from: every edge in the log, or the ones narrowed by '--type', by either
@@ -943,11 +962,6 @@ func runBatch(c *common, loc memory.Location, path, plan string, st stamp) error
 		}
 		prior = append(prior, edge)
 	}
-	if err := checkSentrii(newEdges, func(edge *memory.Edge) string {
-		return fmt.Sprintf("line %d: ", edgeLine[edge])
-	}); err != nil {
-		return err
-	}
 
 	if err := writeLog(loc).Append(records...); err != nil {
 		return fail("write_failed", "%s", err.Error())
@@ -1163,37 +1177,11 @@ func cmdLink(args []string) error {
 	if err := memory.CheckParent(edge.Type, edge.From, edge.To, known, memory.Edges(lines)); err != nil {
 		return fail("not_a_tree", "%s", err.Error())
 	}
-	if err := checkSentrii([]*memory.Edge{edge}, func(*memory.Edge) string { return "" }); err != nil {
-		return err
-	}
 
 	if err := writeLog(loc).Append(edge); err != nil {
 		return fail("write_failed", "%s", err.Error())
 	}
 	emit(map[string]any{"path": loc.Path, "edge": edge})
-	return nil
-}
-
-func checkSentrii(edges []*memory.Edge, where func(*memory.Edge) string) error {
-	var ids []string
-	for _, edge := range edges {
-		if id, cited := memory.SentriiID(edge.To); cited && !slices.Contains(ids, id) {
-			ids = append(ids, id)
-		}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	held, err := memory.SentriiHeld(context.Background(), ids)
-	if err != nil {
-		return fail("sentrii_unreachable", "%s", err.Error())
-	}
-	for _, edge := range edges {
-		if id, cited := memory.SentriiID(edge.To); cited && !held[id] {
-			return fail("dangling_edge", "%ssentrii's memory store holds no record %s, so the edge to %s would point at nothing",
-				where(edge), id, edge.To)
-		}
-	}
 	return nil
 }
 

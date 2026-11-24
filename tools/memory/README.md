@@ -640,6 +640,23 @@ either end. The skills write it from a `decision` whose body carries a `Reason:`
 line, at an `open-question`, an `owed`, an `idea` or an `adjustment`; that is
 their convention, and the binary does not enforce it.
 
+**A relation may point out of the store, at a record in sentrii's memory.** An
+edge's `to` may be `sentrii:<ULID>` in place of an id: the exact prefix
+`sentrii:`, then a valid ULID — 26 Crockford base32 characters. Only `relates_to`
+and `caused_by` may carry one, and only on the `to` side: `from` is always a
+record here, so the edge says something about an ai-kit record and lands in an
+ai-kit log. Anything else is refused and the log is left as it was — `link` with
+`invalid_edge`, `add --batch` with `invalid_batch`. `Sentrii:`, `sentri:` or a
+missing colon is not this form at all, so it is judged as an id and fails as one.
+These rules are [version 4's](#the-versions) rule set, so `validate` applies them
+too, unlike the state-edge rule below.
+
+**It is checked for form only.** No `memory` command connects to sentrii, so
+nothing here knows whether the id exists there. Whoever cites it got it from
+sentrii and answers for it; a mistyped id lands undetected, by choice. The
+both-endpoints check on `link` and on a batch does not ask for it, `validate`
+never reports it dangling, and `edges --to sentrii:<ULID>` lists what cites it.
+
 A state is an edge and not a field, for the same reason validity is derived: a
 field would have to be rewritten to change, and nothing here is ever rewritten.
 The absence of all six is a state too — the default one — so being in it costs
@@ -1171,14 +1188,27 @@ rather than passed over in silence.
 |---|---|---|
 | 1 | eleven kinds; `scope` is one of `plan`, `repo`, `user`; six edge types | The original shape |
 | 2 | eleven kinds; `scope` is one of `repo`, `user`; thirteen edge types | The plan scope was removed — that is what the bump was for. The edge-type set widened later, in place, by the six state types and `withdraws` |
-| 3 | fourteen kinds; `scope` and the edge types are version 2's; entries may carry `anchors` | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis`, `gotcha`, `preference` and then `idea`, and the optional `anchors` field arrived the same way — with one rule that tightens: a `gotcha` without one is refused |
+| 3 | sixteen kinds, ten at the bump; `scope` and the edge types are version 2's; entries may carry `anchors` | `unit` was removed from the entry kinds. Nothing else moved. The kind set widened later, in place, by `hypothesis`, `gotcha`, `preference`, `idea`, `owed` and then `adjustment`, and the optional `anchors` field arrived the same way — with one rule that tightens: a `gotcha` without one is refused |
+| 4 | version 3's kinds, scopes and edge types; an edge's `to` may also be `sentrii:<ULID>`, on `relates_to` and `caused_by` only | Edges only: `validateEdgeV4` judges `to` by `target`, which takes an id or a [`sentrii:` reference](#edge-types). An entry is judged exactly as version 3 judges one |
 
-**Version 3 is the current version, and dropping the `unit` kind is what the bump
-bought.** `entryKindsV3` started as version 1's eleven without it — the two kinds
-widened in since are further down — and everything else is a set version 3 names
-rather than declares: `validateEntryV3` names `scopesV2` and `validateEdgeV3`
-names `edgeTypesV2`, so `implements` and both scopes go on meaning what they
-meant.
+**Version 4 is the current version, and an edge out of the store is what the bump
+bought.** It is version 3 with one rule changed: an edge's `to` takes an id or
+`sentrii:` followed by a ULID, the second on `relates_to` and `caused_by` alone and
+checked for form only. `validateEntryV4` names version 3's sets and states version
+3's rules, `anchors` included, and `validateEdgeV4` differs from `validateEdgeV3`
+in the stamp it requires and in `to`. It widens, so the compatibility rule above
+would have let it happen inside version 3; this is the case that rule's "bump
+anyway" is for. An edge stamped 3 pointing at `sentrii:` would have been condemned
+as a bad `to` by every binary built before it — a line the newer binary wrote as
+valid. Stamped 4, the same line reads there as an honest `unjudged`. Version 3's
+rules did not move: an edge declaring 3 with a `sentrii:` target is still refused
+by them.
+
+**Version 3's bump bought dropping the `unit` kind.** `entryKindsV3` started as
+version 1's eleven without it — the six kinds widened in since are further down —
+and everything else is a set version 3 names rather than declares:
+`validateEntryV3` names `scopesV2` and `validateEdgeV3` names `edgeTypesV2`, so
+`implements` and both scopes go on meaning what they meant.
 
 **It is also the first time a narrowing had records on disk to condemn**, which is
 the case the version stamp was built for and had not yet been asked to handle. Six
@@ -1199,15 +1229,16 @@ where that value is valid. Not a byte of them was rewritten, and no legacy value
 entered the current validator.
 
 **The kinds widened afterwards, and stayed inside version 3.** `entryKindsV3`
-gained `hypothesis`, then `gotcha`, then `preference`, then `idea`, appended to the map
-literal, with `CurrentSchemaVersion` left at 3 — the same move version 2 made
+gained `hypothesis`, then `gotcha`, then `preference`, then `idea`, then `owed`, then
+`adjustment`, appended to the map literal, with `CurrentSchemaVersion` left at 3
+— the same move version 2 made
 with the state edges, for the same reason: widening makes no record already
 written illegal, so a bump would protect nothing. `entryKindsV1` gained none of
 them, so an entry declaring version 1 or 2 with one of those kinds is refused by
 the rules it declares, which is what says the widening happened inside one
 version rather than everywhere at once. What it costs is the same false alarm the
 rule above names: a binary built before this reports `kind: unknown` where it
-would have reported an honest `unjudged`. Four widenings do not add up to a
+would have reported an honest `unjudged`. Six widenings do not add up to a
 bump: the direction is what decides, not the count.
 
 `preference` needed nothing else from the schema. It is not added to
@@ -1286,10 +1317,11 @@ Five things a reader will expect to be wrong, and are not:
   out is also what let the edge types widen without version 1's set moving: one
   validator changed the set it names, the other did not.
 - **`validateEdgeV3` exists although version 3 changed nothing about an edge.**
-  Same rule, second time it was billed: every edge written now is stamped 3, so a
-  `ruleSetV3` reusing `validateEdgeV2` would send every one of them into rules
-  that require 2 and `link` would refuse them all. The three edge validators
-  differ only in the stamp they require and the set they name, and whether that
+  Same rule, second time it was billed: every edge written while version 3 was
+  current is stamped 3, so a `ruleSetV3` reusing `validateEdgeV2` would send
+  every one of them into rules that require 2 and `link` would refuse them all.
+  The first three edge validators differ only in the stamp they require and the
+  set they name, and whether that
   duplication stays affordable is open question `01KZ3472NSEBRE0C9XE6AP6TCC`.
 
 ## Usage
@@ -1305,6 +1337,7 @@ memory add   --plan jwt-migration --kind decision \
 memory link  --type supersedes --from <new-id> --to <old-id>
 memory link  --type met --from <objective-id> --to <decision-id>
 memory link  --type derives_from --from <child-objective> --to <parent-objective>
+memory link  --type relates_to --from <id> --to sentrii:<ULID>   # a record in sentrii's memory
 
 memory add   --plan jwt-migration --kind gotcha \
              --title "The lock is taken before the write, not after" \
@@ -1328,6 +1361,8 @@ memory query --fields id,title        # those keys per record, and no others
 memory query --body-lines 5           # the first five lines of every body
 memory query --scope both --id <id>   # from whichever log holds it, and which one that was
 memory search --plan jwt-migration "key rotation"
+memory query --repo octo-org/api --kind decision --current   # every log of that repository
+memory search --repo octo-org/api "key rotation"
 memory areas --kind preference   # what can be asked about, in both logs
 memory anchors --kind gotcha --about pkg/auth/   # do those citations still hold
 memory anchors --kind gotcha --verdict changed   # only the ones that drifted
@@ -1533,6 +1568,52 @@ place of `path`.
   it, and adding it to the [record scopes](#changing-the-schema) would be a schema
   version. It is a value of one flag on one command: `search`, `edges`, `anchors`,
   `state` and every write refuse it exactly as they did before it existed.
+
+### Asking a repository by name
+
+`query` and `search` take `--repo owner/name`, which reads a repository by its
+GitHub name rather than by the checkout `--dir` finds: from any directory, with no
+clone of it on this machine, and from every log of it the store holds.
+
+```bash
+memory query --repo octo-org/api --kind decision --current
+memory search --repo octo-org/api --plan jwt-migration "key rotation"
+```
+
+- **The name is read off the rows, not off a checkout.** A log answers to
+  `owner/name` when any of its rows carries an
+  [`origin.repo_id`](#which-repository-a-record-came-from) that is a GitHub remote
+  naming it — any row, not only the earliest, so a log whose remote was added
+  later is still found. The remote is normalized before it is compared: an
+  `https://`, `http://`, `ssh://` or `git://` URL or the scp form
+  `git@github.com:owner/name`, on `github.com` or `ssh.github.com`, with a trailing
+  `.git` or `/` dropped, and owner and name matched without regard to case. Every
+  form of one remote names the same repository.
+- **Only repo-scope logs are read**, and only the ones a name reaches. A log none
+  of whose rows carries a GitHub remote — only checkout paths, remotes on other
+  hosts, or no `repo_id` at all — answers to no name. The answer lists those under
+  `unattributed_logs`, beside the logs it did read under `logs`, which take the
+  place of `path` and `scope`; `--dir` reads one of the unattributed ones by its
+  checkout.
+- **A record comes back once.** Two checkouts of one repository are two logs, and a
+  record found in both is one record of one repository — unlike
+  [`--scope both`](#asking-both-logs-at-once), where the two copies live in two
+  different scopes and both come back. Everything else is computed over the logs
+  together, exactly as there: `count`, `--count`, `--limit` and the
+  count-before-dump guard.
+- **`--plan` bounds it only when it is named on the command line.** `AI_KIT_PLAN`
+  is ignored here: it names a plan of whatever the caller is working on, and a
+  `--repo` read may be of any repository at all.
+- **It creates nothing.** No `.ai-kit/` in the directory it runs from, no row, and
+  no store where none exists.
+
+It refuses at exit 1 in three ways: `--dir` or a named `--scope` beside it
+(`conflicting_scope`), because those choose a log by checkout and this chooses
+them by repository; a value that is not one owner and one name separated by a
+single `/` (`bad_repo`); and a name no log carries (`unknown_repo`), naming up to
+three of the closest names the store does carry and how many logs carry no GitHub
+remote at all. `--repo` on `add` is a different flag: there it is the
+[label](#which-repository-a-record-came-from) stamped on `origin.repo`.
 
 ### Asking about edges, and a list that cannot dump
 
@@ -1759,15 +1840,16 @@ way.
   nothing goes unjudged.
 - `hypothesis` is accepted by version 3's validator and by the write gate,
   advertised by `memory kinds`, refused by version 1's and version 2's rules on
-  the `kind` field, and `CurrentSchemaVersion` is still 3 — a widening does not
-  move the version, and it leaves every record already on disk valid.
-- `gotcha` clears the same six checks, and the version is still 3 with both
-  widenings in: two of them do not add up to a bump.
+  the `kind` field, and the widening did not move `CurrentSchemaVersion` — only
+  the sentrii edge target moved it, to 4. A widening does not move the version,
+  and it leaves every record already on disk valid.
+- `gotcha` clears the same six checks, and neither widening moved the version:
+  two of them do not add up to a bump.
 - `preference` clears them a third time, is absent from `anchored_kinds`, and is
   written with no `--anchor` where an unanchored `gotcha` is still refused. Three
   widenings still do not add up to a bump.
 - `idea` is advertised by `memory kinds` and counted in version 3's widenings, so
-  four of them still leave the version at 3; an answered idea is gone from the
+  six of them still do not move the version; an answered idea is gone from the
   `Ideas:` line while an unanswered one in the user log is counted under its
   log's name, and neither id is printed.
 - Anchors survive a round trip through the log field for field, on a record
